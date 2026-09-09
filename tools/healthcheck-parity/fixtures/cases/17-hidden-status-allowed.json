@@ -1,0 +1,62 @@
+{
+  "name": "17-hidden-status-allowed",
+  "description": "'hidden' is in availableStatuses (checkFileLevelRequirements.ts:38), so a hidden mod's file is still recommended when nothing else qualifies.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vHidden",
+      "position": "3",
+      "category": 1,
+      "modStatus": "hidden",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vHidden",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Hidden Mod File",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Hidden Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "13-vortex-self-requirement",
+  "description": "A dependency whose recommended candidate is Vortex's own Nexus listing is treated as satisfied (mapRequirementsReport.ts:211-214).",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "cV",
+      "fileVersionUid": "vV",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "9856949944321"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vV",
+      "modUid": "9856949944321",
+      "modFileId": "cV",
+      "name": "Vortex",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "9856949944321",
+      "name": "Vortex",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

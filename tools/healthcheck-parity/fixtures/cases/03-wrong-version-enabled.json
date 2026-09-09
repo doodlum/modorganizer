@@ -1,0 +1,103 @@
+{
+  "name": "03-wrong-version-enabled",
+  "description": "Both the acceptable and an unacceptable version are installed, with the unacceptable one enabled: the fix is a version switch, not a download.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "old1",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "v2",
+      "enabled": false
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "v2",
+      "position": "5",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "old1",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File 1.0",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v2",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File 2.0",
+      "version": "2.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "old1": {
+      "kind": "installed",
+      "file": {
+        "modId": "DepMod-old",
+        "fileUID": "old1",
+        "modUID": "mod-of-old1",
+        "modName": "Dependency Mod",
+        "fileName": "Dep File 1.0",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "v2": {
+      "kind": "installed",
+      "file": {
+        "modId": "DepMod-new",
+        "fileUID": "v2",
+        "modUID": "mod-of-v2",
+        "modName": "Dependency Mod",
+        "fileName": "Dep File 2.0",
+        "version": "2.0",
+        "adultContent": false,
+        "enabled": false
+      }
+    }
+  }
+}

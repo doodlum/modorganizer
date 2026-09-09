@@ -1,0 +1,10 @@
+{
+  "name": "healthcheck-parity-vortex-runner",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Runs Vortex's own health-check resolver + mapper over shared fixtures",
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

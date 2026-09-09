@@ -1,0 +1,96 @@
+{
+  "name": "14-recommendation-ranking",
+  "description": "An archived candidate has the highest position, but archived is not an 'active' category, so the highest-position *active* candidate wins (checkFileLevelRequirements.ts:218-223).",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vArchived",
+      "position": "99",
+      "category": 7,
+      "modStatus": "published",
+      "modUid": "m1"
+    },
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vMain",
+      "position": "10",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    },
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vOptional",
+      "position": "4",
+      "category": 3,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vArchived",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Archived Build",
+      "version": "9.9"
+    },
+    {
+      "fileVersionUid": "vMain",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Main Build",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vOptional",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Optional Build",
+      "version": "0.4"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

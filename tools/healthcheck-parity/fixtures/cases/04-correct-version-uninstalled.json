@@ -1,0 +1,76 @@
+{
+  "name": "04-correct-version-uninstalled",
+  "description": "The acceptable version is already in the downloads folder, so the fix is an install rather than a download.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [
+    "v2"
+  ],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "v2",
+      "position": "5",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v2",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File 2.0",
+      "version": "2.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "v2": {
+      "kind": "downloaded",
+      "file": {
+        "downloadId": "12",
+        "fileUID": "v2",
+        "modUID": "mod-of-v2",
+        "modName": "Dependency Mod",
+        "fileName": "Dep File 2.0",
+        "version": "2.0",
+        "adultContent": false
+      }
+    }
+  }
+}

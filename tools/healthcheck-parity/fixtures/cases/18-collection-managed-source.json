@@ -1,0 +1,102 @@
+{
+  "name": "18-collection-managed-source",
+  "description": "src2 is collection-managed (emitRequirements false): it contributes no requirements of its own, but it still counts as installed when deciding whether src1's dependency is satisfied.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "src2",
+      "enabled": true,
+      "emitRequirements": false
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c2",
+      "fileVersionUid": "src2",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m2"
+    },
+    {
+      "sourceFileVersionUid": "src2",
+      "definitionId": "d2",
+      "modFileId": "c3",
+      "fileVersionUid": "v3",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m3"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "src2",
+      "modUid": "m2",
+      "modFileId": "c2",
+      "name": "Collection Mod File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v3",
+      "modUid": "m3",
+      "modFileId": "c3",
+      "name": "Never Requested",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m2",
+      "name": "Collection Mod",
+      "adultContent": false
+    },
+    {
+      "modUid": "m3",
+      "name": "Unreached Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "src2": {
+      "kind": "installed",
+      "file": {
+        "modId": "CollectionMod",
+        "fileUID": "src2",
+        "modUID": "mod-of-src2",
+        "modName": "Collection Mod",
+        "fileName": "Collection Mod File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

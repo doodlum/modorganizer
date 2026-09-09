@@ -1,0 +1,24 @@
+{
+  "name": "21-no-candidates",
+  "description": "The server returns no dependency rows, so the resolver short-circuits to an empty report (checkFileLevelRequirements.ts:70).",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [],
+  "hydration": {}
+}

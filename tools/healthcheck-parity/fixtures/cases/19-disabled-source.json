@@ -1,0 +1,48 @@
+{
+  "name": "19-disabled-source",
+  "description": "Only enabled files are sources (checkFileLevelRequirements.ts:45), so a disabled mod's unmet dependency is not reported.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": false
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "v1",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v1",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {}
+}

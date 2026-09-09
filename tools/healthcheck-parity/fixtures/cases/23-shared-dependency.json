@@ -1,0 +1,96 @@
+{
+  "name": "23-shared-dependency",
+  "description": "Two sources need the same missing file. Each source gets its own entry; the resolver does not deduplicate across sources.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "srcA",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "srcB",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "srcA",
+      "definitionId": "dA",
+      "modFileId": "c1",
+      "fileVersionUid": "v1",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    },
+    {
+      "sourceFileVersionUid": "srcB",
+      "definitionId": "dB",
+      "modFileId": "c1",
+      "fileVersionUid": "v1",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "srcA",
+      "modUid": "mSrcA",
+      "modFileId": "cSrcA",
+      "name": "Source A",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "srcB",
+      "modUid": "mSrcB",
+      "modFileId": "cSrcB",
+      "name": "Source B",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v1",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Shared Dep",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Shared Dependency",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "srcA": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceA",
+        "fileUID": "srcA",
+        "modUID": "mod-of-srcA",
+        "modName": "Source A",
+        "fileName": "Source A",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "srcB": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceB",
+        "fileUID": "srcB",
+        "modUID": "mod-of-srcB",
+        "modName": "Source B",
+        "fileName": "Source B",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

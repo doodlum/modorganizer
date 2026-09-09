@@ -1,0 +1,86 @@
+{
+  "name": "02-wrong-version-installed",
+  "description": "The user has an out-of-range version of the required chain enabled and owns no acceptable version, so a different version must be downloaded.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "old1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "v2",
+      "position": "5",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "old1",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File 1.0",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "v2",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Dep File 2.0",
+      "version": "2.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "old1": {
+      "kind": "installed",
+      "file": {
+        "modId": "DepMod",
+        "fileUID": "old1",
+        "modUID": "mod-of-old1",
+        "modName": "Dependency Mod",
+        "fileName": "Dep File 1.0",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

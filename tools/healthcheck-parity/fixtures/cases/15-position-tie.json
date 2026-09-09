@@ -1,0 +1,79 @@
+{
+  "name": "15-position-tie",
+  "description": "Two active candidates share the highest position. The TS reduce only replaces on a strictly greater value, so the earlier row wins (checkFileLevelRequirements.ts:212-214).",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vFirst",
+      "position": "7",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    },
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vSecond",
+      "position": "7",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vFirst",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "First Build",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vSecond",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Second Build",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}

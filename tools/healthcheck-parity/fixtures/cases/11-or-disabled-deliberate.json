@@ -1,0 +1,101 @@
+{
+  "name": "11-or-disabled-deliberate",
+  "description": "Mirror of 10 without the wrong version enabled: the guard at mapRequirementsReport.ts:228 treats the disabled alternative as a deliberate choice and drops the whole OR.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "vA",
+      "enabled": false
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "cA",
+      "fileVersionUid": "vA",
+      "position": "3",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mA"
+    },
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "cB",
+      "fileVersionUid": "vB",
+      "position": "4",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mB"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vA",
+      "modUid": "mA",
+      "modFileId": "cA",
+      "name": "Alternative A",
+      "version": "2.0"
+    },
+    {
+      "fileVersionUid": "vB",
+      "modUid": "mB",
+      "modFileId": "cB",
+      "name": "Alternative B",
+      "version": "2.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "mA",
+      "name": "Alternative Mod A",
+      "adultContent": false
+    },
+    {
+      "modUid": "mB",
+      "name": "Alternative Mod B",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "vA": {
+      "kind": "installed",
+      "file": {
+        "modId": "AltA",
+        "fileUID": "vA",
+        "modUID": "mod-of-vA",
+        "modName": "Alternative Mod A",
+        "fileName": "Alternative A",
+        "version": "2.0",
+        "adultContent": false,
+        "enabled": false
+      }
+    }
+  }
+}

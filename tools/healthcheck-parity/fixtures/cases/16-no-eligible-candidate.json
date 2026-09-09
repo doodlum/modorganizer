@@ -1,0 +1,79 @@
+{
+  "name": "16-no-eligible-candidate",
+  "description": "Every candidate is either a removed category or an unpublished mod, so selectRecommended returns nothing and the mapper drops the dependency.",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "src1",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vRemoved",
+      "position": "9",
+      "category": 6,
+      "modStatus": "published",
+      "modUid": "m1"
+    },
+    {
+      "sourceFileVersionUid": "src1",
+      "definitionId": "d1",
+      "modFileId": "c1",
+      "fileVersionUid": "vUnderModeration",
+      "position": "8",
+      "category": 1,
+      "modStatus": "under_moderation",
+      "modUid": "m1"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "src1",
+      "modUid": "msrc",
+      "modFileId": "csrc",
+      "name": "Source File",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "vRemoved",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Removed Build",
+      "version": "9.0"
+    },
+    {
+      "fileVersionUid": "vUnderModeration",
+      "modUid": "m1",
+      "modFileId": "c1",
+      "name": "Hidden Build",
+      "version": "8.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "m1",
+      "name": "Dependency Mod",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "src1": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceMod",
+        "fileUID": "src1",
+        "modUID": "mod-of-src1",
+        "modName": "Source Mod",
+        "fileName": "Source File",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}
