@@ -184,11 +184,11 @@ namespace
    * Classify one branch: a single update group within a dependency definition.
    * Vortex: checkFileLevelRequirements.ts:152-201 (classifyBranch)
    */
-  BranchPlan classifyBranch(const QList<CandidateRow>& rows, const QString& modFileId,
-                            const QList<int>& branchRows,
-                            const QHash<QString, bool>& enabledByUid,
-                            const QHash<QString, QList<InstalledFile>>& installedByChain,
-                            const QSet<QString>& uninstalledUids)
+  BranchPlan
+  classifyBranch(const QList<CandidateRow>& rows, const QString& modFileId,
+                 const QList<int>& branchRows, const QHash<QString, bool>& enabledByUid,
+                 const QHash<QString, QList<InstalledFile>>& installedByChain,
+                 const QSet<QString>& uninstalledUids)
   {
     // `new Set(...)` keeps first-insertion order; reproduce that so the
     // satisfying* lists come out in the same order as Vortex's.
@@ -414,9 +414,9 @@ FileRequirementsReport checkFileLevelRequirements(const ResolverContext& context
           const CandidateRow& row = candidates.at(branchPlan.recRow);
           const auto detailIt     = detailByUid.find(row.fileVersionUid);
           const auto modIt        = modByUid.find(row.modUid);
-          branch.recommended =
-              toCandidate(row, detailIt == detailByUid.end() ? nullptr : &detailIt.value(),
-                          modIt == modByUid.end() ? nullptr : &modIt.value());
+          branch.recommended      = toCandidate(
+              row, detailIt == detailByUid.end() ? nullptr : &detailIt.value(),
+              modIt == modByUid.end() ? nullptr : &modIt.value());
         }
 
         dependency.branches.append(branch);

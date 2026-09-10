@@ -6,8 +6,8 @@
 #include "requirementsreportmapper.h"
 
 #include <QDateTime>
-#include <QObject>
 #include <QHash>
+#include <QObject>
 #include <QSet>
 
 namespace HealthCheck
@@ -41,10 +41,10 @@ namespace
     info.modName = mod.displayName.isEmpty() ? mod.modName : mod.displayName;
     // logicalFileName is the friendly display name; the archive name is the
     // fallback when no display name was stored.
-    info.fileName = mod.fileName.isEmpty() ? info.modName : mod.fileName;
-    info.version  = mod.version;
-    info.thumbnailUrl =
-        mod.thumbnailUrl.isEmpty() && details ? details->thumbnailUrl : mod.thumbnailUrl;
+    info.fileName     = mod.fileName.isEmpty() ? info.modName : mod.fileName;
+    info.version      = mod.version;
+    info.thumbnailUrl = mod.thumbnailUrl.isEmpty() && details ? details->thumbnailUrl
+                                                              : mod.thumbnailUrl;
     // The fetched flag wins: a mod can be flagged adult after it was installed.
     info.adultContent = details ? details->adultContent : mod.adultContent;
     info.enabled      = mod.enabled;
@@ -57,17 +57,17 @@ namespace
                                       const ModDetail* details)
   {
     DownloadedFileInfo info;
-    info.downloadId = download.downloadId;
-    info.fileUID    = fileUID;
-    info.modUID     = modUID;
-    info.modName    = !download.modName.isEmpty() ? download.modName
-                      : details                   ? details->name
-                                                  : download.downloadId;
-    info.modSummary = !download.modSummary.isEmpty() ? download.modSummary
-                      : details                      ? details->summary
-                                                     : QString();
-    info.fileName   = download.fileName.isEmpty() ? info.modName : download.fileName;
-    info.version    = download.version;
+    info.downloadId   = download.downloadId;
+    info.fileUID      = fileUID;
+    info.modUID       = modUID;
+    info.modName      = !download.modName.isEmpty() ? download.modName
+                        : details                   ? details->name
+                                                    : download.downloadId;
+    info.modSummary   = !download.modSummary.isEmpty() ? download.modSummary
+                        : details                      ? details->summary
+                                                       : QString();
+    info.fileName     = download.fileName.isEmpty() ? info.modName : download.fileName;
+    info.version      = download.version;
     info.thumbnailUrl = !download.thumbnailUrl.isEmpty() ? download.thumbnailUrl
                         : details                        ? details->thumbnailUrl
                                                          : QString();
@@ -193,11 +193,11 @@ CheckResult checkFileRequirements(const GatheredState& state, NexusV3Client& cli
 
     if (installedFiles.isEmpty()) {
       // Vortex: runFileLevelRequirements.ts:97-99
-      CheckResult result =
-          createResult(startTime, CheckStatus::Passed, Severity::Info,
-                       QObject::tr("All file requirements satisfied (checked 0 files)"));
-      result.hasFileMetadata      = true;
-      result.fileMetadata.gameId  = state.gameDomain;
+      CheckResult result = createResult(
+          startTime, CheckStatus::Passed, Severity::Info,
+          QObject::tr("All file requirements satisfied (checked 0 files)"));
+      result.hasFileMetadata     = true;
+      result.fileMetadata.gameId = state.gameDomain;
       return result;
     }
 
@@ -267,8 +267,8 @@ CheckResult checkFileRequirements(const GatheredState& state, NexusV3Client& cli
       return [&](const QString& fileUID) -> std::optional<HydratedFile> {
         const auto modIt = modRefByFileUID.find(fileUID);
         if (modIt != modRefByFileUID.end()) {
-          const ModRef& ref     = modRefs.at(modIt.value());
-          const auto detailIt   = modDetailsByUID.find(ref.modUID);
+          const ModRef& ref   = modRefs.at(modIt.value());
+          const auto detailIt = modDetailsByUID.find(ref.modUID);
           HydratedFile hydrated;
           hydrated.kind      = HydratedFile::Kind::Installed;
           hydrated.installed = toInstalledFile(
@@ -294,8 +294,8 @@ CheckResult checkFileRequirements(const GatheredState& state, NexusV3Client& cli
     };
 
     MapperContext mapperContext;
-    mapperContext.gameId      = state.gameDomain;
-    mapperContext.modsChecked = static_cast<int>(installedFiles.size());
+    mapperContext.gameId                     = state.gameDomain;
+    mapperContext.modsChecked                = static_cast<int>(installedFiles.size());
     mapperContext.suppressMO2SelfRequirement = options.suppressMO2SelfRequirement;
 
     FileRequirementsMetadata metadata =

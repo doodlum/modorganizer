@@ -26,7 +26,7 @@ std::optional<QString> makeUID(qint64 numericGameId, qint64 id)
 
 std::optional<DecodedUID> decodeUID(const QString& uid)
 {
-  bool ok = false;
+  bool ok             = false;
   const quint64 value = uid.toULongLong(&ok);
   if (!ok) {
     return std::nullopt;

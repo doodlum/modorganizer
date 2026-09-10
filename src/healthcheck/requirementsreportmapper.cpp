@@ -55,7 +55,8 @@ namespace
     // Owned-but-disabled alternative: enabling it satisfies the OR without a
     // download.
     if (!branch.satisfyingDisabled.isEmpty()) {
-      const std::optional<HydratedFile> correct = hydrate(branch.satisfyingDisabled.first());
+      const std::optional<HydratedFile> correct =
+          hydrate(branch.satisfyingDisabled.first());
       if (!correct.has_value() || correct->kind != HydratedFile::Kind::Installed) {
         return std::nullopt;
       }
@@ -72,7 +73,8 @@ namespace
     if (!branch.satisfyingUninstalled.isEmpty()) {
       const std::optional<HydratedFile> downloaded =
           hydrate(branch.satisfyingUninstalled.first());
-      if (!downloaded.has_value() || downloaded->kind != HydratedFile::Kind::Downloaded) {
+      if (!downloaded.has_value() ||
+          downloaded->kind != HydratedFile::Kind::Downloaded) {
         return std::nullopt;
       }
       RequirementBranch out;
@@ -147,7 +149,8 @@ namespace
       requirement.kind             = RequirementKind::Or;
       requirement.requirementDefId = dependency.definitionId;
       for (const DependencyBranch& branch : branches) {
-        const std::optional<RequirementBranch> orBranch = classifyOrBranch(branch, hydrate);
+        const std::optional<RequirementBranch> orBranch =
+            classifyOrBranch(branch, hydrate);
         if (orBranch.has_value()) {
           requirement.branches.append(*orBranch);
         }
@@ -170,7 +173,8 @@ namespace
     // Vortex: mapRequirementsReport.ts:245-264
     if (!branch.satisfyingDisabled.isEmpty()) {
       // A wrong version is enabled too: offer switching the active version.
-      const std::optional<InstalledFileInfo> enabled = enabledWrongFile(branch, hydrate);
+      const std::optional<InstalledFileInfo> enabled =
+          enabledWrongFile(branch, hydrate);
       if (enabled.has_value()) {
         const std::optional<HydratedFile> correct =
             hydrate(branch.satisfyingDisabled.first());

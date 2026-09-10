@@ -44,8 +44,7 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
   auto* root = new QVBoxLayout(this);
 
   // Vortex: locales/en/health_check.json -> settings.description
-  auto* intro = new QLabel(
-      tr("Detect issues with your mod list and suggest fixes."));
+  auto* intro = new QLabel(tr("Detect issues with your mod list and suggest fixes."));
   intro->setObjectName(QStringLiteral("healthCheckSettingsIntro"));
   intro->setWordWrap(true);
   root->addWidget(intro);
@@ -63,12 +62,12 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
       flags.enabled);
 
   // Vortex: settings.file_requirements
-  m_fileRequirements = addOption(
-      checksLayout, QStringLiteral("healthCheckFileRequirements"),
-      tr("Missing file requirements warnings"),
-      tr("Check your enabled mods against the file-level requirements their "
-         "authors declared on Nexus Mods."),
-      flags.fileRequirementsEnabled);
+  m_fileRequirements =
+      addOption(checksLayout, QStringLiteral("healthCheckFileRequirements"),
+                tr("Missing file requirements warnings"),
+                tr("Check your enabled mods against the file-level requirements their "
+                   "authors declared on Nexus Mods."),
+                flags.fileRequirementsEnabled);
 
   root->addWidget(checks);
 
@@ -87,19 +86,19 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
   extrasHint->setEnabled(false);
   extrasLayout->addWidget(extrasHint);
 
-  m_autoRun = addOption(
-      extrasLayout, QStringLiteral("healthCheckAutoRun"),
-      tr("Re-check automatically when mods change"),
-      tr("Run again shortly after mods are installed, enabled, disabled or "
-         "removed, and when downloads change."),
-      flags.autoRun);
+  m_autoRun =
+      addOption(extrasLayout, QStringLiteral("healthCheckAutoRun"),
+                tr("Re-check automatically when mods change"),
+                tr("Run again shortly after mods are installed, enabled, disabled or "
+                   "removed, and when downloads change."),
+                flags.autoRun);
 
-  m_notifications = addOption(
-      extrasLayout, QStringLiteral("healthCheckNotifications"),
-      tr("Include issues in notifications"),
-      tr("Count health check issues towards the notification button and list "
-         "them in the notifications dialog."),
-      flags.notifications);
+  m_notifications =
+      addOption(extrasLayout, QStringLiteral("healthCheckNotifications"),
+                tr("Include issues in notifications"),
+                tr("Count health check issues towards the notification button and list "
+                   "them in the notifications dialog."),
+                flags.notifications);
 
   m_modListIndicator = addOption(
       extrasLayout, QStringLiteral("healthCheckModListIndicator"),
@@ -129,8 +128,7 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
   connect(m_enabled, &QCheckBox::toggled, this, syncEnabled);
   syncEnabled();
 
-  auto* buttons =
-      new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
   buttons->setObjectName(QStringLiteral("healthCheckSettingsButtons"));
   connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);

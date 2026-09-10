@@ -9,13 +9,13 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QToolButton>
-#include <QPainter>
 #include <QVBoxLayout>
 
 namespace HealthCheck
@@ -191,15 +191,16 @@ void HealthCheckPanel::buildChrome()
 
   m_settings = new QPushButton(tr("Settings"));
   m_settings->setObjectName(QStringLiteral("healthCheckSettings"));
-  connect(m_settings, &QPushButton::clicked, this, &HealthCheckPanel::settingsRequested);
+  connect(m_settings, &QPushButton::clicked, this,
+          &HealthCheckPanel::settingsRequested);
   titleRow->addWidget(m_settings);
 
   headerLayout->addLayout(titleRow);
 
   // Vortex: listing.subtitle
-  m_subtitle = makeLabel(
-      tr("Review your mod list for any issues and learn how to resolve them if needed."),
-      QStringLiteral("healthCheckSubtitle"));
+  m_subtitle = makeLabel(tr("Review your mod list for any issues and learn how to "
+                            "resolve them if needed."),
+                         QStringLiteral("healthCheckSubtitle"));
   m_subtitle->setEnabled(false);
   headerLayout->addWidget(m_subtitle);
 
@@ -358,7 +359,8 @@ void HealthCheckPanel::updateHeader()
     const QString when = relativeTime(m_manager.lastResult().timestamp);
     m_lastUpdated->setText(
         counts.total > 0
-            ? tr("Last updated: %1  -  %n issue(s) found", nullptr, counts.total).arg(when)
+            ? tr("Last updated: %1  -  %n issue(s) found", nullptr, counts.total)
+                  .arg(when)
             : tr("Last updated: %1").arg(when));
   } else {
     m_lastUpdated->setText(tr("Not run yet"));
@@ -471,8 +473,7 @@ QWidget* HealthCheckPanel::createEmptyState()
   layout->addWidget(titleLabel);
 
   if (!message.isEmpty()) {
-    auto* messageLabel =
-        makeLabel(message, QStringLiteral("healthCheckEmptyMessage"));
+    auto* messageLabel = makeLabel(message, QStringLiteral("healthCheckEmptyMessage"));
     messageLabel->setAlignment(Qt::AlignHCenter);
     messageLabel->setEnabled(false);
     layout->addWidget(messageLabel);
@@ -507,13 +508,14 @@ QWidget* HealthCheckPanel::createEntryRow(const IssueEntry& entry)
   auto* text = new QVBoxLayout;
   text->setSpacing(1);
 
-  auto* title = makeLabel(entryTitle(entry), QStringLiteral("healthCheckRowTitle"));
+  auto* title     = makeLabel(entryTitle(entry), QStringLiteral("healthCheckRowTitle"));
   QFont titleFont = title->font();
   titleFont.setBold(true);
   title->setFont(titleFont);
   text->addWidget(title);
 
-  auto* summary = makeLabel(entrySummary(entry), QStringLiteral("healthCheckRowSummary"));
+  auto* summary =
+      makeLabel(entrySummary(entry), QStringLiteral("healthCheckRowSummary"));
   summary->setEnabled(false);
   text->addWidget(summary);
 
@@ -546,7 +548,8 @@ QWidget* HealthCheckPanel::createEntryRow(const IssueEntry& entry)
     case RequirementCategory::Toggle:
       for (const FileRequirement& requirement : entry.requirements) {
         if (requirement.kind == RequirementKind::WrongVersionEnabled &&
-            requirement.enabledFile.has_value() && requirement.correctFile.has_value()) {
+            requirement.enabledFile.has_value() &&
+            requirement.correctFile.has_value()) {
           emit versionSwitchRequested(requirement.enabledFile->modId,
                                       requirement.correctFile->modId);
         }
@@ -602,7 +605,8 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
 
   int index = 0;
 
-  auto* heading = makeLabel(entryTitle(entry), QStringLiteral("healthCheckDetailTitle"));
+  auto* heading =
+      makeLabel(entryTitle(entry), QStringLiteral("healthCheckDetailTitle"));
   QFont headingFont = heading->font();
   headingFont.setBold(true);
   heading->setFont(headingFont);
@@ -613,7 +617,8 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
   summary->setEnabled(false);
   m_detailLayout->insertWidget(index++, summary);
 
-  auto* reveal = new QPushButton(tr("View \"%1\" in the mod list").arg(entry.sourceModName));
+  auto* reveal =
+      new QPushButton(tr("View \"%1\" in the mod list").arg(entry.sourceModName));
   reveal->setObjectName(QStringLiteral("healthCheckDetailReveal"));
   connect(reveal, &QPushButton::clicked, this, [this, entry] {
     emit revealModRequested(entry.sourceModName);
@@ -633,8 +638,8 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
 
     if (requirement.kind == RequirementKind::Or) {
       // Vortex: detail.item.pick_one
-      auto* pick = makeLabel(tr("Pick one of these"),
-                             QStringLiteral("healthCheckDetailPick"), false);
+      auto* pick     = makeLabel(tr("Pick one of these"),
+                                 QStringLiteral("healthCheckDetailPick"), false);
       QFont pickFont = pick->font();
       pickFont.setBold(true);
       pick->setFont(pickFont);
@@ -653,8 +658,9 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
           buttonText = tr("1-click install");
           break;
         case BranchKind::Install:
-          name    = branch.uninstalledFile ? branch.uninstalledFile->modName : QString();
-          version = branch.uninstalledFile ? branch.uninstalledFile->version : QString();
+          name = branch.uninstalledFile ? branch.uninstalledFile->modName : QString();
+          version =
+              branch.uninstalledFile ? branch.uninstalledFile->version : QString();
           buttonText = tr("Install (downloaded)");
           break;
         case BranchKind::Enable:
@@ -664,9 +670,9 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
           break;
         }
 
-        line->addWidget(makeLabel(version.isEmpty() ? name
-                                                    : QStringLiteral("%1  (%2)")
-                                                          .arg(name, version),
+        line->addWidget(makeLabel(version.isEmpty()
+                                      ? name
+                                      : QStringLiteral("%1  (%2)").arg(name, version),
                                   QStringLiteral("healthCheckBranchName")),
                         1);
 
@@ -676,7 +682,8 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
           switch (branch.kind) {
           case BranchKind::Download:
             if (branch.candidate.has_value()) {
-              emit installRequested({DownloadTarget{*branch.candidate, branch.enabledFile}});
+              emit installRequested(
+                  {DownloadTarget{*branch.candidate, branch.enabledFile}});
             }
             break;
           case BranchKind::Install:
@@ -686,9 +693,10 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
             break;
           case BranchKind::Enable:
             if (branch.correctFile.has_value()) {
-              emit versionSwitchRequested(
-                  branch.enabledFile.has_value() ? branch.enabledFile->modId : QString(),
-                  branch.correctFile->modId);
+              emit versionSwitchRequested(branch.enabledFile.has_value()
+                                              ? branch.enabledFile->modId
+                                              : QString(),
+                                          branch.correctFile->modId);
             }
             break;
           }
@@ -699,8 +707,9 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
       }
     } else {
       const QString name = requirementModName(requirement, tr(" or "));
-      auto* nameLabel = makeLabel(name, QStringLiteral("healthCheckDetailModName"), false);
-      QFont nameFont  = nameLabel->font();
+      auto* nameLabel =
+          makeLabel(name, QStringLiteral("healthCheckDetailModName"), false);
+      QFont nameFont = nameLabel->font();
       nameFont.setBold(true);
       nameLabel->setFont(nameFont);
       cardLayout->addWidget(nameLabel);
@@ -708,47 +717,45 @@ void HealthCheckPanel::showDetail(const IssueEntry& entry)
       if (requirement.candidate.has_value()) {
         const RequirementCandidate& candidate = *requirement.candidate;
         if (!candidate.fileName.isEmpty()) {
-          cardLayout->addWidget(makeLabel(
-              tr("File: %1  (%2)").arg(candidate.fileName, candidate.version),
-              QStringLiteral("healthCheckDetailFile")));
+          cardLayout->addWidget(
+              makeLabel(tr("File: %1  (%2)").arg(candidate.fileName, candidate.version),
+                        QStringLiteral("healthCheckDetailFile")));
         }
         if (!candidate.modSummary.isEmpty()) {
-          auto* summaryLabel =
-              makeLabel(candidate.modSummary, QStringLiteral("healthCheckDetailSummary"));
+          auto* summaryLabel = makeLabel(candidate.modSummary,
+                                         QStringLiteral("healthCheckDetailSummary"));
           summaryLabel->setEnabled(false);
           cardLayout->addWidget(summaryLabel);
         }
         if (candidate.adultContent) {
           // Vortex: detail.item.adult
-          cardLayout->addWidget(
-              makeLabel(tr("Adult content"), QStringLiteral("healthCheckAdultBadge"),
-                        false));
+          cardLayout->addWidget(makeLabel(
+              tr("Adult content"), QStringLiteral("healthCheckAdultBadge"), false));
         }
       }
 
       // Vortex: detail.item.current_version / required_version
       if (requirement.installedFile.has_value()) {
-        cardLayout->addWidget(makeLabel(
-            tr("Current version: %1").arg(requirement.installedFile->version),
-            QStringLiteral("healthCheckDetailCurrent")));
+        cardLayout->addWidget(
+            makeLabel(tr("Current version: %1").arg(requirement.installedFile->version),
+                      QStringLiteral("healthCheckDetailCurrent")));
       }
       if (requirement.enabledFile.has_value()) {
-        cardLayout->addWidget(makeLabel(
-            tr("Currently enabled: %1  (%2)")
-                .arg(requirement.enabledFile->modName, requirement.enabledFile->version),
-            QStringLiteral("healthCheckDetailCurrent")));
+        cardLayout->addWidget(makeLabel(tr("Currently enabled: %1  (%2)")
+                                            .arg(requirement.enabledFile->modName,
+                                                 requirement.enabledFile->version),
+                                        QStringLiteral("healthCheckDetailCurrent")));
       }
       if (requirement.correctFile.has_value()) {
-        cardLayout->addWidget(makeLabel(
-            tr("Required version: %1").arg(requirement.correctFile->version),
-            QStringLiteral("healthCheckDetailRequired")));
+        cardLayout->addWidget(
+            makeLabel(tr("Required version: %1").arg(requirement.correctFile->version),
+                      QStringLiteral("healthCheckDetailRequired")));
       }
       if (requirement.uninstalledFile.has_value()) {
-        cardLayout->addWidget(makeLabel(
-            tr("Downloaded: %1  (%2)")
-                .arg(requirement.uninstalledFile->fileName,
-                     requirement.uninstalledFile->version),
-            QStringLiteral("healthCheckDetailDownloaded")));
+        cardLayout->addWidget(makeLabel(tr("Downloaded: %1  (%2)")
+                                            .arg(requirement.uninstalledFile->fileName,
+                                                 requirement.uninstalledFile->version),
+                                        QStringLiteral("healthCheckDetailDownloaded")));
       }
     }
 

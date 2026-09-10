@@ -37,18 +37,18 @@ namespace
       IssueEntry entry;
       // Vortex: fileIssueId / fileRowKey
       entry.issueId = QStringLiteral("%1:%2").arg(source.sourceFileUID, categoryName);
-      entry.id      = hidden ? entry.issueId + QStringLiteral("::hidden") : entry.issueId;
+      entry.id = hidden ? entry.issueId + QStringLiteral("::hidden") : entry.issueId;
       entry.checkId = FILE_REQUIREMENTS_CHECK_ID;
       // File-level requirements are the higher-confidence band.
       // Vortex: fileRequirementEntries.ts:73 and utils/shared/tracking.ts:48-51
-      entry.severity      = IssueSeverity::Warning;
-      entry.category      = category;
+      entry.severity       = IssueSeverity::Warning;
+      entry.category       = category;
       entry.resolutionType = resolutionTypeForCategory(category);
-      entry.sourceFileUID = source.sourceFileUID;
-      entry.sourceModName = source.sourceModName;
-      entry.sourceModUID  = source.sourceModUID;
-      entry.requirements  = byCategory.value(static_cast<int>(category));
-      entry.hidden        = hidden;
+      entry.sourceFileUID  = source.sourceFileUID;
+      entry.sourceModName  = source.sourceModName;
+      entry.sourceModUID   = source.sourceModUID;
+      entry.requirements   = byCategory.value(static_cast<int>(category));
+      entry.hidden         = hidden;
 
       entries.append(entry);
     }
@@ -112,7 +112,7 @@ QList<IssueEntry> buildEntries(const FileRequirementsMetadata& metadata,
   for (auto it = metadata.fileRequirements.constBegin();
        it != metadata.fileRequirements.constEnd(); ++it) {
     const FileLevelRequirements& source = it.value();
-    const QSet<QString> hiddenDefs       = hidden.value(source.sourceFileUID);
+    const QSet<QString> hiddenDefs      = hidden.value(source.sourceFileUID);
 
     QList<FileRequirement> visible;
     QList<FileRequirement> dismissed;
@@ -342,7 +342,8 @@ QList<DownloadTarget> downloadTargets(const QList<FileRequirement>& requirements
       break;
     case RequirementKind::WrongVersionInstalled:
       if (requirement.candidate.has_value()) {
-        targets.append(DownloadTarget{*requirement.candidate, requirement.installedFile});
+        targets.append(
+            DownloadTarget{*requirement.candidate, requirement.installedFile});
       }
       break;
     default:

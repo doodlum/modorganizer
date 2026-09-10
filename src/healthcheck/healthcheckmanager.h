@@ -9,9 +9,9 @@
 #include <QSet>
 #include <QString>
 #include <QTimer>
+#include <atomic>
 #include <functional>
 #include <memory>
-#include <atomic>
 #include <utility>
 
 class QSettings;
@@ -180,7 +180,7 @@ private:
   std::function<GatheredState()> m_stateProvider;
   std::function<std::pair<QString, QString>()> m_credentialProvider;
 
-  QThread* m_thread    = nullptr;
+  QThread* m_thread     = nullptr;
   CheckWorker* m_worker = nullptr;
 
   QString m_apiKey;

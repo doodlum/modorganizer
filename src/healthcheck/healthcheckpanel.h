@@ -84,7 +84,8 @@ signals:
   /** The user asked to download/install these files. */
   void installRequested(const QList<HealthCheck::DownloadTarget>& targets);
   /** The user asked to enable `correctModName` in place of `wrongModName`. */
-  void versionSwitchRequested(const QString& wrongModName, const QString& correctModName);
+  void versionSwitchRequested(const QString& wrongModName,
+                              const QString& correctModName);
   /** The user asked to install an already-downloaded archive. */
   void installDownloadedRequested(const QString& downloadId);
   /** The user asked to reveal a mod in the mod list. */
@@ -110,13 +111,13 @@ private:
 
   HealthCheckManager& m_manager;
 
-  QLabel* m_title        = nullptr;
-  QLabel* m_subtitle     = nullptr;
-  QLabel* m_lastUpdated  = nullptr;
-  QPushButton* m_refresh = nullptr;
-  QPushButton* m_settings = nullptr;
-  QPushButton* m_activeTab = nullptr;
-  QPushButton* m_hiddenTab = nullptr;
+  QLabel* m_title           = nullptr;
+  QLabel* m_subtitle        = nullptr;
+  QLabel* m_lastUpdated     = nullptr;
+  QPushButton* m_refresh    = nullptr;
+  QPushButton* m_settings   = nullptr;
+  QPushButton* m_activeTab  = nullptr;
+  QPushButton* m_hiddenTab  = nullptr;
   QPushButton* m_installAll = nullptr;
   QPushButton* m_backButton = nullptr;
 
@@ -125,9 +126,9 @@ private:
   QWidget* m_listContainer  = nullptr;
   QVBoxLayout* m_listLayout = nullptr;
 
-  QScrollArea* m_detailScroll     = nullptr;
-  QWidget* m_detailContainer      = nullptr;
-  QVBoxLayout* m_detailLayout     = nullptr;
+  QScrollArea* m_detailScroll = nullptr;
+  QWidget* m_detailContainer  = nullptr;
+  QVBoxLayout* m_detailLayout = nullptr;
 
   bool m_showingHidden = false;
   QString m_openEntryId;

@@ -57,8 +57,8 @@ struct IssueEntry
    */
   QString issueId;
   QString checkId;
-  IssueSeverity severity = IssueSeverity::Warning;
-  RequirementCategory category = RequirementCategory::Download;
+  IssueSeverity severity        = IssueSeverity::Warning;
+  RequirementCategory category  = RequirementCategory::Download;
   ResolutionType resolutionType = ResolutionType::Install;
 
   QString sourceFileUID;

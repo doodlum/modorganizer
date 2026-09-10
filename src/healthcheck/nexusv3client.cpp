@@ -17,7 +17,7 @@ namespace
 
   // Vortex: src/renderer/src/extensions/nexus_integration/constants.ts:10-11
   const QString DEFAULT_BASE_URL = QStringLiteral("https://api.nexusmods.com/v3");
-  const QString GAMES_URL        = QStringLiteral("https://api.nexusmods.com/v1/games.json");
+  const QString GAMES_URL = QStringLiteral("https://api.nexusmods.com/v1/games.json");
 
   // A single request should not hang the check indefinitely; the registry's own
   // timeout is the outer bound, this keeps one stalled socket from consuming it.
@@ -48,14 +48,15 @@ namespace
   CandidateRow toCandidateRow(const QJsonObject& object)
   {
     CandidateRow row;
-    row.sourceFileVersionUid = object.value(QStringLiteral("source_version_id")).toString();
-    row.definitionId         = object.value(QStringLiteral("definition_id")).toString();
-    row.modFileId            = object.value(QStringLiteral("mod_file_id")).toString();
-    row.fileVersionUid       = object.value(QStringLiteral("version_id")).toString();
-    row.position             = object.value(QStringLiteral("position")).toString();
-    row.category    = categoryCode(object.value(QStringLiteral("category")).toString());
-    row.modStatus   = object.value(QStringLiteral("mod_status")).toString();
-    row.modUid      = object.value(QStringLiteral("mod_id")).toString();
+    row.sourceFileVersionUid =
+        object.value(QStringLiteral("source_version_id")).toString();
+    row.definitionId   = object.value(QStringLiteral("definition_id")).toString();
+    row.modFileId      = object.value(QStringLiteral("mod_file_id")).toString();
+    row.fileVersionUid = object.value(QStringLiteral("version_id")).toString();
+    row.position       = object.value(QStringLiteral("position")).toString();
+    row.category  = categoryCode(object.value(QStringLiteral("category")).toString());
+    row.modStatus = object.value(QStringLiteral("mod_status")).toString();
+    row.modUid    = object.value(QStringLiteral("mod_id")).toString();
     return row;
   }
 
@@ -180,10 +181,9 @@ QByteArray NexusV3Client::get(const QString& url)
   timer.start(REQUEST_TIMEOUT_MS);
   loop.exec();
 
-  const int status =
-      reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-  const QByteArray body = reply->readAll();
-  const auto error      = reply->error();
+  const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+  const QByteArray body     = reply->readAll();
+  const auto error          = reply->error();
   const QString errorString = reply->errorString();
   reply->deleteLater();
 
@@ -226,8 +226,7 @@ QByteArray NexusV3Client::post(const QString& path, const QJsonObject& body)
   timer.start(REQUEST_TIMEOUT_MS);
   loop.exec();
 
-  const int status =
-      reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+  const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
   const QByteArray responseBody = reply->readAll();
   const auto error              = reply->error();
   const QString errorString     = reply->errorString();
@@ -274,9 +273,9 @@ QList<CandidateRow> NexusV3Client::fetchCandidates(const QStringList& fileVersio
   }
 
   for (const QStringList& ids : chunked(missing, MAX_CANDIDATE_SOURCE_IDS)) {
-    int page       = 1;
-    int fetched    = 0;
-    bool hasMore   = true;
+    int page     = 1;
+    int fetched  = 0;
+    bool hasMore = true;
     while (hasMore) {
       if (isAborted()) {
         throw ApiError(QStringLiteral("aborted"));
@@ -298,10 +297,10 @@ QList<CandidateRow> NexusV3Client::fetchCandidates(const QStringList& fileVersio
                                         .toObject()
                                         .value(QStringLiteral("candidates"))
                                         .toArray();
-      const int totalCount = response.value(QStringLiteral("meta"))
-                                 .toObject()
-                                 .value(QStringLiteral("total_count"))
-                                 .toInt();
+      const int totalCount        = response.value(QStringLiteral("meta"))
+                                        .toObject()
+                                        .value(QStringLiteral("total_count"))
+                                        .toInt();
 
       for (const QJsonValue& value : candidates) {
         const CandidateRow row = toCandidateRow(value.toObject());

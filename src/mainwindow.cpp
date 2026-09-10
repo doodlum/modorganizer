@@ -4193,20 +4193,18 @@ void MainWindow::setupHealthCheck()
             m_HealthCheck->run(HealthCheck::Trigger::Manual);
           });
 
-  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::settingsRequested,
-          this, [this] {
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::settingsRequested, this,
+          [this] {
             m_HealthCheckPanel->hide();
-  
-            HealthCheck::HealthCheckSettingsDialog dialog(m_HealthCheck->flags(),
-                                                          this);
+
+            HealthCheck::HealthCheckSettingsDialog dialog(m_HealthCheck->flags(), this);
             if (dialog.exec() != QDialog::Accepted) {
               return;
             }
-  
+
             m_HealthCheck->setFlags(dialog.flags());
-            m_HealthCheck->saveState(
-                m_OrganizerCore.settings().directInterface());
-  
+            m_HealthCheck->saveState(m_OrganizerCore.settings().directInterface());
+
             // The mod list indicator and notification count both derive from
             // flags, so republish and repaint rather than waiting for a run.
             HealthCheck::FlagStore::instance().setFlaggedMods(
@@ -4241,7 +4239,8 @@ void MainWindow::setupHealthCheck()
                           target.candidate.modName);
                 continue;
               }
-              const QString domain = m_HealthCheck->nexusDomainForGameId(modUID->gameId);
+              const QString domain =
+                  m_HealthCheck->nexusDomainForGameId(modUID->gameId);
               if (domain.isEmpty()) {
                 log::warn("health check: unknown Nexus game id {}", modUID->gameId);
                 continue;
@@ -4302,9 +4301,9 @@ void MainWindow::setupHealthCheck()
 
   if (m_OrganizerCore.downloadManager() != nullptr) {
     connect(m_OrganizerCore.downloadManager(), &DownloadManager::stateChanged, this,
-              [this](int, DownloadManager::DownloadState) {
-                m_HealthCheck->scheduleModsChangedRun();
-              });
+            [this](int, DownloadManager::DownloadState) {
+              m_HealthCheck->scheduleModsChangedRun();
+            });
   }
 
   connect(&m_OrganizerCore, &OrganizerCore::profileChanged, this,
@@ -4416,7 +4415,6 @@ HealthCheck::GatheredState MainWindow::gatherHealthCheckState() const
   return state;
 }
 
-
 void MainWindow::updateHealthCheckButton()
 {
   if (m_HealthCheck == nullptr) {
@@ -4426,9 +4424,8 @@ void MainWindow::updateHealthCheckButton()
   // if the current stylesheet does not provide an icon, this is used instead
   const char* DefaultIconName = ":/MO/gui/health_check";
 
-  const QIcon original = m_originalHealthCheckIcon.isNull()
-                             ? QIcon(DefaultIconName)
-                             : m_originalHealthCheckIcon;
+  const QIcon original = m_originalHealthCheckIcon.isNull() ? QIcon(DefaultIconName)
+                                                            : m_originalHealthCheckIcon;
 
   const auto severity = m_HealthCheck->badgeSeverity();
   const int issues    = m_HealthCheck->counts().total;

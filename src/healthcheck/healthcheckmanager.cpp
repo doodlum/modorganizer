@@ -20,16 +20,17 @@ FeatureFlags FeatureFlags::load(QSettings& settings)
   FeatureFlags flags;
   settings.beginGroup(QStringLiteral("HealthCheck"));
   flags.enabled = settings.value(QStringLiteral("enabled"), flags.enabled).toBool();
-  flags.fileRequirementsEnabled =
-      settings
-          .value(QStringLiteral("fileRequirementsEnabled"), flags.fileRequirementsEnabled)
-          .toBool();
-  flags.suppressSelfRequirement =
-      settings
-          .value(QStringLiteral("suppressSelfRequirement"), flags.suppressSelfRequirement)
-          .toBool();
+  flags.fileRequirementsEnabled = settings
+                                      .value(QStringLiteral("fileRequirementsEnabled"),
+                                             flags.fileRequirementsEnabled)
+                                      .toBool();
+  flags.suppressSelfRequirement = settings
+                                      .value(QStringLiteral("suppressSelfRequirement"),
+                                             flags.suppressSelfRequirement)
+                                      .toBool();
   flags.modListIndicator =
-      settings.value(QStringLiteral("modListIndicator"), flags.modListIndicator).toBool();
+      settings.value(QStringLiteral("modListIndicator"), flags.modListIndicator)
+          .toBool();
   flags.notifications =
       settings.value(QStringLiteral("notifications"), flags.notifications).toBool();
   flags.autoRun = settings.value(QStringLiteral("autoRun"), flags.autoRun).toBool();
@@ -182,7 +183,8 @@ void HealthCheckManager::setCredentialProvider(
   m_credentialProvider = std::move(provider);
 }
 
-void HealthCheckManager::setCredentials(const QString& apiKey, const QString& bearerToken)
+void HealthCheckManager::setCredentials(const QString& apiKey,
+                                        const QString& bearerToken)
 {
   m_apiKey      = apiKey;
   m_bearerToken = bearerToken;
@@ -216,7 +218,7 @@ void HealthCheckManager::setFlags(const FeatureFlags& flags)
 
   if (!nowEnabled) {
     // Dropping the result stops a stale listing outliving the setting.
-    m_hasResult = false;
+    m_hasResult  = false;
     m_lastResult = CheckResult{};
     emit resultChanged();
     return;
@@ -309,10 +311,10 @@ void HealthCheckManager::startRun()
   // (fileRequirementsCheck.ts:75-82).
   if (!hasCredentials()) {
     CheckResult result;
-    result.checkId   = FILE_REQUIREMENTS_CHECK_ID;
-    result.status    = CheckStatus::Passed;
-    result.severity  = Severity::Info;
-    result.message   = tr("Not logged into Nexus Mods");
+    result.checkId  = FILE_REQUIREMENTS_CHECK_ID;
+    result.status   = CheckStatus::Passed;
+    result.severity = Severity::Info;
+    result.message  = tr("Not logged into Nexus Mods");
     MOBase::log::debug("health check: no Nexus credentials, reporting a pass");
     result.timestamp = QDateTime::currentDateTimeUtc();
     onCheckFinished(result);

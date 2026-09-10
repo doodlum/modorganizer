@@ -26,7 +26,7 @@ public:
   // alongside the plugin diagnoses so MO2's notification button covers both.
   explicit ProblemsDialog(PluginContainer const& pluginContainer,
                           HealthCheck::HealthCheckManager* healthCheck = nullptr,
-                          QWidget* parent = 0);
+                          QWidget* parent                              = 0);
   ~ProblemsDialog();
 
   // also saves and restores geometry

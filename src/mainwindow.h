@@ -335,7 +335,7 @@ private:
 
   // Health check: the manager owns scheduling and results, the panel is the
   // pop-out shown from the toolbar button. Both are created in the ctor.
-  HealthCheck::HealthCheckManager* m_HealthCheck = nullptr;
+  HealthCheck::HealthCheckManager* m_HealthCheck    = nullptr;
   HealthCheck::HealthCheckPanel* m_HealthCheckPanel = nullptr;
   QIcon m_originalHealthCheckIcon;
 

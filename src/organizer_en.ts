@@ -2471,7 +2471,7 @@ Right now the only case I know of where this needs to be overwritten is for the 
 <context>
     <name>HealthCheck::HealthCheckManager</name>
     <message>
-        <location filename="healthcheck/healthcheckmanager.cpp" line="315"/>
+        <location filename="healthcheck/healthcheckmanager.cpp" line="317"/>
         <source>Not logged into Nexus Mods</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2509,32 +2509,32 @@ Right now the only case I know of where this needs to be overwritten is for the 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="220"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="221"/>
         <source>Active</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="232"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="233"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="246"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="247"/>
         <source>Install all</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="249"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="250"/>
         <source>Download and install every requirement that needs no choice</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="355"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="356"/>
         <source>Checking...</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="healthcheck/healthcheckpanel.cpp" line="361"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="362"/>
         <source>Last updated: %1  -  %n issue(s) found</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -2542,137 +2542,137 @@ Right now the only case I know of where this needs to be overwritten is for the 
         </translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="362"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="364"/>
         <source>Last updated: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="364"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="366"/>
         <source>Not run yet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="383"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="385"/>
         <source>Install all (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="451"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="453"/>
         <source>No hidden items</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="454"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="456"/>
         <source>Additional checks available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="455"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="457"/>
         <source>Health Check found no issues in the checks it could run. Set your Nexus Mods API key to also check for missing mod requirements.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="458"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="460"/>
         <source>Health check has not run yet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="459"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="461"/>
         <source>Use Refresh to check your mod list.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="462"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="464"/>
         <source>Health check passed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="463"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="465"/>
         <source>Ready for gaming</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="567"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="570"/>
         <source>Details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="575"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="578"/>
         <source>Restore</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="575"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="578"/>
         <source>Dismiss</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="577"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="580"/>
         <source>Show this issue again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="578"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="581"/>
         <source>Hide this issue from the active list</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="616"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="621"/>
         <source>View &quot;%1&quot; in the mod list</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="636"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="641"/>
         <source>Pick one of these</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="653"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="658"/>
         <source>1-click install</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="658"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="664"/>
         <source>Install (downloaded)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="663"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="669"/>
         <source>Enable this version</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="701"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="709"/>
         <source> or </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="712"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="721"/>
         <source>File: %1  (%2)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="724"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="733"/>
         <source>Adult content</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="732"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="740"/>
         <source>Current version: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="737"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="744"/>
         <source>Currently enabled: %1  (%2)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="743"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="751"/>
         <source>Required version: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckpanel.cpp" line="748"/>
+        <location filename="healthcheck/healthcheckpanel.cpp" line="755"/>
         <source>Downloaded: %1  (%2)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2685,82 +2685,82 @@ Right now the only case I know of where this needs to be overwritten is for the 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="48"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="47"/>
         <source>Detect issues with your mod list and suggest fixes.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="55"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="54"/>
         <source>Checks</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="60"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="59"/>
         <source>Enable health check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="61"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="60"/>
         <source>Turn the whole feature off, including the toolbar indicator and the mod list flags.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="68"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="67"/>
         <source>Missing file requirements warnings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="69"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="68"/>
         <source>Check your enabled mods against the file-level requirements their authors declared on Nexus Mods.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="77"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="76"/>
         <source>Mod Organizer behaviour</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="82"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="81"/>
         <source>These options are specific to Mod Organizer and have no equivalent in Vortex. Turning them all off leaves the check behaving exactly as Vortex does.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="92"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="91"/>
         <source>Re-check automatically when mods change</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="93"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="92"/>
         <source>Run again shortly after mods are installed, enabled, disabled or removed, and when downloads change.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="99"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="98"/>
         <source>Include issues in notifications</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="100"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="99"/>
         <source>Count health check issues towards the notification button and list them in the notifications dialog.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="106"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="105"/>
         <source>Flag affected mods in the mod list</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="107"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="106"/>
         <source>Show an icon in the flags column of any mod with an unresolved issue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="112"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="111"/>
         <source>Ignore requirements on Mod Organizer itself</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="113"/>
+        <location filename="healthcheck/healthchecksettingsdialog.cpp" line="112"/>
         <source>Treat a mod that requires Mod Organizer 2 as already satisfied. Vortex does this for its own listing but not for Mod Organizer&apos;s, so leaving this off keeps the two in step.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3897,7 +3897,7 @@ This is likely due to a corrupted or incompatible download or unrecognized archi
     </message>
     <message>
         <location filename="mainwindow.ui" line="1831"/>
-        <location filename="mainwindow.cpp" line="4481"/>
+        <location filename="mainwindow.cpp" line="4478"/>
         <source>Open the health check panel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4380,7 +4380,7 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="mainwindow.cpp" line="4475"/>
+        <location filename="mainwindow.cpp" line="4472"/>
         <source>Health check found %n issue(s) in your mod list</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -4388,12 +4388,12 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         </translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4477"/>
+        <location filename="mainwindow.cpp" line="4474"/>
         <source>Health check is running...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4479"/>
+        <location filename="mainwindow.cpp" line="4476"/>
         <source>Health check found no issues</source>
         <translation type="unfinished"></translation>
     </message>
