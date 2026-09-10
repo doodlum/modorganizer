@@ -1,0 +1,144 @@
+{
+  "name": "live-04-older-dependency-enabled",
+  "description": "An older F4SE and an older Address Library are enabled. Whether these satisfy the declared ranges is the server's call, not ours - the point is that both implementations reach the same verdict from the same rows.",
+  "source": "Captured from the live Nexus Mods v3 API by generate-live.mjs",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "4943507767571",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "4943507756100",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "4943507756465",
+      "enabled": true
+    }
+  ],
+  "uninstalledFileVersionUids": [],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "4943507767571",
+      "definitionId": "439521",
+      "modFileId": "2958523",
+      "fileVersionUid": "4943507765964",
+      "position": "8.0",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "4943507405023"
+    },
+    {
+      "sourceFileVersionUid": "4943507767571",
+      "definitionId": "439524",
+      "modFileId": "2940355",
+      "fileVersionUid": "4943507765405",
+      "position": "11.0",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "4943507399843"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "4943507756100",
+      "modUid": "4943507399843",
+      "modFileId": "2940355",
+      "name": "Fallout 4 Script Extender",
+      "version": "0.7.8"
+    },
+    {
+      "fileVersionUid": "4943507756465",
+      "modUid": "4943507405023",
+      "modFileId": "2958523",
+      "name": "Address Library - All In One",
+      "version": "1.11.221"
+    },
+    {
+      "fileVersionUid": "4943507765405",
+      "modUid": "4943507399843",
+      "modFileId": "2940355",
+      "name": "Fallout 4 Script Extender",
+      "version": "0.7.9"
+    },
+    {
+      "fileVersionUid": "4943507765964",
+      "modUid": "4943507405023",
+      "modFileId": "2958523",
+      "name": "Address Library - All In One",
+      "version": "1.11.240"
+    },
+    {
+      "fileVersionUid": "4943507767571",
+      "modUid": "4943507466279",
+      "modFileId": "7893267",
+      "name": "VisibleFavoritesF4SE",
+      "version": "1.2.3"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "4943507466279",
+      "name": "Visible Favorites - F4SE",
+      "summary": "Fully dynamic visible favorites system, with in game editor & support for custom slots. Supports all modded weapons out of the box. Works on NPC's. Power Armor & backpack support. No more patching meshes for every weapon, cluttered work",
+      "thumbnailUrl": "https://staticdelivery.nexusmods.com/mods/1151/images/thumbnails/108583/108583-1788205593-1012316534.jpg",
+      "adultContent": false
+    },
+    {
+      "modUid": "4943507399843",
+      "name": "Fallout 4 Script Extender (F4SE)",
+      "summary": "The Fallout 4 Script Extender, or F4SE for short, is a modder's resource that expands the scripting capabilities of Fallout 4. It does so without modifying the executable files on disk, so there are no permanent side effects.",
+      "thumbnailUrl": "https://staticdelivery.nexusmods.com/mods/1151/images/thumbnails/42147/42147-1574018373-1181117442.jpeg",
+      "adultContent": false
+    },
+    {
+      "modUid": "4943507405023",
+      "name": "Address Library for F4SE Plugins",
+      "summary": "Provides version independent IDs used for dynamically relocating offsets at runtime.",
+      "thumbnailUrl": "https://staticdelivery.nexusmods.com/mods/1151/images/thumbnails/47327/47327-1599728447-276378518.png",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "4943507767571": {
+      "kind": "installed",
+      "file": {
+        "modId": "Visible Favorites - F4SE",
+        "fileUID": "4943507767571",
+        "modUID": "4943507466279",
+        "modName": "Visible Favorites - F4SE",
+        "fileName": "Visible Favorites - F4SE 1.2.3",
+        "version": "1.2.3",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "4943507756100": {
+      "kind": "installed",
+      "file": {
+        "modId": "Fallout 4 Script Extender (F4SE)",
+        "fileUID": "4943507756100",
+        "modUID": "4943507399843",
+        "modName": "Fallout 4 Script Extender (F4SE)",
+        "fileName": "Fallout 4 Script Extender (F4SE) 0.7.8",
+        "version": "0.7.8",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "4943507756465": {
+      "kind": "installed",
+      "file": {
+        "modId": "Address Library for F4SE Plugins",
+        "fileUID": "4943507756465",
+        "modUID": "4943507405023",
+        "modName": "Address Library for F4SE Plugins",
+        "fileName": "Address Library for F4SE Plugins 1.11.221",
+        "version": "1.11.221",
+        "adultContent": false,
+        "enabled": true
+      }
+    }
+  }
+}
