@@ -30,24 +30,36 @@ fixtures/cases/*.json ──┬──► vortex-runner ──► out/vortex/*.js
 ```
 
 A fixture describes one resolver run: the files the user has installed and
-downloaded, the rows the server would return, and the display data the app would
-hydrate. Both runners emit two artefacts per fixture — the raw resolver report
-and the mapped metadata — so a divergence localises to one stage rather than
-just "the output differs".
+downloaded, the rows the server would return, the display data the app would
+hydrate, and which issues the user has dismissed. Both runners emit three
+artefacts per fixture, so a divergence localises to one stage rather than just
+"the output differs":
+
+| Artefact | Covers | Vortex source |
+| --- | --- | --- |
+| `report` | branch classification, download recommendation, OR handling | `checkFileLevelRequirements.ts` |
+| `metadata` | which requirement kind each dependency surfaces as | `mapRequirementsReport.ts` |
+| `entries` | listing rows: per-category grouping, issue ids, the dismissed split | `FileRequirementsContent.tsx` → `selectEntries` |
 
 `compare.mjs` ignores object key order (meaningless in both implementations) and
 is strict about everything else: values, array order, and whether a property is
 present at all. Array order matters and is enforced, because the resolver's
 grouping order is observable behaviour that both sides claim to reproduce.
 
-### The one substitution
+### The substitutions
 
-`mapRequirementsReport.ts` imports `VORTEX_MOD_UID` from Vortex's
-`nexus_integration/util/UIDs.ts`; importing that module for real would drag in
-Vortex's whole renderer graph. `vortex-runner/build.mjs` generates a stub
-exporting just that constant, and reads the literal out of the real source to
-generate it — so the stub cannot drift from Vortex without the build failing.
-Everything else is Vortex's code, unmodified.
+Two Vortex constants are stubbed rather than imported, because the modules that
+define them drag in Vortex's whole renderer graph. `vortex-runner/build.mjs`
+generates each stub by reading the literal out of the real source, so a stub
+cannot drift from Vortex without the build failing:
+
+- `VORTEX_MOD_UID`, from `nexus_integration/util/UIDs.ts`
+- `FILE_REQUIREMENTS_CHECK_ID`, from `checks/fileRequirementsCheck.ts`
+
+`FileRequirementsContent.tsx` additionally imports React components and action
+creators for its row rendering and its hide/install handlers. `selectEntries` —
+the only thing the runner calls — never touches them, so they resolve to a stub
+that throws if it is ever reached. Everything else is Vortex's code, unmodified.
 
 ### Hydration is passed through, not rebuilt
 
@@ -58,7 +70,7 @@ untouched display payload is passed through.
 
 ## The corpus
 
-`fixtures/cases/` holds 34 fixtures: 25 synthetic and 9 captured from the live
+`fixtures/cases/` holds 36 fixtures: 27 synthetic and 9 captured from the live
 Nexus Mods API.
 
 The synthetic set (`fixtures/generate.mjs`) pins each decision point,
@@ -74,6 +86,7 @@ including the ones that deliberately drop an issue:
 | 18, 19 | collection-managed and disabled sources emit nothing |
 | 20 | a hydration miss drops the requirement rather than half-rendering it |
 | 21–25 | empty input, multi-source aggregation, and display-field passthrough |
+| 26, 27 | dismissed issues: the partial and the total showing/hidden split |
 
 The live set (`fixtures/generate-live.mjs`) captures real dependency ranges,
 file categories and mod statuses for a Fallout 4 load order built around
@@ -96,7 +109,7 @@ live-09  source disabled                      -> no issues
 ## Why the suite is not vacuous
 
 A suite that passes on the first run is worth little on its own.
-`mutation-test.mjs` applies nine surgical mutations to the C++ port, rebuilds,
+`mutation-test.mjs` applies twelve surgical mutations to the C++ port, rebuilds,
 re-runs the corpus, and asserts each is caught by *exactly* the expected
 fixtures — no more, no less, so the corpus is neither under- nor
 over-constraining. Every mutation is reverted afterwards, including on failure.
@@ -104,8 +117,9 @@ over-constraining. Every mutation is reverted afterwards, including on failure.
 The mutations cover: the position tie-break, the active-category preference,
 the OR sibling-recommendation clearing, the enabled-source and
 collection-managed exclusions, the `hidden` mod status, the
-deliberately-disabled drop, the Vortex self-requirement suppression, and the OR
-disabled guard.
+deliberately-disabled drop, the Vortex self-requirement suppression, the OR
+disabled guard, the dismissed-row key suffix, the resolution-type mapping, and
+the dismissed/active split.
 
 ## Where the logic came from
 

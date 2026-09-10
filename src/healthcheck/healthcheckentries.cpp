@@ -1,7 +1,5 @@
 #include "healthcheckentries.h"
 
-#include "filerequirementscheck.h"
-
 #include <QCoreApplication>
 #include <QObject>
 
@@ -45,6 +43,7 @@ namespace
       // Vortex: fileRequirementEntries.ts:73 and utils/shared/tracking.ts:48-51
       entry.severity      = IssueSeverity::Warning;
       entry.category      = category;
+      entry.resolutionType = resolutionTypeForCategory(category);
       entry.sourceFileUID = source.sourceFileUID;
       entry.sourceModName = source.sourceModName;
       entry.sourceModUID  = source.sourceModUID;
@@ -72,6 +71,38 @@ namespace
   }
 
 }  // namespace
+
+// Vortex: utils/shared/tracking.ts:138-150
+ResolutionType resolutionTypeForCategory(RequirementCategory category)
+{
+  switch (category) {
+  case RequirementCategory::Toggle:
+    return ResolutionType::Enable;
+  case RequirementCategory::Or:
+    return ResolutionType::Pick;
+  case RequirementCategory::DownloadReplace:
+    return ResolutionType::Update;
+  case RequirementCategory::Download:
+  case RequirementCategory::InstallUninstalled:
+    return ResolutionType::Install;
+  }
+  return ResolutionType::Install;
+}
+
+QString resolutionTypeToString(ResolutionType type)
+{
+  switch (type) {
+  case ResolutionType::Install:
+    return QStringLiteral("install");
+  case ResolutionType::Enable:
+    return QStringLiteral("enable");
+  case ResolutionType::Pick:
+    return QStringLiteral("pick");
+  case ResolutionType::Update:
+    return QStringLiteral("update");
+  }
+  return QString();
+}
 
 QList<IssueEntry> buildEntries(const FileRequirementsMetadata& metadata,
                                const HiddenMap& hidden)

@@ -2344,72 +2344,72 @@ Right now the only case I know of where this needs to be overwritten is for the 
 <context>
     <name>HealthCheck</name>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="153"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="184"/>
         <source>Missing required mods for: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="156"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="187"/>
         <source>Missing required mod for: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="170"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="201"/>
         <source>Requires %1 additional mod files to be installed to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="175"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="206"/>
         <source>Requires %1 additional mod file to be installed to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="181"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="212"/>
         <source>Requires installing a different version of %1 existing mod files to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="186"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="217"/>
         <source>Requires installing a different version of this existing mod file to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="191"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="222"/>
         <source>Requires installing %1 previously downloaded mod files to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="196"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="227"/>
         <source>Requires installing this previously downloaded mod file to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="201"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="232"/>
         <source>Requires enabling a different version of %1 installed mod files to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="206"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="237"/>
         <source>Requires enabling a different version of this installed mod file to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="211"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="242"/>
         <source>Requires %1 additional mod files to be picked to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="216"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="247"/>
         <source>Requires %1 additional mod file to be picked to work correctly:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="264"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="295"/>
         <source>or</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/healthcheckentries.cpp" line="282"/>
+        <location filename="healthcheck/healthcheckentries.cpp" line="313"/>
         <source>+%1 more</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8841,28 +8841,28 @@ You can restart Mod Organizer as administrator and try launching the program aga
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="138"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="135"/>
         <source>No game selected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="201"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="198"/>
         <source>All file requirements satisfied (checked 0 files)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="346"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="343"/>
         <source>All file requirements satisfied (checked %1 files)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="353"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="350"/>
         <source>Found %1 file requirements across %2 files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="364"/>
-        <location filename="healthcheck/filerequirementscheck.cpp" line="369"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="361"/>
+        <location filename="healthcheck/filerequirementscheck.cpp" line="366"/>
         <source>Failed to check file requirements</source>
         <translation type="unfinished"></translation>
     </message>

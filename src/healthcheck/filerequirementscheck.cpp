@@ -13,9 +13,6 @@
 namespace HealthCheck
 {
 
-// Vortex: fileRequirementsCheck.ts:27
-const QString FILE_REQUIREMENTS_CHECK_ID = QStringLiteral("check-file-level-requirements");
-
 namespace
 {
 

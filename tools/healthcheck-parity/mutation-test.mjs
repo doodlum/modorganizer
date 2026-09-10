@@ -59,7 +59,7 @@ const MUTATIONS = [
     file: "filedependencyresolver.cpp",
     from: "if (file.enabled && file.emitRequirements) {",
     to: "if (file.emitRequirements) {",
-    expectFail: ["19-disabled-source"],
+    expectFail: ["19-disabled-source", "live-09-source-disabled"],
   },
   {
     name: "sources: ignore the collection-managed exclusion",
@@ -80,7 +80,10 @@ const MUTATIONS = [
     file: "requirementsreportmapper.cpp",
     from: "      // Owned-but-disabled with nothing wrong enabled is a deliberate choice.\n      return std::nullopt;",
     to: "      // Owned-but-disabled with nothing wrong enabled is a deliberate choice.\n      FileRequirement forced;\n      forced.kind             = RequirementKind::Missing;\n      forced.requirementDefId = dependency.definitionId;\n      return forced;",
-    expectFail: ["07-disabled-deliberate"],
+    expectFail: [
+      "07-disabled-deliberate",
+      "live-05-dependency-installed-but-disabled",
+    ],
   },
   {
     name: "mapper: drop the Vortex self-requirement suppression",
@@ -95,6 +98,38 @@ const MUTATIONS = [
     from: "        if (!branch.satisfyingDisabled.isEmpty() && branch.wrongEnabled.isEmpty()) {\n          return std::nullopt;\n        }",
     to: "        if (false) {\n          return std::nullopt;\n        }",
     expectFail: ["11-or-disabled-deliberate"],
+  },
+  {
+    name: "listing: drop the ::hidden suffix from dismissed row keys",
+    file: "healthcheckentries.cpp",
+    from: `entry.id      = hidden ? entry.issueId + QStringLiteral("::hidden") : entry.issueId;`,
+    to: `entry.id      = entry.issueId;`,
+    expectFail: ["26-partially-dismissed", "27-fully-dismissed"],
+  },
+  {
+    name: "listing: report every category as an install resolution",
+    file: "healthcheckentries.cpp",
+    from: "entry.resolutionType = resolutionTypeForCategory(category);",
+    to: "entry.resolutionType = ResolutionType::Install;",
+    expectFail: [
+      "02-wrong-version-installed",
+      "03-wrong-version-enabled",
+      "08-or-download",
+      "10-or-enable-branch",
+      "12-or-install-branch",
+      "22-multi-source-mixed",
+      "26-partially-dismissed",
+      "27-fully-dismissed",
+      "live-04-older-dependency-enabled",
+      "live-08-wrong-version-enabled-correct-disabled",
+    ],
+  },
+  {
+    name: "listing: put dismissed requirements back in the active list",
+    file: "healthcheckentries.cpp",
+    from: "      if (hiddenDefs.contains(requirement.requirementDefId)) {",
+    to: "      if (false) {",
+    expectFail: ["26-partially-dismissed", "27-fully-dismissed"],
   },
 ];
 

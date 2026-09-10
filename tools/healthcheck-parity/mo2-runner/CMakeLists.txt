@@ -22,6 +22,7 @@ add_executable(healthcheck-parity-runner
     "${HEALTHCHECK_DIR}/nexusuid.cpp"
     "${HEALTHCHECK_DIR}/filedependencyresolver.cpp"
     "${HEALTHCHECK_DIR}/requirementsreportmapper.cpp"
+    "${HEALTHCHECK_DIR}/healthcheckentries.cpp"
 )
 
 target_include_directories(healthcheck-parity-runner PRIVATE "${HEALTHCHECK_DIR}")

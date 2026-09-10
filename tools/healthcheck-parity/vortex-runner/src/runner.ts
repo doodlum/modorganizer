@@ -32,6 +32,8 @@ import type {
   IFileRequirementsCheckMetadata,
 } from "@vortex-health-check/mapRequirementsReport";
 
+import { fileRequirementsContent } from "@vortex-health-check/FileRequirementsContent";
+
 import { readFileSync } from "node:fs";
 
 /** The on-disk fixture shape, shared byte-for-byte with the MO2 runner. */
@@ -49,7 +51,9 @@ interface Fixture {
   candidates: CandidateRow[];
   fileVersionDetails: FileVersionDetail[];
   modDetails: ModDetail[];
-  /** fileUID -> display data, standing in for Vortex's store hydration. */
+  /** Dismissed requirement definition ids, keyed by source file UID. */
+  hiddenFileRequirements?: Record<string, string[]>;
+  /** fileUID -> display data, standing in for Vortexs store hydration. */
   hydration: Record<
     string,
     | { kind: "installed"; file: Record<string, unknown> }
@@ -104,14 +108,55 @@ async function main(): Promise<void> {
     errors: [],
   });
 
-  // Two artefacts per fixture: the raw resolver report and the mapped
-  // metadata. Comparing both localises any divergence to one stage.
+  // The listing layer, from Vortex's own selectEntries. Building the slice of
+  // state it reads is enough: the selectors it uses are pure functions of
+  // these two paths.
+  const state = {
+    session: {
+      healthCheck: {
+        results: { "check-file-level-requirements": { metadata } },
+        runningChecks: [],
+      },
+    },
+    persistent: {
+      healthCheck: {
+        hiddenRequirements: {},
+        hiddenFileRequirements: fixture.hiddenFileRequirements ?? {},
+        feedbackGiven: {},
+        modRequirementsEnabled: true,
+        fileRequirementsEnabled: true,
+      },
+    },
+  };
+
+  // Only the fields both implementations compute; the row payload itself is
+  // already compared through `metadata`.
+  const entries = fileRequirementsContent
+    .selectEntries(state as never)
+    .map((entry) => {
+      const report = entry.data as { category: string; requirements: Array<{ kind: string }> };
+      return {
+        id: entry.id,
+        issueId: entry.issueId ?? entry.id,
+        checkId: entry.checkId,
+        severity: entry.severity,
+        resolutionType: entry.resolutionType,
+        category: report.category,
+        hidden: fileRequirementsContent.isHidden?.(state as never, entry) ?? false,
+        requirementKinds: report.requirements.map((r) => r.kind),
+      };
+    });
+
+  // Three artefacts per fixture: the raw resolver report, the mapped metadata,
+  // and the listing entries. Comparing all three localises any divergence to
+  // one stage.
   process.stdout.write(
     JSON.stringify(
       {
         fixture: fixture.name,
         report,
         metadata,
+        entries,
       },
       null,
       2,

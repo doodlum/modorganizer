@@ -1,0 +1,263 @@
+{
+  "name": "26-partially-dismissed",
+  "description": "One of srcA-s two requirements is dismissed. Vortex splits a source file into a showing and a dismissed entry per category, so the same category can appear twice with different row keys (fileRequirementEntries.ts:42-46).",
+  "gameId": "fallout4",
+  "installedFiles": [
+    {
+      "fileVersionUid": "srcA",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "srcB",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "srcC",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "depEnabled",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "depOld",
+      "enabled": true
+    },
+    {
+      "fileVersionUid": "depNew",
+      "enabled": false
+    }
+  ],
+  "uninstalledFileVersionUids": [
+    "depDownloaded"
+  ],
+  "candidates": [
+    {
+      "sourceFileVersionUid": "srcA",
+      "definitionId": "dA1",
+      "modFileId": "cEnabled",
+      "fileVersionUid": "depEnabled",
+      "position": "1",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mEnabled"
+    },
+    {
+      "sourceFileVersionUid": "srcA",
+      "definitionId": "dA2",
+      "modFileId": "cMissing",
+      "fileVersionUid": "depMissing",
+      "position": "2",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mMissing"
+    },
+    {
+      "sourceFileVersionUid": "srcB",
+      "definitionId": "dB1",
+      "modFileId": "cSwitch",
+      "fileVersionUid": "depNew",
+      "position": "5",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mSwitch"
+    },
+    {
+      "sourceFileVersionUid": "srcC",
+      "definitionId": "dC1",
+      "modFileId": "cAlt1",
+      "fileVersionUid": "depDownloaded",
+      "position": "3",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mAlt1"
+    },
+    {
+      "sourceFileVersionUid": "srcC",
+      "definitionId": "dC1",
+      "modFileId": "cAlt2",
+      "fileVersionUid": "depAlt2",
+      "position": "4",
+      "category": 1,
+      "modStatus": "published",
+      "modUid": "mAlt2"
+    }
+  ],
+  "fileVersionDetails": [
+    {
+      "fileVersionUid": "srcA",
+      "modUid": "mSrcA",
+      "modFileId": "cSrcA",
+      "name": "Source A",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "srcB",
+      "modUid": "mSrcB",
+      "modFileId": "cSrcB",
+      "name": "Source B",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "srcC",
+      "modUid": "mSrcC",
+      "modFileId": "cSrcC",
+      "name": "Source C",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "depEnabled",
+      "modUid": "mEnabled",
+      "modFileId": "cEnabled",
+      "name": "Enabled Dep",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "depMissing",
+      "modUid": "mMissing",
+      "modFileId": "cMissing",
+      "name": "Missing Dep",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "depOld",
+      "modUid": "mSwitch",
+      "modFileId": "cSwitch",
+      "name": "Switch Dep 1.0",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "depNew",
+      "modUid": "mSwitch",
+      "modFileId": "cSwitch",
+      "name": "Switch Dep 2.0",
+      "version": "2.0"
+    },
+    {
+      "fileVersionUid": "depDownloaded",
+      "modUid": "mAlt1",
+      "modFileId": "cAlt1",
+      "name": "Alt 1",
+      "version": "1.0"
+    },
+    {
+      "fileVersionUid": "depAlt2",
+      "modUid": "mAlt2",
+      "modFileId": "cAlt2",
+      "name": "Alt 2",
+      "version": "1.0"
+    }
+  ],
+  "modDetails": [
+    {
+      "modUid": "mEnabled",
+      "name": "Enabled Mod",
+      "adultContent": false
+    },
+    {
+      "modUid": "mMissing",
+      "name": "Missing Mod",
+      "summary": "Not installed",
+      "adultContent": false
+    },
+    {
+      "modUid": "mSwitch",
+      "name": "Switchable Mod",
+      "adultContent": false
+    },
+    {
+      "modUid": "mAlt1",
+      "name": "Alternative One",
+      "adultContent": false
+    },
+    {
+      "modUid": "mAlt2",
+      "name": "Alternative Two",
+      "adultContent": false
+    }
+  ],
+  "hydration": {
+    "srcA": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceA",
+        "fileUID": "srcA",
+        "modUID": "mod-of-srcA",
+        "modName": "Source A",
+        "fileName": "Source A",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "srcB": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceB",
+        "fileUID": "srcB",
+        "modUID": "mod-of-srcB",
+        "modName": "Source B",
+        "fileName": "Source B",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "srcC": {
+      "kind": "installed",
+      "file": {
+        "modId": "SourceC",
+        "fileUID": "srcC",
+        "modUID": "mod-of-srcC",
+        "modName": "Source C",
+        "fileName": "Source C",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "depOld": {
+      "kind": "installed",
+      "file": {
+        "modId": "SwitchOld",
+        "fileUID": "depOld",
+        "modUID": "mod-of-depOld",
+        "modName": "Switchable Mod",
+        "fileName": "Switch Dep 1.0",
+        "version": "1.0",
+        "adultContent": false,
+        "enabled": true
+      }
+    },
+    "depNew": {
+      "kind": "installed",
+      "file": {
+        "modId": "SwitchNew",
+        "fileUID": "depNew",
+        "modUID": "mod-of-depNew",
+        "modName": "Switchable Mod",
+        "fileName": "Switch Dep 2.0",
+        "version": "2.0",
+        "adultContent": false,
+        "enabled": false
+      }
+    },
+    "depDownloaded": {
+      "kind": "downloaded",
+      "file": {
+        "downloadId": "77",
+        "fileUID": "depDownloaded",
+        "modUID": "mod-of-depDownloaded",
+        "modName": "Alternative One",
+        "fileName": "Alt 1",
+        "version": "1.0",
+        "adultContent": false
+      }
+    }
+  },
+  "hiddenFileRequirements": {
+    "srcA": [
+      "dA2"
+    ]
+  }
+}

@@ -11,9 +11,6 @@ namespace HealthCheck
 
 class NexusV3Client;
 
-/** The check's stable id. Vortex: fileRequirementsCheck.ts:27 */
-extern const QString FILE_REQUIREMENTS_CHECK_ID;
-
 /**
  * One installed mod, as the check needs to see it.
  *

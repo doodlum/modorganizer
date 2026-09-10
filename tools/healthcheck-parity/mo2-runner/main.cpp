@@ -16,6 +16,7 @@
  */
 
 #include "filedependencyresolver.h"
+#include "healthcheckentries.h"
 #include "requirementsreportmapper.h"
 
 #include <QCoreApplication>
@@ -262,6 +263,34 @@ namespace
     return object;
   }
 
+  // The listing entries, from the shared buildEntries().
+  // Only the fields both implementations compute; the row payload itself is
+  // already compared through the metadata.
+  QJsonArray entriesToJson(const QList<IssueEntry>& entries)
+  {
+    QJsonArray array;
+    for (const IssueEntry& entry : entries) {
+      QJsonArray kinds;
+      for (const FileRequirement& requirement : entry.requirements) {
+        kinds.append(kindToString(requirement.kind));
+      }
+
+      QJsonObject object;
+      object.insert(QStringLiteral("id"), entry.id);
+      object.insert(QStringLiteral("issueId"), entry.issueId);
+      object.insert(QStringLiteral("checkId"), entry.checkId);
+      object.insert(QStringLiteral("severity"),
+                    issueSeverityToString(entry.severity));
+      object.insert(QStringLiteral("resolutionType"),
+                    resolutionTypeToString(entry.resolutionType));
+      object.insert(QStringLiteral("category"), categoryToString(entry.category));
+      object.insert(QStringLiteral("hidden"), entry.hidden);
+      object.insert(QStringLiteral("requirementKinds"), kinds);
+      array.append(object);
+    }
+    return array;
+  }
+
   // --- fixture parsing ------------------------------------------------------
 
   CandidateRow parseCandidateRow(const QJsonObject& object)
@@ -469,10 +498,24 @@ int main(int argc, char* argv[])
 
   // --- output ---------------------------------------------------------------
 
+  // Dismissed requirement ids, as the app stores them.
+  HiddenMap hidden;
+  const QJsonObject hiddenJson =
+      fixture.value(QStringLiteral("hiddenFileRequirements")).toObject();
+  for (auto it = hiddenJson.constBegin(); it != hiddenJson.constEnd(); ++it) {
+    QSet<QString> defs;
+    for (const QJsonValue& value : it.value().toArray()) {
+      defs.insert(value.toString());
+    }
+    hidden.insert(it.key(), defs);
+  }
+
   QJsonObject out;
   out.insert(QStringLiteral("fixture"), fixture.value(QStringLiteral("name")).toString());
   out.insert(QStringLiteral("report"), reportToJson(report));
   out.insert(QStringLiteral("metadata"), metadataToJson(metadata));
+  out.insert(QStringLiteral("entries"),
+             entriesToJson(buildEntries(metadata, hidden)));
 
   QTextStream stream(stdout);
   stream << QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Indented));

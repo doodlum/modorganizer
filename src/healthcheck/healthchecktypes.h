@@ -290,6 +290,13 @@ QString kindToString(RequirementKind kind);
 // Stable string form of an OR branch kind, matching Vortex's literals.
 QString branchKindToString(BranchKind kind);
 
+// The file-level requirements check id.
+// Vortex: checks/fileRequirementsCheck.ts:27
+//
+// Declared here rather than with the check so the listing layer can name it
+// without depending on the check, which pulls in the Nexus client.
+extern const QString FILE_REQUIREMENTS_CHECK_ID;
+
 // ---------------------------------------------------------------------------
 // Check results.
 //

@@ -13,6 +13,23 @@ namespace HealthCheck
 {
 
 /**
+ * The resolution flow an issue offers, reported alongside the entry.
+ * Vortex: utils/shared/tracking.ts:17 (ResolutionType)
+ */
+enum class ResolutionType
+{
+  Install,
+  Enable,
+  Pick,
+  Update
+};
+
+/** Vortex: tracking.ts:138-150 (resolutionTypeForCategory) */
+ResolutionType resolutionTypeForCategory(RequirementCategory category);
+
+QString resolutionTypeToString(ResolutionType type);
+
+/**
  * One row in the health check listing.
  *
  * A source file's unsatisfied requirements are split per category, and each
@@ -42,6 +59,7 @@ struct IssueEntry
   QString checkId;
   IssueSeverity severity = IssueSeverity::Warning;
   RequirementCategory category = RequirementCategory::Download;
+  ResolutionType resolutionType = ResolutionType::Install;
 
   QString sourceFileUID;
   QString sourceModName;
