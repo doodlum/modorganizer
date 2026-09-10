@@ -147,6 +147,8 @@ QString ModList::getFlagText(ModInfo::EFlag flag, ModInfo::Ptr modInfo) const
     return tr("Mod is being tracked on the website");
   case ModInfo::FLAG_HIDDEN_FILES:
     return tr("Contains hidden files");
+  case ModInfo::FLAG_HEALTH_CHECK_ISSUE:
+    return tr("Health check found an unresolved issue for this mod");
   default:
     return "";
   }

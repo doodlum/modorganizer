@@ -361,4 +361,8 @@ struct CheckResult
 
 }  // namespace HealthCheck
 
+#include <QMetaType>
+
+Q_DECLARE_METATYPE(HealthCheck::CheckResult)
+
 #endif  // HEALTHCHECK_TYPES_H

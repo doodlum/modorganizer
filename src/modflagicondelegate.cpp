@@ -66,6 +66,8 @@ QString ModFlagIconDelegate::getFlagIcon(ModInfo::EFlag flag)
     return QString();
   case ModInfo::FLAG_TRACKED:
     return QStringLiteral(":/MO/gui/tracked");
+  case ModInfo::FLAG_HEALTH_CHECK_ISSUE:
+    return QStringLiteral(":/MO/gui/emblem_healthcheck");
   default:
     log::warn("ModInfo flag {} has no defined icon", flag);
     return QString();

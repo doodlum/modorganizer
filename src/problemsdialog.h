@@ -12,12 +12,21 @@ class ProblemsDialog;
 
 class PluginContainer;
 
+namespace HealthCheck
+{
+class HealthCheckManager;
+}
+
 class ProblemsDialog : public QDialog
 {
   Q_OBJECT
 
 public:
-  explicit ProblemsDialog(PluginContainer const& pluginContainer, QWidget* parent = 0);
+  // `healthCheck` is optional; when given, its unresolved issues are listed
+  // alongside the plugin diagnoses so MO2's notification button covers both.
+  explicit ProblemsDialog(PluginContainer const& pluginContainer,
+                          HealthCheck::HealthCheckManager* healthCheck = nullptr,
+                          QWidget* parent = 0);
   ~ProblemsDialog();
 
   // also saves and restores geometry
@@ -38,6 +47,7 @@ private slots:
 private:
   Ui::ProblemsDialog* ui;
   const PluginContainer& m_PluginContainer;
+  HealthCheck::HealthCheckManager* m_HealthCheck;
   bool m_hasProblems;
 };
 

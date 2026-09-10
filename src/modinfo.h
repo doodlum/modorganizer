@@ -94,6 +94,9 @@ public:  // Type definitions:
     FLAG_PLUGIN_SELECTED,
     FLAG_ALTERNATE_GAME,
     FLAG_TRACKED,
+    // set when the health check has an unresolved issue against this mod;
+    // gated behind the HealthCheck/modListIndicator feature flag
+    FLAG_HEALTH_CHECK_ISSUE,
   };
 
   enum EHighlight

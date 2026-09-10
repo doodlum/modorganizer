@@ -1,5 +1,7 @@
 #include "modinforegular.h"
 
+#include "healthcheck/healthcheckflagstore.h"
+
 #include "categories.h"
 #include "messagedialog.h"
 #include "moddatacontent.h"
@@ -708,6 +710,9 @@ std::vector<ModInfo::EFlag> ModInfoRegular::getFlags() const
   }
   if (m_IsAlternate && !m_Converted) {
     result.push_back(ModInfo::FLAG_ALTERNATE_GAME);
+  }
+  if (HealthCheck::FlagStore::instance().isFlagged(name())) {
+    result.push_back(ModInfo::FLAG_HEALTH_CHECK_ISSUE);
   }
   return result;
 }

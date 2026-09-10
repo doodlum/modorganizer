@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Health check toolbar icon: a clipboard with a pulse/heartbeat trace.
+
+  Drawn with an explicit palette rather than currentColor because MO2 toolbar
+  icons are composited into pixmaps (see MainWindow::updateProblemsButton),
+  which loses CSS inheritance. The colours are chosen to stay legible against
+  both light and dark toolbar backgrounds shipped with MO2's themes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- clipboard body -->
+  <rect x="5.5" y="4.5" width="21" height="24" rx="2.5"
+        fill="#f2f4f7" stroke="#4a5568" stroke-width="1.8"/>
+  <!-- clip -->
+  <rect x="11" y="2" width="10" height="5" rx="1.6"
+        fill="#8a94a6" stroke="#4a5568" stroke-width="1.6"/>
+  <!-- pulse trace -->
+  <polyline points="8.5,19 12,19 14,13.5 17.5,24 20,17.5 22,19 24,19"
+            fill="none" stroke="#d64545" stroke-width="2.1"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

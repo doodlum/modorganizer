@@ -902,6 +902,13 @@ public:
   DiagnosticsSettings& diagnostics();
   const DiagnosticsSettings& diagnostics() const;
 
+  // Direct access to the backing ini, for subsystems that own their own
+  // settings group and have no section class here. Used by the health
+  // check, which stores its feature flags under [HealthCheck] and its
+  // dismissed issues under [HealthCheckHidden].
+  //
+  QSettings& directInterface() { return m_Settings; }
+
   // makes sure the ini file is written to disk
   //
   QSettings::Status sync() const;

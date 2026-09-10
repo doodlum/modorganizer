@@ -36,6 +36,13 @@ along with Mod Organizer.  If not, see <http://www.gnu.org/licenses/>.
 #include "shared/fileregisterfwd.h"
 #include "systemtraymanager.h"
 
+#include "healthcheck/healthcheckmanager.h"
+
+namespace HealthCheck
+{
+class HealthCheckPanel;
+}
+
 class Executable;
 class CategoryFactory;
 class OrganizerCore;
@@ -326,6 +333,12 @@ private:
   std::atomic<bool> m_ProblemsCheckRequired;
   std::mutex m_CheckForProblemsMutex;
 
+  // Health check: the manager owns scheduling and results, the panel is the
+  // pop-out shown from the toolbar button. Both are created in the ctor.
+  HealthCheck::HealthCheckManager* m_HealthCheck = nullptr;
+  HealthCheck::HealthCheckPanel* m_HealthCheckPanel = nullptr;
+  QIcon m_originalHealthCheckIcon;
+
   QVersionNumber m_LastVersion;
 
   Executable* getSelectedExecutable();
@@ -415,6 +428,13 @@ private slots:
   // Only visually update the problems icon.
   void updateProblemsButton();
 
+  // Health check wiring: creates the manager and panel, connects the
+  // triggers MO2 can raise, and keeps the toolbar badge in step.
+  void setupHealthCheck();
+  void updateHealthCheckButton();
+  // Snapshot of the mod list and downloads for the worker thread.
+  HealthCheck::GatheredState gatherHealthCheckState() const;
+
   // Queue a problem check to allow collapsing of multiple requests in short amount of
   // time.
   void scheduleCheckForProblems();
@@ -450,6 +470,7 @@ private slots:  // ui slots
   void on_action_Refresh_triggered();
   void on_actionModify_Executables_triggered();
   void on_actionNexus_triggered();
+  void on_actionHealthCheck_triggered();
   void on_actionNotifications_triggered();
   void on_actionSettings_triggered();
   void on_actionUpdate_triggered();

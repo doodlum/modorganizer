@@ -1507,6 +1507,7 @@
    <addaction name="actionSettings"/>
    <addaction name="separator"/>
    <addaction name="actionEndorseMO"/>
+   <addaction name="actionHealthCheck"/>
    <addaction name="actionNotifications"/>
    <addaction name="actionUpdate"/>
    <addaction name="actionHelp"/>
@@ -1575,6 +1576,7 @@
     <addaction name="menuToolbars"/>
     <addaction name="actionViewLog"/>
     <addaction name="separator"/>
+    <addaction name="actionHealthCheck"/>
     <addaction name="actionNotifications"/>
    </widget>
    <widget class="QMenu" name="menuRun">
@@ -1815,6 +1817,24 @@
    </property>
    <property name="statusTip">
     <string>Mod Organizer is up-to-date</string>
+   </property>
+  </action>
+  <action name="actionHealthCheck">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/MO/gui/health_check</normaloff>:/MO/gui/health_check</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Health Check...</string>
+   </property>
+   <property name="toolTip">
+    <string>Open the health check panel</string>
+   </property>
+   <property name="statusTip">
+    <string>Review your mod list for missing requirements</string>
+   </property>
+   <property name="whatsThis">
+    <string>Checks your enabled mods against the file-level requirements their authors declared on Nexus Mods, and shows anything missing, out of date or disabled.</string>
    </property>
   </action>
   <action name="actionNotifications">

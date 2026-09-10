@@ -48,6 +48,10 @@ along with Mod Organizer.  If not, see <http://www.gnu.org/licenses/>.
 #include "messagedialog.h"
 #include "modinforegular.h"
 #include "modlist.h"
+
+#include "healthcheck/healthcheckflagstore.h"
+#include "healthcheck/healthcheckpanel.h"
+#include "healthcheck/nexusuid.h"
 #include "modlistcontextmenu.h"
 #include "modlistviewactions.h"
 #include "motddialog.h"
@@ -533,6 +537,7 @@ MainWindow::MainWindow(Settings& settings, OrganizerCore& organizerCore,
 
   QApplication::instance()->installEventFilter(this);
 
+  setupHealthCheck();
   scheduleCheckForProblems();
   refreshExecutablesList();
   updatePinnedExecutables();
@@ -617,6 +622,10 @@ void MainWindow::resetActionIcons()
     // the action's icon is used by the menu bar
     action->setIcon(icon);
 
+    if (action == ui->actionHealthCheck) {
+      m_originalHealthCheckIcon = icon;
+    }
+
     if (action == ui->actionNotifications) {
       // if the stylesheet has set a notification icon, remember it here so it
       // can be used in updateProblemsButton()
@@ -626,6 +635,7 @@ void MainWindow::resetActionIcons()
 
   // update the button for the potentially new icon
   updateProblemsButton();
+  updateHealthCheckButton();
 }
 
 MainWindow::~MainWindow()
@@ -1047,6 +1057,12 @@ void MainWindow::checkForProblemsImpl()
           numProblems += diagnose->activeProblems().size();
       }
     }
+    // Health check issues are core, not a diagnose plugin, so add them here
+    // to make MO2's notification button reflect them too.
+    if (m_HealthCheck != nullptr && m_HealthCheck->flags().notifications) {
+      numProblems += static_cast<size_t>(m_HealthCheck->counts().total);
+    }
+
     m_NumberOfProblems = numProblems;
     emit checkForProblemsDone();
   }
@@ -2230,6 +2246,10 @@ void MainWindow::processUpdates()
 void MainWindow::storeSettings()
 {
   auto& s = m_OrganizerCore.settings();
+
+  if (m_HealthCheck != nullptr) {
+    m_HealthCheck->saveState(s.directInterface());
+  }
 
   s.geometry().saveState(this);
   s.geometry().saveGeometry(this);
@@ -3739,7 +3759,7 @@ void MainWindow::on_actionNotifications_triggered()
 
   future.waitForFinished();
 
-  ProblemsDialog problems(m_PluginContainer, this);
+  ProblemsDialog problems(m_PluginContainer, m_HealthCheck, this);
   problems.exec();
 
   scheduleCheckForProblems();
@@ -4067,4 +4087,382 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
   }
 
   QMainWindow::keyReleaseEvent(event);
+}
+
+namespace
+{
+
+// MO2's stored Nexus credentials, in the order the v3 client prefers them.
+std::pair<QString, QString> healthCheckCredentials()
+{
+  // Vortex prefers an OAuth bearer token and falls back to the personal API
+  // key (packages/nexus-api-v3/src/client.ts:28-41); the client here does the
+  // same, so hand it whichever MO2 has.
+  QString apiKey;
+  GlobalSettings::nexusApiKey(apiKey);
+
+  QString bearer;
+  NexusOAuthTokens tokens;
+  if (GlobalSettings::nexusOAuthTokens(tokens) && !tokens.isExpired()) {
+    bearer = tokens.accessToken;
+    if (apiKey.isEmpty()) {
+      apiKey = tokens.apiKey;
+    }
+  }
+
+  return {apiKey, bearer};
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Health check
+//
+// Port of Vortex's health check feature. Scheduling and result handling live in
+// HealthCheck::HealthCheckManager; this is the MO2 side of the wiring: where the
+// data comes from, where issues are shown, and which MO2 events count as a
+// reason to re-run.
+// ---------------------------------------------------------------------------
+
+void MainWindow::setupHealthCheck()
+{
+  m_HealthCheck = new HealthCheck::HealthCheckManager(this);
+  m_HealthCheck->loadState(Settings::instance().directInterface());
+
+  m_HealthCheck->setUserAgent(
+      QStringLiteral("ModOrganizer2/%1").arg(m_OrganizerCore.getVersion().string()));
+
+  // The worker cannot touch the mod list, so it gets a snapshot taken here on
+  // the GUI thread at the start of each run.
+  m_HealthCheck->setStateProvider([this] {
+    return gatherHealthCheckState();
+  });
+
+  // Credentials are read per run, so a sign-in or token refresh between
+  // runs is picked up without any login signal to chase.
+  m_HealthCheck->setCredentialProvider([] {
+    return healthCheckCredentials();
+  });
+
+  m_HealthCheckPanel = new HealthCheck::HealthCheckPanel(*m_HealthCheck, this);
+
+  connect(m_HealthCheck, &HealthCheck::HealthCheckManager::resultChanged, this, [this] {
+    // Publish the flagged set before anything repaints, so the mod list and the
+    // toolbar badge always agree.
+    HealthCheck::FlagStore::instance().setFlaggedMods(m_HealthCheck->flaggedMods());
+    updateHealthCheckButton();
+    if (m_HealthCheckPanel != nullptr) {
+      m_HealthCheckPanel->refreshContents();
+    }
+    if (ui->modList->viewport() != nullptr) {
+      ui->modList->viewport()->update();
+    }
+  });
+
+  connect(m_HealthCheck, &HealthCheck::HealthCheckManager::runningChanged, this,
+          [this](bool) {
+            updateHealthCheckButton();
+            if (m_HealthCheckPanel != nullptr) {
+              m_HealthCheckPanel->refreshContents();
+            }
+          });
+
+  // Vortex raises a notification for a check that gave up
+  // (HealthCheckRegistry.ts:331-339).
+  connect(m_HealthCheck, &HealthCheck::HealthCheckManager::timedOut, this, [] {
+    log::warn("health check timed out and was stopped; refresh to try again");
+  });
+
+  connect(m_HealthCheck, &HealthCheck::HealthCheckManager::checkFailed, this,
+          [](const QString& message, const QString& details) {
+            log::warn("health check failed: {} ({})", message, details);
+          });
+
+  connect(m_HealthCheck, &HealthCheck::HealthCheckManager::issuesFound, this,
+          [this](int count) {
+            log::info("health check found {} issue(s) in your mod list", count);
+            // Fold into MO2's own notification count.
+            scheduleCheckForProblems();
+          });
+
+  // --- panel actions ------------------------------------------------------
+
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::refreshRequested, this,
+          [this] {
+            m_HealthCheck->run(HealthCheck::Trigger::Manual);
+          });
+
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::settingsRequested, this,
+          [this] {
+            m_HealthCheckPanel->hide();
+            on_actionSettings_triggered();
+          });
+
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::revealModRequested, this,
+          [this](const QString& modName) {
+            m_HealthCheckPanel->hide();
+            const unsigned int index = ModInfo::getIndex(modName);
+            if (index != UINT_MAX) {
+              ui->modList->scrollToAndSelect(
+                  m_OrganizerCore.modList()->index(static_cast<int>(index), 0));
+            }
+          });
+
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::installRequested, this,
+          [this](const QList<HealthCheck::DownloadTarget>& targets) {
+            m_HealthCheckPanel->hide();
+            for (const auto& target : targets) {
+              // The candidate carries composite UIDs; decode them back into the
+              // game-scoped mod/file ids an nxm link needs.
+              const auto modUID  = HealthCheck::decodeUID(target.candidate.modUID);
+              const auto fileUID = HealthCheck::decodeUID(target.candidate.fileUID);
+              if (!modUID.has_value() || !fileUID.has_value()) {
+                log::warn("health check: cannot resolve a download link for {}",
+                          target.candidate.modName);
+                continue;
+              }
+              const QString domain = m_HealthCheck->nexusDomainForGameId(modUID->gameId);
+              if (domain.isEmpty()) {
+                log::warn("health check: unknown Nexus game id {}", modUID->gameId);
+                continue;
+              }
+              const QString url = QStringLiteral("nxm://%1/mods/%2/files/%3")
+                                      .arg(domain)
+                                      .arg(modUID->id)
+                                      .arg(fileUID->id);
+              log::info("health check: starting download {}", url);
+              m_OrganizerCore.downloadManager()->addNXMDownload(url);
+            }
+          });
+
+  connect(m_HealthCheckPanel,
+          &HealthCheck::HealthCheckPanel::installDownloadedRequested, this,
+          [this](const QString& downloadId) {
+            m_HealthCheckPanel->hide();
+            bool ok         = false;
+            const int index = downloadId.toInt(&ok);
+            if (ok) {
+              m_OrganizerCore.installDownload(index);
+            }
+          });
+
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::versionSwitchRequested,
+          this, [this](const QString& wrongModName, const QString& correctModName) {
+            m_HealthCheckPanel->hide();
+            Profile* profile = m_OrganizerCore.currentProfile().get();
+            if (profile == nullptr) {
+              return;
+            }
+            // Enable the acceptable version first, then disable the wrong one, so
+            // the requirement is never momentarily unsatisfied.
+            const unsigned int correct = ModInfo::getIndex(correctModName);
+            if (correct != UINT_MAX) {
+              profile->setModEnabled(correct, true);
+            }
+            const unsigned int wrong = ModInfo::getIndex(wrongModName);
+            if (wrong != UINT_MAX) {
+              profile->setModEnabled(wrong, false);
+            }
+            profile->writeModlist();
+            m_OrganizerCore.refreshLists();
+          });
+
+  // --- re-run triggers ----------------------------------------------------
+  //
+  // Vortex listens for install / enable / disable / remove and download changes,
+  // debounced together (api/triggers.ts:60-126). These are MO2's equivalents.
+
+  connect(m_OrganizerCore.modList(), &ModList::modStatesChanged, this, [this] {
+    m_HealthCheck->scheduleModsChangedRun();
+  });
+
+  connect(&m_OrganizerCore, &OrganizerCore::modInstalled, this, [this] {
+    m_HealthCheck->scheduleModsChangedRun();
+  });
+
+  if (m_OrganizerCore.downloadManager() != nullptr) {
+    connect(m_OrganizerCore.downloadManager(), &DownloadManager::stateChanged, this,
+              [this](int, DownloadManager::DownloadState) {
+                m_HealthCheck->scheduleModsChangedRun();
+              });
+  }
+
+  updateHealthCheckButton();
+}
+
+HealthCheck::GatheredState MainWindow::gatherHealthCheckState() const
+{
+  HealthCheck::GatheredState state;
+
+  const MOBase::IPluginGame* game = m_OrganizerCore.managedGame();
+  if (game == nullptr) {
+    return state;
+  }
+  state.gameDomain = game->gameNexusName();
+
+  Profile* profile = m_OrganizerCore.currentProfile().get();
+
+  for (unsigned int i = 0; i < ModInfo::getNumMods(); ++i) {
+    ModInfo::Ptr info = ModInfo::getByIndex(i);
+    if (!info || info->isSeparator() || info->isForeign() || info->isBackup()) {
+      continue;
+    }
+
+    const int nexusId = info->nexusId();
+    if (nexusId <= 0) {
+      continue;
+    }
+
+    // MO2 records every Nexus file installed into a mod; the most recent entry
+    // for this mod id is the version currently in place, which is what Vortex
+    // reads from its single attributes.fileId (installedFiles.ts:101-108).
+    int fileId = 0;
+    for (const auto& installed : info->installedFiles()) {
+      if (installed.first == nexusId) {
+        fileId = installed.second;
+      }
+    }
+    if (fileId <= 0) {
+      continue;
+    }
+
+    HealthCheck::GatheredMod mod;
+    mod.modName     = info->name();
+    mod.displayName = info->name();
+    mod.gameDomain  = info->gameName().isEmpty() ? state.gameDomain : info->gameName();
+    mod.nexusModId  = nexusId;
+    mod.nexusFileId = fileId;
+    mod.enabled     = profile != nullptr && profile->modEnabled(i);
+    // MO2 has no collection-managed concept, so every mod emits its own
+    // requirements. Vortex excludes collection-installed mods here.
+    mod.collectionManaged = false;
+    mod.version           = info->version().canonicalString();
+    mod.fileName          = info->installationFile();
+
+    state.mods.append(mod);
+  }
+
+  DownloadManager* downloads = m_OrganizerCore.downloadManager();
+  if (downloads != nullptr) {
+    for (int i = 0; i < downloads->numTotalDownloads(); ++i) {
+      // Only archives the user has but has not installed count as a way to
+      // satisfy a requirement without downloading again.
+      const auto downloadState = downloads->getState(i);
+      if (downloadState != DownloadManager::STATE_READY &&
+          downloadState != DownloadManager::STATE_UNINSTALLED) {
+        continue;
+      }
+      if (downloads->isInfoIncomplete(i)) {
+        continue;
+      }
+
+      const MOBase::ModRepositoryFileInfo* fileInfo = downloads->getFileInfo(i);
+      if (fileInfo == nullptr || fileInfo->fileID <= 0) {
+        continue;
+      }
+
+      HealthCheck::GatheredDownload download;
+      download.downloadId = QString::number(i);
+      download.gameDomain =
+          fileInfo->gameName.isEmpty() ? state.gameDomain : fileInfo->gameName;
+      download.nexusModId  = fileInfo->modID;
+      download.nexusFileId = fileInfo->fileID;
+      download.modName     = fileInfo->modName;
+      download.fileName    = fileInfo->fileName;
+      download.version     = fileInfo->version.canonicalString();
+
+      state.downloads.append(download);
+    }
+  }
+
+  return state;
+}
+
+
+void MainWindow::updateHealthCheckButton()
+{
+  if (m_HealthCheck == nullptr) {
+    return;
+  }
+
+  // if the current stylesheet does not provide an icon, this is used instead
+  const char* DefaultIconName = ":/MO/gui/health_check";
+
+  const QIcon original = m_originalHealthCheckIcon.isNull()
+                             ? QIcon(DefaultIconName)
+                             : m_originalHealthCheckIcon;
+
+  const auto severity = m_HealthCheck->badgeSeverity();
+  const int issues    = m_HealthCheck->counts().total;
+
+  QIcon finalIcon = original;
+
+  if (severity.has_value()) {
+    // Same compositing approach as updateProblemsButton(): render the icon at a
+    // fixed size and paint an indicator into the corner. Vortex draws an
+    // equivalent dot on its menu entry (HealthCheckMenuBadge.tsx:37-44).
+    QPixmap merged = original.pixmap(64, 64).scaled(64, 64, Qt::KeepAspectRatio,
+                                                    Qt::SmoothTransformation);
+
+    {
+      QPainter painter(&merged);
+      painter.setRenderHint(QPainter::Antialiasing, true);
+
+      // Colour by severity band, matching the panel accents.
+      QColor colour;
+      switch (*severity) {
+      case HealthCheck::IssueSeverity::Error:
+        colour = QColor(0xC0, 0x39, 0x2B);
+        break;
+      case HealthCheck::IssueSeverity::Warning:
+        colour = QColor(0xE8, 0xA3, 0x17);
+        break;
+      case HealthCheck::IssueSeverity::Suggestion:
+        colour = QColor(0x21, 0x71, 0xB5);
+        break;
+      }
+
+      const int diameter = 30;
+      const QRect dot(merged.width() - diameter - 1, merged.height() - diameter - 1,
+                      diameter, diameter);
+
+      painter.setPen(QPen(QColor(0x20, 0x20, 0x20), 2));
+      painter.setBrush(colour);
+      painter.drawEllipse(dot);
+    }
+
+    finalIcon = QIcon(merged);
+
+    ui->actionHealthCheck->setToolTip(
+        tr("Health check found %n issue(s) in your mod list", nullptr, issues));
+  } else if (m_HealthCheck->isRunning()) {
+    ui->actionHealthCheck->setToolTip(tr("Health check is running..."));
+  } else if (m_HealthCheck->hasResult()) {
+    ui->actionHealthCheck->setToolTip(tr("Health check found no issues"));
+  } else {
+    ui->actionHealthCheck->setToolTip(tr("Open the health check panel"));
+  }
+
+  ui->actionHealthCheck->setIcon(finalIcon);
+
+  if (auto* actionWidget = ui->toolBar->widgetForAction(ui->actionHealthCheck)) {
+    if (auto* button = dynamic_cast<QAbstractButton*>(actionWidget)) {
+      button->setIcon(finalIcon);
+    }
+  }
+}
+
+void MainWindow::on_actionHealthCheck_triggered()
+{
+  if (m_HealthCheckPanel == nullptr) {
+    return;
+  }
+
+  // First open with no result yet: kick off a run so the panel has something to
+  // show rather than an indefinite empty state.
+  if (!m_HealthCheck->hasResult() && !m_HealthCheck->isRunning()) {
+    m_HealthCheck->run(HealthCheck::Trigger::Manual);
+  }
+
+  m_HealthCheckPanel->popupAt(ui->toolBar->widgetForAction(ui->actionHealthCheck));
 }

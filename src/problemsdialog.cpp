@@ -9,11 +9,16 @@
 
 #include "plugincontainer.h"
 
+#include "healthcheck/healthcheckentries.h"
+#include "healthcheck/healthcheckmanager.h"
+
 using namespace MOBase;
 
-ProblemsDialog::ProblemsDialog(const PluginContainer& pluginContainer, QWidget* parent)
+ProblemsDialog::ProblemsDialog(const PluginContainer& pluginContainer,
+                               HealthCheck::HealthCheckManager* healthCheck,
+                               QWidget* parent)
     : QDialog(parent), ui(new Ui::ProblemsDialog), m_PluginContainer(pluginContainer),
-      m_hasProblems(false)
+      m_HealthCheck(healthCheck), m_hasProblems(false)
 {
   ui->setupUi(this);
   ui->problemsWidget->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -41,6 +46,27 @@ void ProblemsDialog::runDiagnosis()
 {
   m_hasProblems = false;
   ui->problemsWidget->clear();
+
+  // Health check issues first: they are actionable in the panel and tend to
+  // be what the user just got notified about.
+  if (m_HealthCheck != nullptr) {
+    for (const HealthCheck::IssueEntry& entry : m_HealthCheck->entries()) {
+      if (entry.hidden) {
+        continue;
+      }
+      QTreeWidgetItem* item = new QTreeWidgetItem();
+      item->setText(0, HealthCheck::entryTitle(entry));
+      item->setData(0, Qt::UserRole,
+                    QStringLiteral("<b>%1</b><br>%2<br><br>%3")
+                        .arg(HealthCheck::entrySummary(entry),
+                             HealthCheck::entryDetailLine(entry),
+                             tr("Open the health check panel from the toolbar "
+                                "to resolve this.")));
+      ui->problemsWidget->addTopLevelItem(item);
+      item->setText(1, tr("See Health Check"));
+      m_hasProblems = true;
+    }
+  }
 
   for (IPluginDiagnose* diagnose : m_PluginContainer.plugins<IPluginDiagnose>()) {
     if (!m_PluginContainer.isEnabled(diagnose)) {
