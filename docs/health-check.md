@@ -52,12 +52,73 @@ Settings live behind the panel's Settings button. Everything is stored under
 | `notifications` | `true` | **MO2 only.** Count issues towards notifications |
 | `modListIndicator` | `true` | **MO2 only.** Flag affected mods in the mod list |
 | `suppressSelfRequirement` | `false` | **MO2 only.** Treat "requires Mod Organizer 2" as satisfied |
+| `showPremiumInfo` | `true` | **MO2 only.** Explain the website step before opening mod pages |
+| `simulateFreeAccount` | `false` | Testing aid: report the account as free. Only ever downgrades |
 
 The MO2-only options are additive: turning them all off leaves the check
 behaving exactly as Vortex does. `suppressSelfRequirement` defaults to off for
 that reason — Vortex suppresses requirements on *its* own Nexus listing
 (`mapRequirementsReport.ts:211-214`) but not on MO2's, so matching it means
 leaving MO2's unsuppressed.
+
+## Premium and free accounts
+
+Nexus Mods issues direct download links to a mod manager only for Premium
+accounts. Everyone else authorises each download in the browser: pressing
+**Mod Manager Download** on the file hands the link back through `nxm://`,
+and Mod Organizer downloads and installs it as usual. That is a property of
+the API, not a policy invented here, and it is why the 1-click actions are
+gated.
+
+Free accounts therefore see:
+
+- a standing note at the top of the listing saying install buttons will open
+  the mod page;
+- a **Premium** pill on any gated button;
+- an explanation when such a button is pressed, before anything opens.
+
+Pressing a gated button opens the file's Nexus page with `?tab=files&file_id=…&nmm=1`
+— the same URL Vortex builds in
+`fileRequirementActions.ts:259-270` (`openFilePage`), including the `nmm=1`
+that `show_file` would not give.
+
+The gate lives on the single install path in `MainWindow`, not only in the
+button handler, mirroring Vortex putting it inside `downloadFileRequirement`
+(`fileRequirementActions.ts:55-58`) so no route can bypass it.
+
+### How the upsell differs from Vortex's
+
+Vortex's modal (`components/premium_modal/PremiumModal.tsx`) opens with the
+pitch — *"Skip the website and install instantly."* — lists four membership
+benefits, and makes **Unlock 1-click installs** the primary button, with the
+route the user can actually take now as the secondary.
+
+This one keeps the same gate and the same two choices, and inverts the
+emphasis:
+
+- it opens by explaining *why* the button did not download, in terms of how
+  Nexus authorises downloads;
+- it states exactly what continuing will do ("opens 2 mod pages in your
+  browser, one per file");
+- the default button is the free route, because that is what resolves the
+  issue the user clicked on;
+- Premium appears as **What Premium changes** — two factual lines about
+  downloading, the two of Vortex's four that are relevant next to a download
+  that was just gated — followed by "Both routes install the same files. The
+  free route takes more clicks; it is not otherwise limited.";
+- **Read about Premium** is a plainly-labelled third option linking to
+  `nexusmods.com/premium`, with no campaign or referral parameters. Vortex tags
+  its link for attribution (`PremiumModal.tsx:158-164`).
+
+Vortex also re-checks the membership while its modal is open and runs the
+gated action if it changes (`PremiumModal.tsx:75-100`). The equivalent here is
+that the account tier is read fresh on every use rather than cached, so a
+membership bought mid-session takes effect on the next press without a
+restart.
+
+To exercise the free route from a premium account, set
+`HealthCheck/simulateFreeAccount=true`. It only ever downgrades, so it cannot
+make a free account look premium and slip past the gate.
 
 ## Theming
 
@@ -74,7 +135,9 @@ light and dark. Themes can target these object names:
 #healthCheckTabs             #healthCheckTabActive      #healthCheckTabHidden
 #healthCheckInstallAll       #healthCheckRefresh        #healthCheckSettings
 #healthCheckDetailCard       #healthCheckDetailTitle    #healthCheckBranchAction
-#healthCheckSeverityAccent
+#healthCheckSeverityAccent      #healthCheckPremiumBadge   #healthCheckPremiumBanner
+#healthCheckPremiumBannerText   #healthCheckPremiumBannerLink
+#healthCheckPremiumDialog       #healthCheckPremiumHeading #healthCheckPremiumDifference
 ```
 
 Rows carry a `severity` property (`suggestion`, `warning`, `error`) and a
@@ -90,7 +153,11 @@ QFrame#healthCheckRow[severity="warning"] { background-color: #2b2b2b; }
 #healthCheckSeverityAccent[severity="warning"] {
     qproperty-accentColor: #e8a317;
 }
+
+#healthCheckPremiumBadge { qproperty-badgeColor: #7a5cff; }
 ```
+
+The premium badge is painted for the same reason as the severity stripe.
 
 ## Verification
 
@@ -112,10 +179,6 @@ separate setting. The architecture has room for it — severity already carries 
 
 Also not ported, and deliberately so:
 
-- **Premium gating.** Vortex shows a premium upsell modal before a 1-click
-  install for non-premium users (`components/premium_modal/PremiumModal.tsx`).
-  MO2 hands downloads to its own download manager, which already handles the
-  free/premium distinction.
 - **Feedback prompts.** Vortex's per-issue "was this helpful?" controls
   (`components/entry_actions/EntryActions.tsx`) feed its analytics pipeline.
 - **Analytics.** The whole tracking layer (`utils/shared/tracking.ts`,
@@ -145,7 +208,17 @@ Observations from reading the source. Nothing here was changed in Vortex.
    tallies `passed/failed/warning/error`, but `IHealthCheckResult["status"]`
    allows `failed` and no check ever produces it, so that bucket is always zero.
 
-4. **A timed-out check's result is dropped, but the check keeps running.**
+4. **Supporters get a 1-click install that cannot work.** `shouldShowPremiumAd`
+   is `!isPremium && !isSupporter` (`selectors.ts:38-47`), so a supporter sees
+   no badge and no modal, and `ListingRow.tsx:110-115` falls straight through to
+   `runQuickInstall()`. But `PremiumModal.tsx:80-81` states plainly that
+   "supporters can't download through the client either", and
+   `downloadFileRequirement` gates on the same selector
+   (`fileRequirementActions.ts:55-58`), so the download is attempted rather than
+   redirected. MO2's account model has no supporter tier, so a supporter reads
+   as free here and is offered the website route — which works.
+
+5. **A timed-out check's result is dropped, but the check keeps running.**
    `HealthCheckRegistry.ts:206-231` aborts and reports, then releases the slot
    only when the body finally settles. That is deliberate and documented, but it
    means a check that ignores its `AbortSignal` can hold the slot indefinitely;

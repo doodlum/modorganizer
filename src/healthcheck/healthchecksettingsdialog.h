@@ -42,6 +42,7 @@ private:
   QCheckBox* m_autoRun                 = nullptr;
   QCheckBox* m_notifications           = nullptr;
   QCheckBox* m_modListIndicator        = nullptr;
+  QCheckBox* m_showPremiumInfo         = nullptr;
   QCheckBox* m_suppressSelfRequirement = nullptr;
 };
 

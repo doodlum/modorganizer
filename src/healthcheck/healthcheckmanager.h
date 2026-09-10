@@ -24,6 +24,35 @@ class NexusV3Client;
 class CheckWorker;
 
 /**
+ * The user's Nexus account tier, as far as the health check needs to care.
+ *
+ *
+ * Nexus only issues direct download links to the app for Premium accounts;
+ * everyone
+ * else authorises each download on the website, which hands the link
+ * back through
+ * nxm://. That is a property of the API, not a policy invented
+ * here, and it is why
+ * the 1-click actions are gated.
+ *
+ * Vortex draws the same line in
+ *
+ * extensions/nexus_integration/selectors.ts:38-47 (shouldShowPremiumAd), which
+ * is
+ * false for premium *and* supporter accounts. MO2's APIUserAccountTypes has
+ * no
+ * supporter value, so a supporter reads as Free here and is offered the
+ * website
+ * route. See docs/health-check.md for why that is the safer way round.
+ */
+enum class AccountTier
+{
+  NotLoggedIn,
+  Free,
+  Premium
+};
+
+/**
  * Feature flags, all stored under the [HealthCheck] settings group.
  *
  * Everything that is not a faithful port of Vortex behaviour is gated here, so
@@ -73,6 +102,22 @@ struct FeatureFlags
    */
   bool autoRun = true;
 
+  /**
+   * MO2 ADDITION - show the premium/free explanation before falling back to
+   * the website route, rather than going straight there. Vortex always
+   * shows its modal (ListingRow.tsx:110-115), so this defaults on.
+   * Key: HealthCheck/showPremiumInfo
+   */
+  bool showPremiumInfo = true;
+
+  /**
+   * TESTING AID - report the account as Free whatever it really is, so the
+   * free-user route can be exercised from a premium account. Never gates
+   * anything else, and is off unless explicitly set.
+   * Key: HealthCheck/simulateFreeAccount
+   */
+  bool simulateFreeAccount = false;
+
   static FeatureFlags load(QSettings& settings);
   void save(QSettings& settings) const;
 };
@@ -118,6 +163,22 @@ public:
    * "not logged in" pass. Returns {apiKey, bearerToken}.
    */
   void setCredentialProvider(std::function<std::pair<QString, QString>()> provider);
+
+  /**
+   * The user's account tier, read per use for the same reason credentials
+   * are: a membership bought mid-session should take effect without a
+   * restart. Vortex watches for exactly that while its upsell is open
+   * (PremiumModal.tsx:75-100).
+   */
+  void setAccountProvider(std::function<AccountTier()> provider);
+  AccountTier accountTier() const;
+
+  /**
+   * Whether 1-click actions should route through the website instead of
+   * downloading directly, and so whether to explain why.
+   * Vortex: shouldShowPremiumAd (selectors.ts:38-47).
+   */
+  bool shouldShowPremiumUpsell() const;
 
   /** Set credentials directly; mainly for tests. */
   void setCredentials(const QString& apiKey, const QString& bearerToken);
@@ -179,6 +240,7 @@ private:
   FeatureFlags m_flags;
   std::function<GatheredState()> m_stateProvider;
   std::function<std::pair<QString, QString>()> m_credentialProvider;
+  std::function<AccountTier()> m_accountProvider;
 
   QThread* m_thread     = nullptr;
   CheckWorker* m_worker = nullptr;

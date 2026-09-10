@@ -52,6 +52,44 @@ private:
 };
 
 /**
+ * The small "Premium" pill shown against gated actions.
+ *
+ * Painted for the same
+ * reason as SeverityAccent: an application stylesheet
+ * takes precedence over a widget
+ * palette, so a themed MO2 would drop the
+ * background and leave bare text. The colour
+ * is a Q_PROPERTY, so a theme can
+ * still set it:
+ *
+ *   #healthCheckPremiumBadge {
+ * qproperty-badgeColor: #7a5cff; }
+ *
+ * Vortex's equivalent is
+ * ui/components/premium_badge/PremiumBadge.
+ */
+class PremiumBadge : public QWidget
+{
+  Q_OBJECT
+  Q_PROPERTY(QColor badgeColor READ badgeColor WRITE setBadgeColor)
+
+public:
+  explicit PremiumBadge(QWidget* parent = nullptr);
+
+  QColor badgeColor() const { return m_color; }
+  void setBadgeColor(const QColor& color);
+
+  QSize sizeHint() const override;
+
+protected:
+  void paintEvent(QPaintEvent* event) override;
+
+private:
+  QColor m_color;
+  QString m_text;
+};
+
+/**
  * The health check pop-out.
  *
  * A frameless panel anchored under the toolbar button, closing when focus
@@ -92,6 +130,8 @@ signals:
   void revealModRequested(const QString& modName);
   /** The user asked to open a mod page. */
   void openModPageRequested(const QString& modUID);
+  /** The user asked what the premium/free difference means. */
+  void premiumInfoRequested();
   /** The user opened health check settings. */
   void settingsRequested();
   /** The user asked for a fresh run. */
@@ -105,6 +145,10 @@ private:
   void rebuildList();
   QWidget* createEntryRow(const IssueEntry& entry);
   QWidget* createEmptyState();
+  // Free accounts download through the website; the badge and banner say
+  // so before a 1-click button is pressed rather than after.
+  QWidget* createPremiumBanner();
+  QWidget* createPremiumBadge();
   void updateHeader();
   void showDetail(const IssueEntry& entry);
   void showListing();
@@ -119,6 +163,7 @@ private:
   QPushButton* m_activeTab  = nullptr;
   QPushButton* m_hiddenTab  = nullptr;
   QPushButton* m_installAll = nullptr;
+  QWidget* m_premiumBanner  = nullptr;
   QPushButton* m_backButton = nullptr;
 
   QStackedWidget* m_stack   = nullptr;

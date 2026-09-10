@@ -34,6 +34,11 @@ FeatureFlags FeatureFlags::load(QSettings& settings)
   flags.notifications =
       settings.value(QStringLiteral("notifications"), flags.notifications).toBool();
   flags.autoRun = settings.value(QStringLiteral("autoRun"), flags.autoRun).toBool();
+  flags.showPremiumInfo =
+      settings.value(QStringLiteral("showPremiumInfo"), flags.showPremiumInfo).toBool();
+  flags.simulateFreeAccount =
+      settings.value(QStringLiteral("simulateFreeAccount"), flags.simulateFreeAccount)
+          .toBool();
   settings.endGroup();
   return flags;
 }
@@ -47,6 +52,8 @@ void FeatureFlags::save(QSettings& settings) const
   settings.setValue(QStringLiteral("modListIndicator"), modListIndicator);
   settings.setValue(QStringLiteral("notifications"), notifications);
   settings.setValue(QStringLiteral("autoRun"), autoRun);
+  settings.setValue(QStringLiteral("showPremiumInfo"), showPremiumInfo);
+  settings.setValue(QStringLiteral("simulateFreeAccount"), simulateFreeAccount);
   settings.endGroup();
 }
 
@@ -175,6 +182,34 @@ HealthCheckManager::~HealthCheckManager()
 void HealthCheckManager::setStateProvider(std::function<GatheredState()> provider)
 {
   m_stateProvider = std::move(provider);
+}
+
+void HealthCheckManager::setAccountProvider(std::function<AccountTier()> provider)
+{
+  m_accountProvider = std::move(provider);
+}
+
+AccountTier HealthCheckManager::accountTier() const
+{
+  if (!m_accountProvider) {
+    return AccountTier::NotLoggedIn;
+  }
+
+  const AccountTier tier = m_accountProvider();
+  // The testing aid only ever downgrades, so it cannot make a free account look
+  // premium and slip past the gate.
+  if (m_flags.simulateFreeAccount && tier == AccountTier::Premium) {
+    return AccountTier::Free;
+  }
+  return tier;
+}
+
+bool HealthCheckManager::shouldShowPremiumUpsell() const
+{
+  // Vortex: selectors.ts:38-47. False when not logged in - there is nothing to
+  // explain to somebody with no account state yet, and the check reports a pass
+  // in that case anyway.
+  return accountTier() == AccountTier::Free;
 }
 
 void HealthCheckManager::setCredentialProvider(

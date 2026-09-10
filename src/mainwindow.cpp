@@ -51,6 +51,7 @@ along with Mod Organizer.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "healthcheck/healthcheckflagstore.h"
 #include "healthcheck/healthcheckpanel.h"
+#include "healthcheck/healthcheckpremiumdialog.h"
 #include "healthcheck/healthchecksettingsdialog.h"
 #include "healthcheck/nexusuid.h"
 #include "modlistcontextmenu.h"
@@ -4093,6 +4094,40 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 namespace
 {
 
+// The Nexus page for a file, with the flag that makes the site offer the
+// "Mod Manager Download" button - the route a free account uses to authorise a
+// download, which hands the link straight back through nxm://.
+//
+// Vortex builds the same URL in
+// health_check/utils/fileRequirements/fileRequirementActions.ts:259-270
+// (openFilePage), including the nmm=1 that show_file would not give.
+QString nexusFilePageUrl(const HealthCheck::HealthCheckManager& healthCheck,
+                         const QString& modUID, const QString& fileUID)
+{
+  const auto mod  = HealthCheck::decodeUID(modUID);
+  const auto file = HealthCheck::decodeUID(fileUID);
+  if (!mod.has_value() || !file.has_value()) {
+    return {};
+  }
+
+  const QString domain = healthCheck.nexusDomainForGameId(mod->gameId);
+  if (domain.isEmpty()) {
+    return {};
+  }
+
+  return QStringLiteral(
+             "https://www.nexusmods.com/%1/mods/%2?tab=files&file_id=%3&nmm=1")
+      .arg(domain)
+      .arg(mod->id)
+      .arg(file->id);
+}
+
+// Where Nexus explains the membership. Deliberately the plain page, with no
+// campaign or referral parameters attached: Vortex tags its link for attribution
+// (PremiumModal.tsx:158-164), which is a marketing concern rather than the
+// user's.
+const char* const NEXUS_PREMIUM_URL = "https://www.nexusmods.com/premium";
+
 // Nexus domain for a game MO2 knows by its short name.
 //
 // meta.ini and download metadata store the game's *short* name ("Fallout4"),
@@ -4170,6 +4205,20 @@ void MainWindow::setupHealthCheck()
   // runs is picked up without any login signal to chase.
   m_HealthCheck->setCredentialProvider([] {
     return healthCheckCredentials();
+  });
+
+  // Read per use as well, so a membership bought mid-session is honoured
+  // without a restart.
+  m_HealthCheck->setAccountProvider([] {
+    switch (NexusInterface::instance().getAPIUserAccount().type()) {
+    case APIUserAccountTypes::Premium:
+      return HealthCheck::AccountTier::Premium;
+    case APIUserAccountTypes::Regular:
+      return HealthCheck::AccountTier::Free;
+    case APIUserAccountTypes::None:
+      break;
+    }
+    return HealthCheck::AccountTier::NotLoggedIn;
   });
 
   m_HealthCheckPanel = new HealthCheck::HealthCheckPanel(*m_HealthCheck, this);
@@ -4256,6 +4305,17 @@ void MainWindow::setupHealthCheck()
   connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::installRequested, this,
           [this](const QList<HealthCheck::DownloadTarget>& targets) {
             m_HealthCheckPanel->hide();
+
+            // Nexus only issues direct download links to the app for Premium
+            // accounts, so a free account is routed to the mod page instead.
+            // The gate lives here, on the one path every install button ends
+            // up in, exactly as Vortex puts it inside
+            // downloadFileRequirement (fileRequirementActions.ts:55-58)
+            // rather than only in the button handler.
+            if (m_HealthCheck->shouldShowPremiumUpsell()) {
+              openHealthCheckFilePages(targets);
+              return;
+            }
             for (const auto& target : targets) {
               // The candidate carries composite UIDs; decode them back into the
               // game-scoped mod/file ids an nxm link needs.
@@ -4441,6 +4501,56 @@ HealthCheck::GatheredState MainWindow::gatherHealthCheckState() const
   }
 
   return state;
+}
+
+void MainWindow::openHealthCheckFilePages(
+    const QList<HealthCheck::DownloadTarget>& targets)
+{
+  if (targets.isEmpty()) {
+    return;
+  }
+
+  // Resolve first: a target whose ids do not decode has no page to open, and
+  // promising to open five pages then opening three reads as a failure.
+  QStringList urls;
+  for (const auto& target : targets) {
+    const QString url = nexusFilePageUrl(*m_HealthCheck, target.candidate.modUID,
+                                         target.candidate.fileUID);
+    if (url.isEmpty()) {
+      log::warn("health check: cannot resolve a mod page for {}",
+                target.candidate.modName);
+      continue;
+    }
+    urls.append(url);
+  }
+
+  if (urls.isEmpty()) {
+    log::warn("health check: no mod pages could be resolved for this action");
+    return;
+  }
+
+  if (m_HealthCheck->flags().showPremiumInfo) {
+    const auto scope = urls.size() == 1
+                           ? HealthCheck::HealthCheckPremiumDialog::Scope::Single
+                           : HealthCheck::HealthCheckPremiumDialog::Scope::Several;
+
+    HealthCheck::HealthCheckPremiumDialog dialog(scope, static_cast<int>(urls.size()),
+                                                 this);
+    if (dialog.exec() != QDialog::Accepted) {
+      return;
+    }
+
+    if (dialog.choice() ==
+        HealthCheck::HealthCheckPremiumDialog::Choice::ReadAboutPremium) {
+      MOBase::shell::Open(QUrl(NEXUS_PREMIUM_URL));
+      return;
+    }
+  }
+
+  for (const QString& url : urls) {
+    log::info("health check: opening {}", url);
+    MOBase::shell::Open(QUrl(url));
+  }
 }
 
 void MainWindow::updateHealthCheckButton()

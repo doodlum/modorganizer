@@ -108,6 +108,63 @@ namespace
 
 }  // namespace
 
+PremiumBadge::PremiumBadge(QWidget* parent) : QWidget(parent), m_text(tr("Premium"))
+{
+  setObjectName(QStringLiteral("healthCheckPremiumBadge"));
+  setToolTip(tr("Direct downloads from inside Mod Organizer need a Premium Nexus Mods "
+                "account; free accounts authorise each download on the website."));
+
+  // A pill, not a panel: without this the layout stretches it to fill its cell
+  // and the rounded ends turn into an oval.
+  setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+  // Nexus renders premium in a violet; derived per theme so it stays legible on
+  // both a light and a dark panel.
+  const bool dark = palette().color(QPalette::Window).lightness() < 128;
+  m_color         = dark ? QColor(0x9B, 0x82, 0xFF) : QColor(0x6B, 0x4B, 0xE8);
+}
+
+void PremiumBadge::setBadgeColor(const QColor& color)
+{
+  if (m_color != color) {
+    m_color = color;
+    update();
+  }
+}
+
+QSize PremiumBadge::sizeHint() const
+{
+  QFont font = this->font();
+  font.setBold(true);
+  font.setPointSizeF(qMax(6.0, font.pointSizeF() - 1.0));
+
+  const QSize text = QFontMetrics(font).size(Qt::TextSingleLine, m_text);
+  return {text.width() + 12, text.height() + 4};
+}
+
+void PremiumBadge::paintEvent(QPaintEvent*)
+{
+  QPainter painter(this);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  const QRectF pill  = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+  const qreal radius = pill.height() / 2.0;
+
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(m_color);
+  painter.drawRoundedRect(pill, radius, radius);
+
+  QFont font = this->font();
+  font.setBold(true);
+  font.setPointSizeF(qMax(6.0, font.pointSizeF() - 1.0));
+  painter.setFont(font);
+
+  // Pick the text colour off the fill rather than the palette, so a theme that
+  // sets badgeColor does not have to also fix the contrast.
+  painter.setPen(m_color.lightness() < 140 ? Qt::white : Qt::black);
+  painter.drawText(rect(), Qt::AlignCenter, m_text);
+}
+
 SeverityAccent::SeverityAccent(QWidget* parent) : QWidget(parent)
 {
   setObjectName(QStringLiteral("healthCheckSeverityAccent"));
@@ -423,18 +480,76 @@ void HealthCheckPanel::rebuildList()
     delete item;
   }
 
+  // `shown` counts every inserted widget, `rows` only the issues: the banner is
+  // a widget but not an issue, and an empty list still has to say so.
   int shown = 0;
+  int rows  = 0;
+
+  // Only against the active list: the hidden tab is a review surface, not a
+  // place anything gets installed from.
+  if (!m_showingHidden && m_manager.shouldShowPremiumUpsell()) {
+    m_listLayout->insertWidget(shown++, createPremiumBanner());
+  }
+
   for (const IssueEntry& entry : m_manager.entries()) {
     if (entry.hidden != m_showingHidden) {
       continue;
     }
     m_listLayout->insertWidget(shown, createEntryRow(entry));
     shown += 1;
+    rows += 1;
   }
 
-  if (shown == 0) {
-    m_listLayout->insertWidget(0, createEmptyState());
+  if (rows == 0) {
+    m_listLayout->insertWidget(shown, createEmptyState());
   }
+}
+
+/**
+ * A short standing note for free accounts, so the website step is not a
+ * surprise sprung by a button press.
+ *
+ * Vortex shows a banner in the same place
+ * (components/premium_banner/PremiumBanner.tsx), worded as an ad -
+ * "Download requirements in 1-click. No page visits or waiting. Go premium".
+ * This states what will happen instead, and offers the explanation rather than
+ * the purchase.
+ */
+QWidget* HealthCheckPanel::createPremiumBanner()
+{
+  auto* banner = new QFrame;
+  banner->setObjectName(QStringLiteral("healthCheckPremiumBanner"));
+  banner->setFrameShape(QFrame::StyledPanel);
+  banner->setAttribute(Qt::WA_StyledBackground, true);
+
+  auto* layout = new QHBoxLayout(banner);
+  layout->setContentsMargins(10, 6, 10, 6);
+  layout->setSpacing(8);
+
+  layout->addWidget(createPremiumBadge(), 0, Qt::AlignVCenter);
+
+  auto* text = makeLabel(
+      tr("Your account authorises downloads on the Nexus Mods website, so the install "
+         "buttons open the mod page instead of downloading directly."),
+      QStringLiteral("healthCheckPremiumBannerText"));
+  text->setEnabled(false);
+  layout->addWidget(text, 1);
+
+  auto* explain = new QPushButton(tr("Why?"));
+  explain->setObjectName(QStringLiteral("healthCheckPremiumBannerLink"));
+  explain->setFlat(true);
+  explain->setCursor(Qt::PointingHandCursor);
+  connect(explain, &QPushButton::clicked, this,
+          &HealthCheckPanel::premiumInfoRequested);
+  layout->addWidget(explain);
+
+  return banner;
+}
+
+/** The "Premium" pill Vortex puts on gated buttons (ui/components/premium_badge). */
+QWidget* HealthCheckPanel::createPremiumBadge()
+{
+  return new PremiumBadge;
 }
 
 QWidget* HealthCheckPanel::createEmptyState()
@@ -533,6 +648,14 @@ QWidget* HealthCheckPanel::createEntryRow(const IssueEntry& entry)
 
   auto* action = new QPushButton(actionLabel(entry, static_cast<int>(targets.size())));
   action->setObjectName(QStringLiteral("healthCheckRowAction"));
+  // A 1-click action on a free account routes through the website; say so
+  // on the button, as Vortex does (ListingRow.tsx:127).
+  const bool gated = canQuickInstall(entry.category) && !targets.isEmpty() &&
+                     m_manager.shouldShowPremiumUpsell();
+  if (gated) {
+    action->setToolTip(tr("Opens the mod page so the download can be "
+                          "authorised there."));
+  }
   connect(action, &QPushButton::clicked, this, [this, entry, targets] {
     switch (entry.category) {
     case RequirementCategory::Download:
@@ -565,7 +688,15 @@ QWidget* HealthCheckPanel::createEntryRow(const IssueEntry& entry)
       break;
     }
   });
-  buttons->addWidget(action);
+  if (gated) {
+    auto* actionRow = new QHBoxLayout;
+    actionRow->setSpacing(4);
+    actionRow->addWidget(createPremiumBadge(), 0, Qt::AlignVCenter);
+    actionRow->addWidget(action, 1);
+    buttons->addLayout(actionRow);
+  } else {
+    buttons->addWidget(action);
+  }
 
   auto* details = new QPushButton(tr("Details"));
   details->setObjectName(QStringLiteral("healthCheckRowDetails"));

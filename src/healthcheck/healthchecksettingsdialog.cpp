@@ -106,6 +106,14 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
       tr("Show an icon in the flags column of any mod with an unresolved issue."),
       flags.modListIndicator);
 
+  m_showPremiumInfo =
+      addOption(extrasLayout, QStringLiteral("healthCheckShowPremiumInfo"),
+                tr("Explain the website download step"),
+                tr("On a free Nexus Mods account, install buttons open the mod page "
+                   "so the download can be authorised there. With this on, Mod "
+                   "Organizer says so first; with it off, it just opens the pages."),
+                flags.showPremiumInfo);
+
   m_suppressSelfRequirement = addOption(
       extrasLayout, QStringLiteral("healthCheckSuppressSelf"),
       tr("Ignore requirements on Mod Organizer itself"),
@@ -120,8 +128,9 @@ HealthCheckSettingsDialog::HealthCheckSettingsDialog(const FeatureFlags& flags,
   // Dependent options read as disabled when the master switch is off.
   const auto syncEnabled = [this] {
     const bool on = m_enabled->isChecked();
-    for (QCheckBox* box : {m_fileRequirements, m_autoRun, m_notifications,
-                           m_modListIndicator, m_suppressSelfRequirement}) {
+    for (QCheckBox* box :
+         {m_fileRequirements, m_autoRun, m_notifications, m_modListIndicator,
+          m_suppressSelfRequirement, m_showPremiumInfo}) {
       box->setEnabled(on);
     }
   };
@@ -144,6 +153,7 @@ FeatureFlags HealthCheckSettingsDialog::flags() const
   out.notifications           = m_notifications->isChecked();
   out.modListIndicator        = m_modListIndicator->isChecked();
   out.suppressSelfRequirement = m_suppressSelfRequirement->isChecked();
+  out.showPremiumInfo         = m_showPremiumInfo->isChecked();
   return out;
 }
 

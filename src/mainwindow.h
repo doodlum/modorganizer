@@ -434,6 +434,9 @@ private slots:
   void updateHealthCheckButton();
   // Snapshot of the mod list and downloads for the worker thread.
   HealthCheck::GatheredState gatherHealthCheckState() const;
+  // The free-account route for a gated 1-click action: explain the
+  // website step, then open the file pages that authorise it.
+  void openHealthCheckFilePages(const QList<HealthCheck::DownloadTarget>& targets);
 
   // Queue a problem check to allow collapsing of multiple requests in short amount of
   // time.
