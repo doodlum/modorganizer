@@ -15,6 +15,7 @@
 #include <QStackedWidget>
 #include <QStyle>
 #include <QToolButton>
+#include <QPainter>
 #include <QVBoxLayout>
 
 namespace HealthCheck
@@ -106,6 +107,29 @@ namespace
   }
 
 }  // namespace
+
+SeverityAccent::SeverityAccent(QWidget* parent) : QWidget(parent)
+{
+  setObjectName(QStringLiteral("healthCheckSeverityAccent"));
+  setFixedWidth(4);
+}
+
+void SeverityAccent::setAccentColor(const QColor& color)
+{
+  if (m_color != color) {
+    m_color = color;
+    update();
+  }
+}
+
+void SeverityAccent::paintEvent(QPaintEvent*)
+{
+  if (!m_color.isValid()) {
+    return;
+  }
+  QPainter painter(this);
+  painter.fillRect(rect(), m_color);
+}
 
 HealthCheckPanel::HealthCheckPanel(HealthCheckManager& manager, QWidget* parent)
     : QFrame(parent, Qt::Popup), m_manager(manager)
@@ -472,15 +496,12 @@ QWidget* HealthCheckPanel::createEntryRow(const IssueEntry& entry)
   layout->setContentsMargins(10, 8, 10, 8);
   layout->setSpacing(10);
 
-  // Severity accent stripe; painted from the palette so any theme works, and
-  // overridable via the objectName.
-  auto* accent = new QFrame;
-  accent->setObjectName(QStringLiteral("healthCheckSeverityAccent"));
-  accent->setFixedWidth(4);
-  accent->setAutoFillBackground(true);
-  QPalette accentPalette = accent->palette();
-  accentPalette.setColor(QPalette::Window, severityColor(entry.severity, palette()));
-  accent->setPalette(accentPalette);
+  // Severity accent stripe. The default colour comes from the palette so an
+  // unstyled theme still reads correctly; a stylesheet can override it through
+  // the accentColor property (see SeverityAccent).
+  auto* accent = new SeverityAccent;
+  accent->setProperty("severity", severityName(entry.severity));
+  accent->setAccentColor(severityColor(entry.severity, palette()));
   layout->addWidget(accent);
 
   auto* text = new QVBoxLayout;

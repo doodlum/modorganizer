@@ -51,6 +51,7 @@ along with Mod Organizer.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "healthcheck/healthcheckflagstore.h"
 #include "healthcheck/healthcheckpanel.h"
+#include "healthcheck/healthchecksettingsdialog.h"
 #include "healthcheck/nexusuid.h"
 #include "modlistcontextmenu.h"
 #include "modlistviewactions.h"
@@ -4192,10 +4193,29 @@ void MainWindow::setupHealthCheck()
             m_HealthCheck->run(HealthCheck::Trigger::Manual);
           });
 
-  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::settingsRequested, this,
-          [this] {
+  connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::settingsRequested,
+          this, [this] {
             m_HealthCheckPanel->hide();
-            on_actionSettings_triggered();
+  
+            HealthCheck::HealthCheckSettingsDialog dialog(m_HealthCheck->flags(),
+                                                          this);
+            if (dialog.exec() != QDialog::Accepted) {
+              return;
+            }
+  
+            m_HealthCheck->setFlags(dialog.flags());
+            m_HealthCheck->saveState(
+                m_OrganizerCore.settings().directInterface());
+  
+            // The mod list indicator and notification count both derive from
+            // flags, so republish and repaint rather than waiting for a run.
+            HealthCheck::FlagStore::instance().setFlaggedMods(
+                m_HealthCheck->flaggedMods());
+            if (ui->modList->viewport() != nullptr) {
+              ui->modList->viewport()->update();
+            }
+            updateHealthCheckButton();
+            scheduleCheckForProblems();
           });
 
   connect(m_HealthCheckPanel, &HealthCheck::HealthCheckPanel::revealModRequested, this,

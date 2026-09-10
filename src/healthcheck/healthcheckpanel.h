@@ -3,6 +3,7 @@
 
 #include "healthcheckentries.h"
 
+#include <QColor>
 #include <QFrame>
 #include <QList>
 #include <QString>
@@ -18,6 +19,37 @@ namespace HealthCheck
 {
 
 class HealthCheckManager;
+
+/**
+ * The coloured stripe down the left of a listing row.
+ *
+ * Painted rather than filled via the palette: once a theme installs an
+ * application stylesheet, Qt gives that precedence over a widget's palette,
+ * and the stripe disappears. Painting it keeps the default visible under every
+ * shipped theme, and exposing the colour as a Q_PROPERTY keeps it themeable -
+ * a stylesheet can override it per severity:
+ *
+ *   #healthCheckSeverityAccent[severity="warning"] {
+ *       qproperty-accentColor: #e8a317;
+ *   }
+ */
+class SeverityAccent : public QWidget
+{
+  Q_OBJECT
+  Q_PROPERTY(QColor accentColor READ accentColor WRITE setAccentColor)
+
+public:
+  explicit SeverityAccent(QWidget* parent = nullptr);
+
+  QColor accentColor() const { return m_color; }
+  void setAccentColor(const QColor& color);
+
+protected:
+  void paintEvent(QPaintEvent* event) override;
+
+private:
+  QColor m_color;
+};
 
 /**
  * The health check pop-out.
