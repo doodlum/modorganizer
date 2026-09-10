@@ -3897,7 +3897,7 @@ This is likely due to a corrupted or incompatible download or unrecognized archi
     </message>
     <message>
         <location filename="mainwindow.ui" line="1831"/>
-        <location filename="mainwindow.cpp" line="4478"/>
+        <location filename="mainwindow.cpp" line="4506"/>
         <source>Open the health check panel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4380,7 +4380,7 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="mainwindow.cpp" line="4472"/>
+        <location filename="mainwindow.cpp" line="4500"/>
         <source>Health check found %n issue(s) in your mod list</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -4388,12 +4388,12 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         </translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4474"/>
+        <location filename="mainwindow.cpp" line="4502"/>
         <source>Health check is running...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4476"/>
+        <location filename="mainwindow.cpp" line="4504"/>
         <source>Health check found no issues</source>
         <translation type="unfinished"></translation>
     </message>

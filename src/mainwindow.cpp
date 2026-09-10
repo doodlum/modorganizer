@@ -4093,6 +4093,33 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 namespace
 {
 
+// Nexus domain for a game MO2 knows by its short name.
+//
+// meta.ini and download metadata store the game's *short* name ("Fallout4"),
+// but the Nexus games list - and so the composite UID encoding - is keyed by
+// the domain ("fallout4"). Going straight from one to the other silently
+// resolves nothing, which shows up as requirements never matching what the
+// user has downloaded.
+QString nexusDomainForGameName(const PluginContainer& plugins, const QString& shortName,
+                               const QString& fallback)
+{
+  if (shortName.isEmpty()) {
+    return fallback;
+  }
+
+  if (const MOBase::IPluginGame* game = plugins.game(shortName)) {
+    const QString domain = game->gameNexusName();
+    if (!domain.isEmpty()) {
+      return domain;
+    }
+  }
+
+  // A game plugin that does not declare a Nexus name, or a name no plugin
+  // claims: the short name lowercased is the usual spelling of the domain, and
+  // an id that still does not resolve is skipped by the check.
+  return shortName.toLower();
+}
+
 // MO2's stored Nexus credentials, in the order the v3 client prefers them.
 std::pair<QString, QString> healthCheckCredentials()
 {
@@ -4366,7 +4393,8 @@ HealthCheck::GatheredState MainWindow::gatherHealthCheckState() const
     HealthCheck::GatheredMod mod;
     mod.modName     = info->name();
     mod.displayName = info->name();
-    mod.gameDomain  = info->gameName().isEmpty() ? state.gameDomain : info->gameName();
+    mod.gameDomain =
+        nexusDomainForGameName(m_PluginContainer, info->gameName(), state.gameDomain);
     mod.nexusModId  = nexusId;
     mod.nexusFileId = fileId;
     mod.enabled     = profile != nullptr && profile->modEnabled(i);
@@ -4400,8 +4428,8 @@ HealthCheck::GatheredState MainWindow::gatherHealthCheckState() const
 
       HealthCheck::GatheredDownload download;
       download.downloadId = QString::number(i);
-      download.gameDomain =
-          fileInfo->gameName.isEmpty() ? state.gameDomain : fileInfo->gameName;
+      download.gameDomain = nexusDomainForGameName(
+          m_PluginContainer, fileInfo->gameName, state.gameDomain);
       download.nexusModId  = fileInfo->modID;
       download.nexusFileId = fileInfo->fileID;
       download.modName     = fileInfo->modName;
