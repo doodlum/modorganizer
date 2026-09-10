@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <functional>
 #include <memory>
+#include <atomic>
 #include <utility>
 
 class QSettings;
@@ -201,6 +202,9 @@ private:
 
   // Numeric game id -> Nexus domain, captured after each run.
   QHash<quint32, QString> m_domainByGameId;
+
+  // Shared with the worker's client; the only cross-thread handle to it.
+  std::shared_ptr<std::atomic<bool>> m_abortFlag;
 };
 
 }  // namespace HealthCheck

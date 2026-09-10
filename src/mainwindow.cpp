@@ -4287,6 +4287,24 @@ void MainWindow::setupHealthCheck()
               });
   }
 
+  connect(&m_OrganizerCore, &OrganizerCore::profileChanged, this,
+          [this](Profile*, Profile*) {
+            m_HealthCheck->run(HealthCheck::Trigger::ProfileChanged);
+          });
+
+  // Later refreshes of the mod list.
+  connect(&m_OrganizerCore, &OrganizerCore::directoryStructureReady, this, [this] {
+    m_HealthCheck->scheduleModsChangedRun();
+  });
+
+  // First run of the session. The mod list is already populated by the time
+  // this window is constructed, so the only thing worth waiting for is the
+  // event loop - which also keeps startup off the critical path.
+  // Vortex runs its checks on gamemode-activated (triggers.ts:30-33).
+  QTimer::singleShot(0, this, [this] {
+    m_HealthCheck->run(HealthCheck::Trigger::Startup);
+  });
+
   updateHealthCheckButton();
 }
 

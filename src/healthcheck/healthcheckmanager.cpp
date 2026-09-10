@@ -2,6 +2,8 @@
 
 #include "nexusv3client.h"
 
+#include <uibase/log.h>
+
 #include <QMetaObject>
 #include <QSettings>
 #include <QThread>
@@ -61,14 +63,13 @@ class CheckWorker : public QObject
   Q_OBJECT
 
 public:
-  CheckWorker() : m_client(std::make_unique<NexusV3Client>()) {}
-
-  NexusV3Client& client() { return *m_client; }
+  explicit CheckWorker(AbortFlag abortFlag) : m_abortFlag(std::move(abortFlag)) {}
 
 public slots:
   void configure(const QString& apiKey, const QString& bearerToken,
                  const QString& userAgent)
   {
+    ensureClient();
     m_client->setApiKey(apiKey);
     m_client->setBearerToken(bearerToken);
     m_client->setUserAgent(userAgent);
@@ -77,6 +78,7 @@ public slots:
   void runCheck(const HealthCheck::GatheredState& state,
                 const HealthCheck::CheckOptions& options)
   {
+    ensureClient();
     const HealthCheck::CheckResult result =
         checkFileRequirements(state, *m_client, options);
     // The games list is only resolved as a side effect of a run, so publish
@@ -85,13 +87,29 @@ public slots:
     emit finished(result);
   }
 
-  void clearCache() { m_client->clearCache(); }
+  void clearCache()
+  {
+    if (m_client) {
+      m_client->clearCache();
+    }
+  }
 
 signals:
   void finished(const HealthCheck::CheckResult& result);
   void gamesResolved(const QHash<QString, int>& gameIds);
 
 private:
+  // Created on first use, which is always on the worker thread: a
+  // QNetworkAccessManager must live on the thread that issues its requests,
+  // and moveToThread() would not carry a member the worker does not own.
+  void ensureClient()
+  {
+    if (!m_client) {
+      m_client = std::make_unique<NexusV3Client>(m_abortFlag);
+    }
+  }
+
+  AbortFlag m_abortFlag;
   std::unique_ptr<NexusV3Client> m_client;
 };
 
@@ -105,8 +123,10 @@ HealthCheckManager::HealthCheckManager(QObject* parent) : QObject(parent)
   qRegisterMetaType<HealthCheck::GatheredState>("HealthCheck::GatheredState");
   qRegisterMetaType<HealthCheck::CheckOptions>("HealthCheck::CheckOptions");
 
+  m_abortFlag = std::make_shared<std::atomic<bool>>(false);
+
   m_thread = new QThread(this);
-  m_worker = new CheckWorker();
+  m_worker = new CheckWorker(m_abortFlag);
   m_worker->moveToThread(m_thread);
   connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
   connect(m_worker, &CheckWorker::finished, this, &HealthCheckManager::onCheckFinished);
@@ -135,9 +155,7 @@ HealthCheckManager::HealthCheckManager(QObject* parent) : QObject(parent)
     if (!m_running) {
       return;
     }
-    QMetaObject::invokeMethod(m_worker, [this] {
-      m_worker->client().abort();
-    });
+    m_abortFlag->store(true);
     emit timedOut();
   });
 }
@@ -145,8 +163,8 @@ HealthCheckManager::HealthCheckManager(QObject* parent) : QObject(parent)
 HealthCheckManager::~HealthCheckManager()
 {
   if (m_thread != nullptr) {
-    if (m_worker != nullptr) {
-      m_worker->client().abort();
+    if (m_abortFlag) {
+      m_abortFlag->store(true);
     }
     m_thread->quit();
     m_thread->wait(5000);
@@ -295,6 +313,7 @@ void HealthCheckManager::startRun()
     result.status    = CheckStatus::Passed;
     result.severity  = Severity::Info;
     result.message   = tr("Not logged into Nexus Mods");
+    MOBase::log::debug("health check: no Nexus credentials, reporting a pass");
     result.timestamp = QDateTime::currentDateTimeUtc();
     onCheckFinished(result);
     return;
@@ -305,6 +324,10 @@ void HealthCheckManager::startRun()
   CheckOptions options;
   options.suppressMO2SelfRequirement = m_flags.suppressSelfRequirement;
 
+  MOBase::log::debug("health check: starting run over {} mod(s), {} download(s)",
+                     state.mods.size(), state.downloads.size());
+
+  m_abortFlag->store(false);
   m_running = true;
   emit runningChanged(true);
   m_timeoutTimer.start();
@@ -340,6 +363,9 @@ void HealthCheckManager::onCheckFinished(const CheckResult& result)
     m_running = false;
     emit runningChanged(false);
   }
+
+  MOBase::log::debug("health check: {} ({} issue(s), {} ms)", result.message,
+                     countIssues(entries()).total, result.executionTime);
 
   emit resultChanged();
 

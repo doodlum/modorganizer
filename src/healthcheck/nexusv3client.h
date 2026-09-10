@@ -9,12 +9,24 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <atomic>
+#include <memory>
 #include <stdexcept>
 
 class QNetworkAccessManager;
 
 namespace HealthCheck
 {
+
+/**
+ * Cancellation flag, shared between the thread that owns the client and the
+ * one that wants to stop it.
+ *
+ * The client is created on, and only ever touched from, the worker thread, so
+ * the manager cannot hold a pointer to it to call an abort method. A shared
+ * atomic is the whole of the cross-thread surface.
+ */
+using AbortFlag = std::shared_ptr<std::atomic<bool>>;
 
 /** Thrown by the client on transport or API errors; the check reports it. */
 class ApiError : public std::runtime_error
@@ -58,7 +70,8 @@ public:
    *  while. Vortex: fileDependencyPorts.ts:26 (4 hours) */
   static constexpr qint64 CACHE_TTL_MS = 4LL * 60 * 60 * 1000;
 
-  explicit NexusV3Client(QObject* parent = nullptr);
+  // `abortFlag` may be null, in which case the client cannot be cancelled.
+  explicit NexusV3Client(AbortFlag abortFlag = {}, QObject* parent = nullptr);
   ~NexusV3Client() override;
 
   /** Personal API key, sent as the `apikey` header. */
@@ -69,8 +82,7 @@ public:
   /** Base URL, default https://api.nexusmods.com/v3 (overridable for tests). */
   void setBaseUrl(const QString& baseUrl);
 
-  /** Abort in-flight and subsequent requests. Safe to call from another thread. */
-  void abort();
+  /** Whether cancellation has been requested through the shared flag. */
   bool isAborted() const;
 
   /**
@@ -116,7 +128,7 @@ private:
   QString m_bearerToken;
   QString m_userAgent;
   QString m_baseUrl;
-  bool m_aborted = false;
+  AbortFlag m_abortFlag;
 
   struct CandidateCacheEntry
   {

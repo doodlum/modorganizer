@@ -111,9 +111,9 @@ namespace
 
 }  // namespace
 
-NexusV3Client::NexusV3Client(QObject* parent)
+NexusV3Client::NexusV3Client(AbortFlag abortFlag, QObject* parent)
     : QObject(parent), m_manager(new QNetworkAccessManager(this)),
-      m_baseUrl(DEFAULT_BASE_URL)
+      m_baseUrl(DEFAULT_BASE_URL), m_abortFlag(std::move(abortFlag))
 {}
 
 NexusV3Client::~NexusV3Client() = default;
@@ -138,14 +138,9 @@ void NexusV3Client::setBaseUrl(const QString& baseUrl)
   m_baseUrl = baseUrl;
 }
 
-void NexusV3Client::abort()
-{
-  m_aborted = true;
-}
-
 bool NexusV3Client::isAborted() const
 {
-  return m_aborted;
+  return m_abortFlag && m_abortFlag->load();
 }
 
 void NexusV3Client::clearCache()
@@ -157,7 +152,7 @@ void NexusV3Client::clearCache()
 
 QByteArray NexusV3Client::get(const QString& url)
 {
-  if (m_aborted) {
+  if (isAborted()) {
     throw ApiError(QStringLiteral("aborted"));
   }
 
@@ -201,7 +196,7 @@ QByteArray NexusV3Client::get(const QString& url)
 
 QByteArray NexusV3Client::post(const QString& path, const QJsonObject& body)
 {
-  if (m_aborted) {
+  if (isAborted()) {
     throw ApiError(QStringLiteral("aborted"));
   }
 
@@ -283,7 +278,7 @@ QList<CandidateRow> NexusV3Client::fetchCandidates(const QStringList& fileVersio
     int fetched    = 0;
     bool hasMore   = true;
     while (hasMore) {
-      if (m_aborted) {
+      if (isAborted()) {
         throw ApiError(QStringLiteral("aborted"));
       }
 
@@ -351,7 +346,7 @@ NexusV3Client::fetchFileVersionDetails(const QStringList& fileVersionUids)
   }
 
   for (const QStringList& ids : chunked(missing, MAX_DETAIL_IDS)) {
-    if (m_aborted) {
+    if (isAborted()) {
       throw ApiError(QStringLiteral("aborted"));
     }
 
@@ -399,7 +394,7 @@ QList<ModDetail> NexusV3Client::fetchModDetails(const QStringList& modUids)
   }
 
   for (const QStringList& ids : chunked(missing, MAX_DETAIL_IDS)) {
-    if (m_aborted) {
+    if (isAborted()) {
       throw ApiError(QStringLiteral("aborted"));
     }
 

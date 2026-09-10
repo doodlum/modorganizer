@@ -2471,7 +2471,7 @@ Right now the only case I know of where this needs to be overwritten is for the 
 <context>
     <name>HealthCheck::HealthCheckManager</name>
     <message>
-        <location filename="healthcheck/healthcheckmanager.cpp" line="297"/>
+        <location filename="healthcheck/healthcheckmanager.cpp" line="315"/>
         <source>Not logged into Nexus Mods</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3809,7 +3809,7 @@ This is likely due to a corrupted or incompatible download or unrecognized archi
     </message>
     <message>
         <location filename="mainwindow.ui" line="1831"/>
-        <location filename="mainwindow.cpp" line="4443"/>
+        <location filename="mainwindow.cpp" line="4461"/>
         <source>Open the health check panel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4292,7 +4292,7 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location filename="mainwindow.cpp" line="4437"/>
+        <location filename="mainwindow.cpp" line="4455"/>
         <source>Health check found %n issue(s) in your mod list</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -4300,12 +4300,12 @@ You will have to visit the mod page on the Nexus Tools site to change your mind.
         </translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4439"/>
+        <location filename="mainwindow.cpp" line="4457"/>
         <source>Health check is running...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="4441"/>
+        <location filename="mainwindow.cpp" line="4459"/>
         <source>Health check found no issues</source>
         <translation type="unfinished"></translation>
     </message>
