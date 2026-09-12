@@ -163,3 +163,12 @@ removed the partial archive while leaving the original downloads unchanged.
 The transfer itself was created through MO2's startDownloadURLs API by a narrow
 isolated test driver. The driver was removed from disk, its trigger consumed,
 and the local server/test payload cleaned up. No Nexus bandwidth was used.
+
+Mod uninstall now uses the original MO2 source model's single-mod removal path,
+including its confirmation dialog, profile cleanup, origin removal and download
+notification. The frontend resolves the current mod by name, rejects essential
+content, and reads actual host state after the dialog. Cancel stops a multiple
+selection removal sequence. A disposable mod in the isolated FNV instance passed
+the actual frontend uninstall-command check: No preserved its files and entry;
+Yes removed both; unrelated mod states/priorities and archives were unchanged.
+The fixture was removed through MO2 and the temporary dialog helper was removed.

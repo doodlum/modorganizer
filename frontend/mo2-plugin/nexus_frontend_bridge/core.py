@@ -10,7 +10,8 @@ def number(value):
 
 
 class Bridge:
-    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None):
+    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None, mod_actions=None):
+        self.mod_actions = mod_actions
         self.executables = executables
         self.profiles = profiles
         self.downloads = downloads
@@ -70,6 +71,10 @@ class Bridge:
             if self.executables is None:
                 raise ValueError('MO2 launch integration is unavailable')
             return self.executables.launch(request.get('name'))
+        if action == 'removeMod':
+            if self.mod_actions is None:
+                raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.remove(request.get('name'))
         if action in ('selectProfile', 'manageProfiles'):
             if self.profiles is None:
                 raise ValueError('MO2 profile integration is unavailable')

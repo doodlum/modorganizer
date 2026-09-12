@@ -136,6 +136,18 @@ class ContractTests(unittest.TestCase):
         result = self.bridge.execute(self.request(action='launch', name='NVSE'))
         self.assertEqual(result['exitCode'], 0)
         self.assertEqual(self.bridge.executables.calls, ['NVSE'])
+    def test_uninstall_reports_cancel_and_rejects_stale_profile(self):
+        class ModActions:
+            calls = []
+            def remove(self, name):
+                self.calls.append(name)
+                return {'removed': False, 'modName': name}
+        self.bridge.mod_actions = ModActions()
+        request = self.request(action='removeMod', name='Test Mod')
+        self.assertFalse(self.bridge.execute(request)['removed'])
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(self.bridge.mod_actions.calls, ['Test Mod'])
     def test_nested_dialog_poll_does_not_replay_request(self):
         calls = []
         bridge = self.bridge

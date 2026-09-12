@@ -217,3 +217,17 @@ No signed URL or private metadata is copied into the snapshot.
 against a throttled localhost transfer in the isolated FNV instance. It requires
 the isolated native test driver and local HTTP fixture; it does not make a Nexus
 download. This runtime check passed, including preservation of other archives.
+
+## Uninstall
+
+`removeMod` requires the active profile and a current mod name. It calls the
+original `ModList.removeRow` path, which owns confirmation and cleanup, and
+reports whether the mod actually disappeared. Essential content is rejected.
+The frontend disables editing while the native dialog is open and stops a
+multiple selection sequence if MO2 keeps a mod.
+
+`MO2_VERIFY_UNINSTALL=1` in live screenshot mode exercises the native frontend
+row command with a disposable `Frontend Uninstall Verification` mod in the
+isolated FNV instance. It requires a narrow test-only dialog responder. Both
+Cancel and Confirm passed, including file/profile cleanup and preservation of
+other mods and archives. The responder is not part of the production bridge.

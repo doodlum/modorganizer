@@ -142,6 +142,7 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
                             await VerifyCrossGame(live, liveWindow, skyrimInstance);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TRANSFERS") == "1") await VerifyTransfers(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_UNINSTALL") == "1") await VerifyUninstall(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
                             await live.Profile.Launch(executable);
@@ -265,6 +266,32 @@ public partial class MockApp : Application
         if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim profiles missing from catalog");
         Console.WriteLine("PASS: native MO2 profile manager clone; profile switching; independent saved activation; original profile restored; Skyrim profiles discovered");
         live.OpenProfiles();
+    }
+
+    private static async Task VerifyUninstall(Mo2LiveWorkspace live)
+    {
+        const string name = "Frontend Uninstall Verification";
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Uninstall verification requires the isolated FNV profile");
+        var root = Path.GetFullPath(Path.Combine(Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath), "..", ".."));
+        var fixture = Path.Combine(root, "mods", name);
+        var original = live.Profile.Mods.Where(x => x.Name != name).Select(x => (x.Name, x.State, x.Priority)).ToArray();
+        var archives = live.Profile.Downloads.Select(x => (x.Name, x.Bytes)).ToArray();
+        foreach (var answer in new[] { "No", "Yes" }) {
+            var mod = live.Profile.Mods.Single(x => x.Name == name);
+            var row = live.ModsPage!.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id);
+            File.WriteAllText(Path.Combine(root, "uninstall-test-answer.txt"), answer);
+            row.Get<SharedComponents.UninstallItemAction>(NexusMods.App.UI.Pages.LoadoutPage.LoadoutColumns.EnabledState.UninstallItemComponentKey).CommandUninstallItem.Execute(R3.Unit.Default);
+            await WaitFor(() => !File.Exists(Path.Combine(root, "uninstall-test-answer.txt")) && !live.Profile.ManagingMod, "MO2 uninstall confirmation did not finish", seconds: 30);
+            var removed = answer == "Yes";
+            if (Directory.Exists(fixture) == removed || live.Profile.Mods.Any(x => x.Name == name) == removed)
+                throw new InvalidOperationException("Uninstall outcome disagrees with MO2 confirmation");
+        }
+        if (File.ReadAllLines(Path.Combine(root, "profiles", "Frontend Test", "modlist.txt")).Any(x => x.TrimStart('+', '-') == name))
+            throw new InvalidOperationException("Removed mod remains in the MO2 profile");
+        if (!original.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))) || !archives.SequenceEqual(live.Profile.Downloads.Select(x => (x.Name, x.Bytes))))
+            throw new InvalidOperationException("Uninstall changed unrelated mods or archives");
+        Console.WriteLine("PASS: frontend uninstall command uses MO2 confirmation; No preserves mod, Yes removes files and profile entry; unrelated mods and archives unchanged");
     }
 
     private static async Task VerifyTransfers(Mo2LiveWorkspace live, Window window)

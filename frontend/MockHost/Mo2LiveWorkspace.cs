@@ -106,14 +106,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
                 executable.ItemsSource = Profile.Executables;
                 executable.SelectedItem = Profile.Executables.Contains(selected!) ? selected : Profile.Executables.FirstOrDefault();
             }
-            launchBar.IsEnabled = !Profile.Launching && !Profile.Installing && !Profile.SelectingProfile;
+            launchBar.IsEnabled = !Profile.Launching && !Profile.Installing && !Profile.SelectingProfile && !Profile.ManagingMod;
             launch.IsEnabled = Profile.Executables.Count > 0;
         };
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         grid.Children.Add(top);
         var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
         Grid.SetRow(view, 1); grid.Children.Add(view);
-        Profile.Changed += () => { view.IsEnabled = !Profile.Launching; header.IsEnabled = !Profile.Launching; };
+        Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod; header.IsEnabled = !Profile.Launching && !Profile.ManagingMod; };
         Grid.SetRow(status, 2); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };

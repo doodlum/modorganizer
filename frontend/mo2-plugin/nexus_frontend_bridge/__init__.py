@@ -9,6 +9,7 @@ from .credentials import NexusCredentials
 from .downloads import Downloads
 from .profiles import Profiles
 from .executables import Executables
+from .mod_actions import ModActions
 
 
 class NexusFrontendBridge(mobase.IPluginTool):
@@ -33,6 +34,7 @@ class NexusFrontendBridge(mobase.IPluginTool):
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
         def ready(window):
+            self.bridge.mod_actions = ModActions(organizer, window)
             self.bridge.downloads.window = window
             self.bridge.profiles = Profiles(organizer, window)
             self.bridge.executables = Executables(organizer, window)

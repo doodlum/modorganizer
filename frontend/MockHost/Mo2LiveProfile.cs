@@ -29,6 +29,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public string NexusGame { get; private set; } = "";
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
+    public bool ManagingMod { get; private set; }
     public IReadOnlyList<string> Executables { get; private set; } = [];
     public string ProfilePath { get; private set; } = "";
     public string Status { get; private set; } = "Connecting to MO2…";
@@ -217,7 +218,27 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
-    public void Remove(IEnumerable<LoadoutItemId> ids) => Report(new NotSupportedException("Use MO2 to uninstall mods while installer integration is being connected."));
+    public void Remove(IEnumerable<LoadoutItemId> ids)
+    {
+        var selected = ids.Select(id => _mods.Lookup(id.Value)).Where(x => x.HasValue && (x.Value.State & 4) == 0).Select(x => x.Value.Name).ToArray();
+        _ = RemoveAsync(selected, ProfilePath);
+    }
+    private async Task RemoveAsync(string[] names, string profile)
+    {
+        await _commands.WaitAsync();
+        try {
+            ManagingMod = true; Status = "Confirm mod removal in MO2"; Changed?.Invoke();
+            foreach (var name in names) {
+                var result = await Client.SendAsync("removeMod", new() { ["profilePath"] = profile, ["name"] = name }, timeout: TimeSpan.FromMinutes(30));
+                _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+                if (!result.GetProperty("removed").GetBoolean()) {
+                    Status = "MO2 kept " + name; break;
+                }
+                Status = "Uninstalled " + name + " through MO2";
+            }
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public void Rename(string name) => Report(new NotSupportedException("Use MO2 to rename profiles while profile management is being connected."));
     public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => Observable.Defer(() => _mods.CountChanged.StartWith(_mods.Count).DistinctUntilChanged());
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveLoadoutItems(LoadoutFilter filter)
@@ -229,7 +250,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 model.Add(LoadoutColumns.EnabledState.LoadoutItemIdsComponentKey, new LoadoutComponents.LoadoutItemIds(LoadoutItemId.From(mod.Id)));
                 model.Add(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey, new LoadoutComponents.EnabledStateToggle(new ValueComponent<bool?>((mod.State & 2) != 0)));
             }
-            model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: false));
+            model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: (mod.State & 4) == 0));
             return model;
         });
 }
