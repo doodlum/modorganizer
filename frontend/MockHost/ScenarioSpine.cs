@@ -39,7 +39,6 @@ internal sealed class ScenarioSpine : AViewModel<ISpineViewModel>, ISpineViewMod
         foreach (var card in _scenario.Data.Section.Loadouts)
             _loadouts.Add(new ImageButtonViewModel { Name = card.LoadoutName, Image = card.LoadoutImage,
                 LoadoutBadgeViewModel = card.LoadoutBadgeViewModel,
-                Click = ReactiveCommand.Create(() => { _scenario.HomeMenu.LeftMenuItemMyLoadouts.NavigateCommand
-                    .Execute(NavigationInformation.From(NavigationInput.Default)).Subscribe(); }) });
+                Click = card.VisitLoadoutCommand });
     }
 }

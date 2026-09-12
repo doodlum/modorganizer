@@ -1,3 +1,5 @@
+using Avalonia.VisualTree;
+using NexusMods.App.UI.Pages.LoadoutPage;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages.Sorting;
 using System.Reactive.Linq;
@@ -71,6 +73,7 @@ public partial class MockApp : Application
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"),
                 RowDefinitions = new RowDefinitions("Auto,*,48") };
             var scenario = new ScenarioWorkspace();
+            desktop.Exit += (_, _) => scenario.Dispose();
             Add(grid, new Spine { ViewModel = new ScenarioSpine(scenario) }, 0, 0, rowSpan: 2);
             var topbar = new ScenarioTopBar(scenario);
             Add(grid, new TopBarView { ViewModel = topbar }, 1, 0, columnSpan: 2);
@@ -81,17 +84,22 @@ public partial class MockApp : Application
                 Background = (IBrush)this.FindResource("SurfaceBaseBrush")!, Content = grid };
             Add(grid, new DevelopmentBuildBannerView { ViewModel = new DevelopmentBuildBannerDesignViewModel() }, 0, 2, columnSpan: 3);
             desktop.MainWindow = window;
+            Task verification = Task.CompletedTask;
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => VerifyWorkspace(scenario), TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SCENARIOS") == "1")
-                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifyScenarios(scenario), TimeSpan.FromSeconds(1));
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyScenarios(scenario); }, TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SETTINGS") == "1")
-                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifySettings(scenario, topbar), TimeSpan.FromSeconds(1));
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifySettings(scenario, topbar); }, TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORDER") == "1")
-                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifyOrder(scenario), TimeSpan.FromSeconds(1));
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyOrder(scenario); }, TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALLED") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyInstalled(scenario, window); }, TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
-                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => {
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                    await verification;
+                    await Task.Delay(150);
                     using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
                     bitmap.Render(window);
                     bitmap.Save(screenshot);
@@ -99,6 +107,54 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyInstalled(ScenarioWorkspace scenario, Window window)
+    {
+        var controller = scenario.WorkspaceController;
+        var panel = controller.ActiveWorkspace.SelectedPanel;
+        controller.OpenPage(controller.ActiveWorkspaceId, scenario.InstalledPage,
+            new OpenPageBehavior.ReplaceTab(panel.Id, panel.SelectedTab.Id));
+        await Task.Delay(200);
+        var page = (ScenarioInstalledPage)controller.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        if (page.ItemCount.Value != 4 || page.Adapter.SourceCount.Value != 4)
+            throw new InvalidOperationException("Installed mod rows missing");
+        var row = page.Adapter.Source.Value.Items.First();
+        row.Get<LoadoutComponents.EnabledStateToggle>(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey).CommandToggle.Execute(R3.Unit.Default);
+        await Task.Delay(100);
+        if (scenario.InstalledMods.Mods.Single(x => x.Id == row.Key).Enabled)
+            throw new InvalidOperationException("Native enabled toggle failed");
+        if (scenario.PluginOrder.Plugins.Single(x => x.DisplayName == scenario.InstalledMods.Mods.Single(m => m.Id == row.Key).Plugin).IsActive)
+            throw new InvalidOperationException("Disabled mod still has active plugin");
+        var view = window.GetVisualDescendants().OfType<LoadoutView>().Single();
+        var tabs = view.FindControl<TabControl>("RulesTabControl")!;
+        tabs.SelectedIndex = 1;
+        await Task.Delay(150);
+        if (!view.GetVisualDescendants().OfType<LoadOrderView>().Any())
+            throw new InvalidOperationException("Rules subtab did not render original editor");
+        tabs.SelectedIndex = 0;
+        await Task.Delay(100);
+        page.Adapter.SelectAll();
+        if (page.SelectionCount.Value != 4) throw new InvalidOperationException("Mod multi-selection failed");
+        page.CommandRemoveItem.Execute(R3.Unit.Default);
+        await Task.Delay(100);
+        if (page.ItemCount.Value != 0 || !page.Adapter.IsSourceEmpty.Value) throw new InvalidOperationException("Uninstall did not show empty state");
+        await scenario.Data.Game.AddGameCommand.Execute();
+        var card = scenario.Data.Section.Loadouts.Single();
+        await card.VisitLoadoutCommand.Execute();
+        await Task.Delay(100);
+        var loadout = (ScenarioInstalledPage)controller.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        if (loadout.ItemCount.Value != 4) throw new InvalidOperationException("Loadout visit did not use independent fixture data");
+        var mod = card.InstalledMods.Mods.First();
+        card.InstalledMods.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
+        await card.CloneLoadoutCommand.Execute();
+        var clone = scenario.Data.Section.Loadouts.Last();
+        if (clone.InstalledMods.Mods.Single(x => x.Id == mod.Id).Enabled) throw new InvalidOperationException("Clone lost enabled state");
+        clone.InstalledMods.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
+        if (card.InstalledMods.Mods.Single(x => x.Id == mod.Id).Enabled) throw new InvalidOperationException("Clone mutated source loadout");
+        var finalView = window.GetVisualDescendants().OfType<LoadoutView>().Single();
+        finalView.FindControl<TabControl>("RulesTabControl")!.SelectedIndex = Environment.GetEnvironmentVariable("MO2_INSTALLED_CAPTURE_MODS") == "1" ? 0 : 1;
+        Console.WriteLine("PASS: original Mods/Rules tabs; enable toggle updates plugin; multi-select/uninstall/empty state; card visit; independent cloned loadout data");
     }
 
     private static async Task VerifyOrder(ScenarioWorkspace scenario)

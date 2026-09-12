@@ -88,15 +88,18 @@ internal sealed class ScenarioLoadoutsSection : AViewModel<IGameLoadoutsSectionE
     public ReadOnlyObservableCollection<IViewModelInterface> CardViewModels { get; }
     public IReadOnlyList<ScenarioLoadoutCard> Loadouts => _cards.OfType<ScenarioLoadoutCard>().ToArray();
     private int _nextId;
+    public Action<ScenarioLoadoutCard> Visit { get; set; } = _ => { };
     public ScenarioLoadoutsSection()
     {
         CardViewModels = new(_cards);
         _cards.Add(new CreateNewLoadoutCardViewModel { AddLoadoutCommand = ReactiveCommand.Create(() => CreateLoadout()) });
     }
-    public void CreateLoadout(string? name = null)
+    public void CreateLoadout(string? name = null, ScenarioLoadoutCard? source = null)
     {
         var number = ++_nextId;
-        _cards.Add(new ScenarioLoadoutCard(this, name ?? $"Loadout {number}", number));
+        var card = new ScenarioLoadoutCard(this, name ?? $"Loadout {number}", number);
+        if (source is not null) { card.PluginOrder.CopyFrom(source.PluginOrder); card.InstalledMods.CopyFrom(source.InstalledMods); }
+        _cards.Add(card);
         Refresh();
     }
     public void Remove(ScenarioLoadoutCard card) { _cards.Remove(card); Refresh(); }
@@ -114,18 +117,23 @@ internal sealed class ScenarioLoadoutCard : AViewModel<ILoadoutCardViewModel>, I
     public bool IsLoadoutApplied => false;
     public string HumanizedLoadoutLastApplyTime => "Not applied";
     public string HumanizedLoadoutCreationTime => "Created just now";
-    public string LoadoutModCount => "Mods 0";
+    public int Number { get; }
+    public ScenarioPluginOrder PluginOrder { get; } = new();
+    public ScenarioInstalledMods InstalledMods { get; }
+    public string LoadoutModCount => $"Mods {InstalledMods.Mods.Count}";
     public bool IsDeleting => false;
     public bool IsSkeleton => false;
     public bool IsLastLoadout => _section.Loadouts.Count == 1;
-    public ReactiveCommand<Unit, Unit> VisitLoadoutCommand { get; } = ReactiveCommand.Create(() => { });
+    public ReactiveCommand<Unit, Unit> VisitLoadoutCommand { get; }
     public ReactiveCommand<Unit, Unit> CloneLoadoutCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteLoadoutCommand { get; }
     public ScenarioLoadoutCard(ScenarioLoadoutsSection section, string name, int number)
     {
-        _section = section; LoadoutName = name;
+        _section = section; LoadoutName = name; Number = number;
+        InstalledMods = new ScenarioInstalledMods(PluginOrder);
+        VisitLoadoutCommand = ReactiveCommand.Create(() => section.Visit(this));
         LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = number.ToString() };
-        CloneLoadoutCommand = ReactiveCommand.Create(() => section.CreateLoadout($"{name} (Copy)"));
+        CloneLoadoutCommand = ReactiveCommand.Create(() => section.CreateLoadout($"{name} (Copy)", this));
         DeleteLoadoutCommand = ReactiveCommand.Create(() => section.Remove(this));
     }
     public void Refresh() => this.RaisePropertyChanged(nameof(IsLastLoadout));

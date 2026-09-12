@@ -50,6 +50,19 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
             new ScenarioPlugin("Compatibility Patch.esp", "Compatibility Patch (fixture)", 5, "Desert Lighting.esp", "Mojave Encounters.esp"),
         });
     }
+    public void CopyFrom(ScenarioPluginOrder source)
+    {
+        _items.Edit(cache => {
+            cache.Clear();
+            cache.AddOrUpdate(source.Plugins.Select(x => new ScenarioPlugin(x.DisplayName, x.ModName, x.SortIndex, x.Masters.ToArray()) { IsActive = x.IsActive }));
+        });
+    }
+    public void SetPluginActive(string name, bool enabled)
+    {
+        var plugin = _items.Items.Single(x => x.DisplayName == name);
+        plugin.IsActive = enabled;
+        _items.AddOrUpdate(plugin);
+    }
     public IReadOnlyList<ScenarioPlugin> Plugins => _items.Items.OrderBy(item => item.SortIndex).ToArray();
     public Optional<SortOrderId> GetSortOrderIdFor(OneOf<LoadoutId, CollectionGroupId> parentEntity, IDb? db = null) => Optional<SortOrderId>.Create(default);
     public ValueTask<SortOrderId> GetOrCreateSortOrderFor(LoadoutId loadoutId, OneOf<LoadoutId, CollectionGroupId> parentEntity, CancellationToken token = default) => ValueTask.FromResult(default(SortOrderId));

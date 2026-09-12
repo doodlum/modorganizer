@@ -22,6 +22,8 @@ namespace Mo2.Frontend;
 
 internal sealed class ScenarioWorkspace : IWorkspaceWindow
 {
+    private readonly Microsoft.Extensions.DependencyInjection.ServiceProvider _database = ScenarioDatabase.Create();
+    public void Dispose() => Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult();
     public WindowId WindowId { get; } = WindowId.NewId();
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
@@ -29,11 +31,14 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     public MemorySettings Settings { get; }
     public PageData SettingsPage { get; }
     public PageData PluginOrderPage { get; }
+    public PageData InstalledPage { get; }
+    public ScenarioInstalledMods InstalledMods { get; }
     public ScenarioPluginOrder PluginOrder { get; } = new();
     public ScenarioData Data { get; }
     public ScenarioHomeMenu HomeMenu { get; }
     public ScenarioWorkspace()
     {
+        InstalledMods = new ScenarioInstalledMods(PluginOrder);
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         services.Add<IWindowManager>(windows);
@@ -59,7 +64,18 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         var orderPage = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30004", "Plugin load order", IconValues.Package,
             () => new ScenarioLoadOrderPage(services, PluginOrder));
         PluginOrderPage = orderPage.Data;
-        services.Add(new PageFactoryController([games, loadouts, settingsPage, orderPage, new NewTabPageFactory(services)]));
+        services.Add<NexusMods.MnemonicDB.Abstractions.IConnection>(Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<NexusMods.MnemonicDB.Abstractions.IConnection>(_database));
+        services.Add<IEnumerable<NexusMods.App.UI.Pages.ILoadoutDataProvider>>([InstalledMods]);
+        var installedPage = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30005", "All", IconValues.FormatAlignJustify,
+            () => new ScenarioInstalledPage(services, windows, InstalledMods, PluginOrder));
+        InstalledPage = installedPage.Data;
+        var loadoutDetail = new ScenarioLoadoutFactory(services, windows, Data);
+        Data.Section.Visit = card => {
+            var controller = WorkspaceController!;
+            var panel = controller.ActiveWorkspace.SelectedPanel;
+            controller.OpenPage(controller.ActiveWorkspaceId, loadoutDetail.Data(card.Number), new OpenPageBehavior.ReplaceTab(panel.Id, panel.SelectedTab.Id));
+        };
+        services.Add(new PageFactoryController([games, loadouts, settingsPage, orderPage, installedPage, loadoutDetail, new NewTabPageFactory(services)]));
         // The controller is internal upstream. Instantiate its public constructor without forking
         // its implementation so panel geometry, tab navigation, drag/drop and history stay original.
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", throwOnError: true)!;
@@ -70,13 +86,13 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     }
 }
 
-internal sealed class FixtureServices : IServiceProvider
+internal sealed class FixtureServices(IServiceProvider? parent = null) : IServiceProvider
 {
     private readonly Dictionary<Type, object> _services = new();
     public void Add<T>(T service) where T : notnull => _services[typeof(T)] = service;
     private readonly Dictionary<Type, Func<object>> _factories = new();
     public void AddFactory<T>(Func<T> factory) where T : notnull => _factories[typeof(T)] = () => factory();
-    public object? GetService(Type serviceType) => _factories.TryGetValue(serviceType, out var factory) ? factory() : _services.GetValueOrDefault(serviceType);
+    public object? GetService(Type serviceType) => _factories.TryGetValue(serviceType, out var factory) ? factory() : _services.GetValueOrDefault(serviceType) ?? parent?.GetService(serviceType);
 }
 
 internal sealed record FixturePageContext(PageFactoryId FactoryId) : IPageFactoryContext;

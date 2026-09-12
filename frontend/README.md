@@ -41,8 +41,9 @@ a panel. It is a partial integration check, not proof of full behavioral parity.
 
 This is a foundation, not a completed replica. My Games and My Loadouts now use
 shared Fallout: New Vegas fixtures. Add/remove game, create/clone/delete loadout,
-sidebar navigation and history are interactive and checked. Per-loadout visits,
-dialogs and the remaining pages are still incomplete.
+sidebar navigation and history are interactive and checked. Loadout cards and
+spine entries now open independent installed-mod fixtures; the loadout sidebar,
+dialogs and remaining pages are still incomplete.
 Remaining work includes:
 
 - Extend the shared fake scenarios with mod and collection data.
@@ -83,6 +84,26 @@ original load-order view, adapter and commands with six fake ESM/ESP entries.
 The order check invokes the native row command, checks the updated index and
 row position, rejects moving a master after its dependent, and toggles display
 direction. Updates are published as a batch after all indices settle.
-The page was rendered and visually inspected. This is not yet the normal
-loadout **Rules** container, and per-loadout orders, drag/drop verification,
-file conflicts and complete reference comparisons remain unfinished.
+The standalone editor and the original loadout **Mods/Rules** container were
+rendered and visually inspected. Drag/drop verification, file conflicts and
+complete reference comparisons remain unfinished.
+
+## Installed-mod and loadout fixtures
+
+Loadout cards and spine entries open the original **All** page. Each loadout has
+its own fake mod list and plugin order; cloning copies their current state.
+The native table supports enable/disable, selection, uninstall and its empty
+state. Disabled or removed mods mark their associated plugin inactive.
+
+```sh
+MO2_VERIFY_INSTALLED=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-rules.png" ./frontend/run.sh
+MO2_VERIFY_INSTALLED=1 MO2_INSTALLED_CAPTURE_MODS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-mods.png" ./frontend/run.sh
+```
+
+This check exercises the original tab control, enabled toggle, multi-selection,
+uninstall and empty state, visits a loadout card and verifies clone independence.
+Screenshot capture waits for the check to finish. An empty in-memory MnemonicDB
+connection satisfies the original table adapter's constructor; the displayed
+rows come entirely from fixture providers. No installed game or MO2 database is
+opened. The loadout sidebar/context, file viewing, collection actions and full
+reference image comparisons still need implementation and verification.
