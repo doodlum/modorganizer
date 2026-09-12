@@ -44,6 +44,11 @@ Steam Deck. Use a separate Proton prefix for each instance. Put that invocation
 in an executable script and choose it as the instance launcher. A prefix lock
 prevents concurrent invocations during startup; the script does not copy mods,
 create profiles or replace MO2 configuration.
+The launcher reads Proton's `require_tool_appid` and uses that installed Steam
+runtime's `run` script. This supplies the matching multimedia libraries needed
+by games even when MO2 itself starts without them. If the runtime is installed
+in another Steam library, set `MO2_STEAM_RUNTIME=/path/to/runtime/run` in the
+instance launcher. A required runtime that cannot be found produces an error.
 
 Connections can also be registered without opening the UI:
 

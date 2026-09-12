@@ -172,3 +172,13 @@ selection removal sequence. A disposable mod in the isolated FNV instance passed
 the actual frontend uninstall-command check: No preserved its files and entry;
 Yes removed both; unrelated mod states/priorities and archives were unchanged.
 The fixture was removed through MO2 and the temporary dialog helper was removed.
+
+The FNV startup investigation found that GE-Proton10-4 declares Steam runtime
+app 1628350, but the launcher was invoking Proton outside that runtime. A direct
+game baseline stalled before menu controls and logged missing multimedia
+libraries. Running the same game/prefix inside the installed sniper runtime
+reached the full menu. The launcher now resolves Proton's declared runtime from
+Steam metadata (with MO2_STEAM_RUNTIME override for another library). The next
+frontend/MO2/NVSE launch reached the full windowed menu with MCM Extensions loaded,
+accepted New Game, and played the intro. Three isolated launcher tests passed
+for argument preservation with spaces, missing runtime, and explicit override.
