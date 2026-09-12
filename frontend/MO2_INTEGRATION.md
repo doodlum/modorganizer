@@ -357,3 +357,24 @@ activation and movement controls. Cross-game selection restores FNV.
 The Skyrim screenshot is artifacts/plugin-details-skyrim.png (ignored).
 These checks exercise real forced-plugin and archive/type messages, but do not
 establish coverage of every missing-master, dirty-plugin or LOOT message type.
+
+### Reorder guards and native state changes — 2026-09-12
+
+The shared MoveItems path used by NMA row drops now rejects a selection
+containing any plugin MO2 marks as fixed, including mixed selections. This
+closes the gap between disabled arrow buttons and drag operations.
+
+Before applying a proposed order, the live adapter obtains a fresh MO2 snapshot
+under its command gate. If the active profile, plugin names, priorities or
+activation state changed since the proposal was formed, it refreshes the view
+and rejects the old proposal. Native MO2 remains responsible for accepted
+priority changes and game-specific rules. This is a preflight check, not an
+atomic transaction across multiple native priority calls.
+
+MO2_VERIFY_REORDER_GUARDS=1 tested the isolated FNV profile: a fixed FalloutNV.esm
+move left host state unchanged; MCM moved through the shared drop path and was
+restored; an independently changed native order was preserved when the old
+frontend order was submitted. Final host priorities and activation matched the
+initial snapshot. The check invokes the shared MoveItems path directly; it does
+not claim to test pointer gesture recognition or drag visuals. Build passed
+with the existing upstream OpenTelemetry NU1902 warning.

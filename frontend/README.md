@@ -24,7 +24,8 @@ FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
 verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.
 **Details in MO2** opens its original conflict/file dialog. Selecting plugins
 shows MO2’s diagnostics and hexadecimal mod indices. Activation and row movement
-controls reflect MO2’s restrictions.
+controls reflect MO2’s restrictions. The shared drop path rejects fixed plugins;
+reordering refreshes MO2 first and rejects stale plugin state.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run

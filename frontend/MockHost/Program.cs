@@ -151,6 +151,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_CARDS") == "1") await VerifyProfileCards(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
@@ -440,6 +441,42 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyReorderGuards(Mo2LiveWorkspace live)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Reorder check requires the isolated FNV profile");
+        var profile = live.Profile;
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        var original = profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        var movable = profile.Order.Plugins.Single(x => x.DisplayName == "The Mod Configuration Menu.esp");
+        var fixedPlugin = profile.Order.Plugins.Single(x => x.DisplayName == "FalloutNV.esm");
+        if (!movable.CanMove || fixedPlugin.CanMove || movable.SortIndex != original.Length - 1)
+            throw new InvalidOperationException("Unexpected isolated test order");
+        async Task<(string, int, bool)[]> HostOrder() => (await client.SendAsync("snapshot")).GetProperty("plugins").EnumerateArray()
+            .Select(x => (x.GetProperty("name").GetString()!, x.GetProperty("priority").GetInt32(), x.GetProperty("state").GetInt32() == 2)).OrderBy(x => x.Item2).ToArray();
+        await profile.Order.MoveItems(default, [fixedPlugin.Key], movable.Key, NexusMods.Abstractions.Games.TargetRelativePosition.AfterTarget);
+        if (!original.SequenceEqual(await HostOrder())) throw new InvalidOperationException("Fixed-plugin drag altered the host order");
+        var neighbour = profile.Order.Plugins[^2];
+        try {
+            await profile.Order.MoveItems(default, [movable.Key], neighbour.Key, NexusMods.Abstractions.Games.TargetRelativePosition.BeforeTarget);
+            if ((await HostOrder()).Single(x => x.Item1 == movable.DisplayName).Item2 != movable.SortIndex - 1)
+                throw new InvalidOperationException("Movable plugin drop path did not change native order");
+            await profile.Order.MoveItems(default, [movable.Key], neighbour.Key, NexusMods.Abstractions.Games.TargetRelativePosition.AfterTarget);
+            if (!original.SequenceEqual(await HostOrder())) throw new InvalidOperationException("Reverse move did not restore native order");
+            var stale = profile.Order.Plugins.ToArray();
+            await client.SendAsync("setPluginPriority", new() { ["profilePath"] = profile.ProfilePath, ["name"] = movable.DisplayName, ["priority"] = movable.SortIndex - 1 });
+            var changed = await HostOrder();
+            await profile.Order.ApplyOrder!(stale, CancellationToken.None);
+            if (!profile.Status.Contains("MO2 plugin state changed") || !changed.SequenceEqual(await HostOrder()))
+                throw new InvalidOperationException("Stale reorder overwrote a native host change");
+        } finally {
+            await client.SendAsync("setPluginPriority", new() { ["profilePath"] = profile.ProfilePath, ["name"] = movable.DisplayName, ["priority"] = movable.SortIndex });
+            await profile.Refresh();
+        }
+        if (!original.SequenceEqual(await HostOrder())) throw new InvalidOperationException("Reorder verification did not restore original state");
+        Console.WriteLine("PASS: shared plugin drop path rejects fixed plugins, moves and restores a movable plugin, rejects stale native state; original host order and activation restored");
     }
 
     private static async Task VerifyPluginDetails(Mo2LiveWorkspace live, Window window)

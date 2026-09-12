@@ -110,6 +110,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var profile = ProfilePath;
         await _commands.WaitAsync(token);
         try {
+            if (profile != ProfilePath) throw new InvalidOperationException("Active profile changed; select the plugins again");
+            var baseline = desired.OrderBy(x => x.SortIndex).Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+            Apply(await Client.SendAsync("snapshot", cancellationToken: token));
+            if (profile != ProfilePath || !baseline.SequenceEqual(Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))))
+                throw new InvalidOperationException("MO2 plugin state changed; select the plugins again before reordering");
             for (var index = 0; index < desired.Length; index++) {
                 var current = Order.Plugins.FirstOrDefault(x => x.DisplayName == desired[index].DisplayName);
                 if (current?.SortIndex == index) continue;

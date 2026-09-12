@@ -95,7 +95,7 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
         token.ThrowIfCancellationRequested();
         var order = Plugins.ToList();
         var moving = order.Where(item => itemsToMove.Any(key => key.Equals(item.Key))).ToArray();
-        if (moving.Any(item => item.Key.Equals(dropTargetItem))) return Task.CompletedTask;
+        if (moving.Length == 0 || moving.Any(item => !item.CanMove || item.Key.Equals(dropTargetItem))) return Task.CompletedTask;
         order.RemoveAll(item => moving.Contains(item));
         var target = order.FindIndex(item => item.Key.Equals(dropTargetItem));
         if (target < 0) return Task.CompletedTask;
