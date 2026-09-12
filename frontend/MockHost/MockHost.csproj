@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../upstream/src/NexusMods.Backend/Settings/SettingsBuilder.cs" Link="Upstream/SettingsBuilder.cs" />
+    <ProjectReference Include="../upstream/src/NexusMods.Backend/NexusMods.Backend.csproj" />
     <ProjectReference Include="../upstream/src/NexusMods.App.UI/NexusMods.App.UI.csproj" />
     <ProjectReference Include="../upstream/src/NexusMods.Themes.NexusFluentDark/NexusMods.Themes.NexusFluentDark.csproj" />
   </ItemGroup>

@@ -26,6 +26,8 @@ namespace Mo2.Frontend;
 internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
 {
     private readonly ServiceProvider _database = ScenarioDatabase.Create();
+    private readonly ServiceProvider _desktop;
+    public NexusMods.Sdk.IOSInterop DesktopInterop => _desktop.GetRequiredService<NexusMods.Sdk.IOSInterop>();
     public WindowId WindowId { get; } = WindowId.NewId();
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
@@ -73,7 +75,11 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         services.Add<ISettingsManager>(new MemorySettings(services));
         services.Add<ILoggerFactory>(NullLoggerFactory.Instance);
         services.Add<IWorkspaceAttachmentsFactoryManager>(new FixtureAttachments());
-        services.Add<NexusMods.Sdk.IOSInterop>(new ScenarioOSInterop());
+        _desktop = NexusMods.Backend.ServiceExtensions.AddRuntimeDependencies(
+            NexusMods.Backend.ServiceExtensions.AddOSInterop(new ServiceCollection()
+                .AddLogging().AddSingleton<NexusMods.Paths.IFileSystem>(NexusMods.Paths.FileSystem.Shared)
+                .AddSingleton(services.GetRequiredService<ISettingsManager>()))).BuildServiceProvider();
+        services.Add<NexusMods.Sdk.IOSInterop>(DesktopInterop);
         services.Add<IEnumerable<ILoadOrderDataProvider>>([new ScenarioOrderProvider()]);
         services.Add(_database.GetRequiredService<NexusMods.MnemonicDB.Abstractions.IConnection>());
         services.Add<IEnumerable<ILoadoutDataProvider>>([Profile]);
@@ -191,7 +197,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         window.Closed += (_, _) => timer.Stop();
         return window;
     }
-    public void Dispose() => Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult();
+    public void Dispose() { _desktop.Dispose(); Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult(); }
 }
 
 internal sealed record Mo2WorkspaceContext : IWorkspaceContext

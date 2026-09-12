@@ -457,3 +457,31 @@ restarting the production host.
 Build and fourteen bridge contract checks pass. The native card layout was
 visually inspected in artifacts/create-profile-cards.png. Creation behavior was
 verified on FNV; the card is also supplied separately for each Skyrim instance.
+
+### Real desktop integration in live mode — 2026-09-12
+
+The live workspace had still registered ScenarioOSInterop, whose open-link and
+open-file operations only displayed fixture toasts. It now references NMA’s
+Backend project and registers its platform IOSInterop service with the existing
+frontend settings manager, logging and real filesystem. This selects the
+upstream Linux desktop portal implementation on this machine. The service
+provider is disposed with the workspace. Fixture mode retains its test service.
+Only desktop/runtime services are registered from Backend; MO2 still supplies
+the live profile, mod, plugin and download state.
+
+Live top-bar GitHub, Discord and Nexus status commands now open real URLs.
+GitHub targets this MO2 fork; Discord uses MO2’s existing support invitation.
+The NMA-specific forum entry is disabled instead of retaining a no-op command.
+The remaining inherited help entries still need a control-by-control audit.
+
+MO2_VERIFY_DESKTOP=1 resolved upstream LinuxInterop, reported five actual
+filesystem mounts and requested the selected instance’s downloads directory.
+A desktop screenshot confirmed Dolphin at the real FNV downloads directory
+(artifacts/native-desktop-folder.png). This verifies populated-folder opening;
+it does not verify every desktop operation or each external help destination.
+Native LinuxInterop retains its upstream limitation for empty directories.
+
+The full dependency build passed with upstream NU1902, source-generator CS8785
+and CS1690 warnings; the incremental frontend build passed. The live catalog,
+2/3/4-panel controls and FNV → Skyrim → FNV regression also passed after wiring
+the real service. No archive/profile store was added by this change.

@@ -161,6 +161,16 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DESKTOP") == "1") {
+                            if (live.DesktopInterop.GetType().Name != "LinuxInterop") throw new InvalidOperationException("Live desktop service is not NMA’s native Linux implementation");
+                            var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");
+                            var folder = Mo2InstanceCatalog.LocalPath(snapshot.GetProperty("instance").GetProperty("downloadsPath").GetString()!);
+                            var mounts = await live.DesktopInterop.GetFileSystemMounts();
+                            if (mounts.Length == 0) throw new InvalidOperationException("Native desktop service returned no filesystem mounts");
+                            live.DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder));
+                            Console.WriteLine("DESKTOP: native Linux service reports " + mounts.Length + " mounts; requested opening MO2 downloads folder " + folder);
+                            await Task.Delay(2000);
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_CARDS") == "1") await VerifyProfileCards(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
