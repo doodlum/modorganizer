@@ -101,3 +101,14 @@ priority, verified both against the host, and restored the original state.
 Next work is host startup and cross-game connection, advanced download controls,
 and the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.
+
+The live executable picker now calls MO2's configured process runner and waits
+through its own application lifecycle API. xNVSE 6.4.8 was installed from the
+official release into the supplied FNV game root (four new DLL/EXE files;
+`artifacts/xnvse-install-manifest.json` records their hashes). The first launch
+logged MCM Extensions loading correctly via USVFS. After initializing the
+isolated prefix registry and graphics settings with Fallout Launcher, the game
+reached its title screen. Gameplay, MCM's in-game menu and a disabled-mod
+comparison still need verification. Desktop automation has encountered focus
+problems; the isolated test profile now uses windowed 1024×640 preferences
+seeded from the original launcher's output. No Skyrim configuration was changed.

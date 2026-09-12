@@ -63,8 +63,7 @@ the live checks. Setting it only in the outer Linux launch environment did not
 work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
-Automatic host startup, advanced download controls and launch remain to be
-connected. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
+Automatic host startup and advanced download controls remain to be connected. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation
@@ -174,3 +173,18 @@ actual toolbar click handlers in the isolated FNV profile: disables MCM's ESP
 while keeping its mod enabled, moves its mod earlier, checks both using an
 independent bridge client, then restores original activation and complete mod
 order. This runtime check passed. It does not establish in-game loading.
+
+## Launch through MO2
+
+The live header lists MO2's configured executable titles. Run through MO2 passes
+that title to `startApplication`, preserving host arguments, working directory,
+Steam ID and USVFS setup. `waitForApplication` owns handle cleanup and refresh;
+frontend editing is disabled until the host returns. A returned exit code is
+process evidence only, not proof that gameplay or a mod worked.
+
+`MO2_VERIFY_LAUNCH=NVSE` with live endpoint and screenshot mode launches only in
+the isolated FNV test profile and reports the host result when it exits. The
+first run reached xNVSE 6.4.8 and its runtime log reported MCM Extensions loaded
+correctly through the virtual filesystem. The game exited before gameplay.
+After original Fallout Launcher setup of the fresh test prefix, the next run
+reached the game title screen. In-game acceptance is still outstanding.

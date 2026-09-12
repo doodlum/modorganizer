@@ -27,6 +27,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool SelectingProfile { get; private set; }
     public string NexusGame { get; private set; } = "";
     public bool Installing { get; private set; }
+    public bool Launching { get; private set; }
+    public IReadOnlyList<string> Executables { get; private set; } = [];
     public string ProfilePath { get; private set; } = "";
     public string Status { get; private set; } = "Connecting to MO2…";
     public event Action? Changed;
@@ -42,6 +44,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var raw = snapshot.GetRawText();
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
+        Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
         NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
         Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
             .Where(x => !x.GetProperty("hidden").GetBoolean())
@@ -148,6 +151,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             return true;
         } catch (Exception error) { Report(error); return false; }
         finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    public async Task Launch(string executable)
+    {
+        var profile = ProfilePath;
+        if (!await _commands.WaitAsync(0)) return;
+        try {
+            Launching = true; Status = "Launching " + executable + " through MO2; close the application to return"; Changed?.Invoke();
+            var result = await _client.SendAsync("launch", new() { ["profilePath"] = profile, ["name"] = executable }, timeout: TimeSpan.FromHours(12));
+            _lastSnapshot = null; Apply(await _client.SendAsync("snapshot"));
+            Status = result.GetProperty("completed").GetBoolean() ? executable + " exited (code " + result.GetProperty("exitCode").GetInt32() + ")" : "MO2 stopped waiting for the application; check the host";
+        } catch (Exception error) { Report(error); }
+        finally { Launching = false; Changed?.Invoke(); _commands.Release(); }
     }
     public async Task ManageProfiles()
     {

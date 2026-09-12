@@ -10,7 +10,8 @@ def number(value):
 
 
 class Bridge:
-    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None):
+    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None):
+        self.executables = executables
         self.profiles = profiles
         self.downloads = downloads
         self._polling = False
@@ -36,6 +37,7 @@ class Bridge:
         mods = organizer.modList()
         plugins = organizer.pluginList()
         return {
+            'executables': self.executables.snapshot() if self.executables is not None else [],
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
             'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],
@@ -64,6 +66,10 @@ class Bridge:
             raise ValueError('Active MO2 profile changed; refresh before editing')
         if self.profiles is not None and self.profiles.refreshing:
             raise ValueError('MO2 is refreshing the selected profile')
+        if action == 'launch':
+            if self.executables is None:
+                raise ValueError('MO2 launch integration is unavailable')
+            return self.executables.launch(request.get('name'))
         if action in ('selectProfile', 'manageProfiles'):
             if self.profiles is None:
                 raise ValueError('MO2 profile integration is unavailable')

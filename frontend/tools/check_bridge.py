@@ -109,6 +109,21 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='snapshot'))
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
         self.assertEqual(organizer.mods.calls, 0)
+    def test_launch_rejects_stale_profile_before_starting_host_process(self):
+        class Executables:
+            calls = []
+            def snapshot(self): return ['NVSE']
+            def launch(self, name):
+                self.calls.append(name)
+                return {'completed': True, 'exitCode': 0}
+        self.bridge.executables = Executables()
+        request = self.request(action='launch', name='NVSE')
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(self.bridge.executables.calls, [])
+        result = self.bridge.execute(self.request(action='launch', name='NVSE'))
+        self.assertEqual(result['exitCode'], 0)
+        self.assertEqual(self.bridge.executables.calls, ['NVSE'])
     def test_nested_dialog_poll_does_not_replay_request(self):
         calls = []
         bridge = self.bridge

@@ -85,10 +85,26 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         DockPanel.SetDock(profiles, Dock.Right); header.Children.Add(profiles);
         DockPanel.SetDock(downloads, Dock.Right); header.Children.Add(downloads);
         DockPanel.SetDock(refresh, Dock.Right); header.Children.Add(refresh); header.Children.Add(title);
+        var executable = new ComboBox { MinWidth = 180, Margin = new Thickness(16, 0, 8, 8) };
+        var launch = new Button { Content = "Run through MO2", Margin = new Thickness(0, 0, 8, 8), IsEnabled = false };
+        launch.Click += async (_, _) => { if (executable.SelectedItem is string name) await Profile.Launch(name); };
+        var launchBar = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
+        launchBar.Children.Add(executable); launchBar.Children.Add(launch);
+        var top = new StackPanel(); top.Children.Add(header); top.Children.Add(launchBar);
+        Profile.Changed += () => {
+            if (!(executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(Profile.Executables)) {
+                var selected = executable.SelectedItem as string;
+                executable.ItemsSource = Profile.Executables;
+                executable.SelectedItem = Profile.Executables.Contains(selected!) ? selected : Profile.Executables.FirstOrDefault();
+            }
+            launchBar.IsEnabled = !Profile.Launching && !Profile.Installing && !Profile.SelectingProfile;
+            launch.IsEnabled = Profile.Executables.Count > 0;
+        };
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
-        grid.Children.Add(header);
+        grid.Children.Add(top);
         var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
         Grid.SetRow(view, 1); grid.Children.Add(view);
+        Profile.Changed += () => { view.IsEnabled = !Profile.Launching; header.IsEnabled = !Profile.Launching; };
         Grid.SetRow(status, 2); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
