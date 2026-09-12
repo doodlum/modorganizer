@@ -20,7 +20,9 @@ confirmation. The active profile cannot be deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
-Successful in-game FNV validation and remaining mod-management controls are unfinished.
+FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
+verified; see [in-game evidence](FNV_ACCEPTANCE.md). Remaining MO2 mod-management
+details and diagnostics are still being integrated.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run

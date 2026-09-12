@@ -174,6 +174,28 @@ public partial class MockApp : Application
                             await live.Profile.InstallArchive(installArchive);
                             Console.WriteLine("INSTALL: " + live.Profile.Status);
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENABLE_FNV_DLCS") == "1") {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("DLC activation requires the isolated FNV profile");
+                            var names = new[] { "TribalPack.esm", "MercenaryPack.esm", "ClassicPack.esm", "CaravanPack.esm", "DeadMoney.esm", "HonestHearts.esm", "OldWorldBlues.esm", "LonesomeRoad.esm", "GunRunnersArsenal.esm" };
+                            live.PluginsPage!.Adapter.SelectedModels.Clear();
+                            foreach (var name in names) {
+                                var plugin = live.Profile.Order.Plugins.Single(x => x.DisplayName == name);
+                                live.PluginsPage.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
+                            }
+                            liveWindow.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Enable selected"))
+                                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                            await WaitFor(() => names.All(name => live.Profile.Order.Plugins.Single(x => x.DisplayName == name).IsActive), "DLC activation did not reach MO2");
+                            Console.WriteLine("PASS: native Enable selected button explicitly activates all nine FNV DLCs in the isolated profile");
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DOWN") is { } pluginDown) {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || !pluginDown.StartsWith("MCM Example Menu")) throw new InvalidOperationException("In-game ordering check requires an isolated author example");
+                            var plugin = live.Profile.Order.Plugins.Single(x => x.DisplayName == pluginDown);
+                            var before = plugin.SortIndex;
+                            live.PluginsPage!.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key))
+                                .Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey).MoveDown.Execute(R3.Unit.Default);
+                            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.DisplayName == pluginDown).SortIndex == before + 1, "Native plugin order command failed");
+                            Console.WriteLine("PASS: native plugin row moved " + pluginDown + " from " + before + " to " + (before + 1));
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENABLE_MOD") is { } modName) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Activation check requires the isolated FNV profile");
                             var mod = live.Profile.Mods.Single(x => x.Name == modName);
@@ -182,6 +204,15 @@ public partial class MockApp : Application
                             row.Get<LoadoutComponents.EnabledStateToggle>(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey).CommandToggle.Execute(R3.Unit.Default);
                             await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == modName).State & 2) != 0 && live.Profile.Order.Plugins.Any(x => x.ModName == modName), "MO2 mod activation did not expose its plugin");
                             Console.WriteLine("PASS: native mod activation command enabled installed mod and exposed its ESP in the right panel");
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DISABLE_MOD") is { } disabledModName) {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Deactivation check requires the isolated FNV profile");
+                            var mod = live.Profile.Mods.Single(x => x.Name == disabledModName);
+                            if ((mod.State & 2) == 0) throw new InvalidOperationException("Deactivation check requires an initially enabled mod");
+                            var row = live.ModsPage!.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id);
+                            row.Get<LoadoutComponents.EnabledStateToggle>(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey).CommandToggle.Execute(R3.Unit.Default);
+                            await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == disabledModName).State & 2) == 0 && live.Profile.Order.Plugins.All(x => x.ModName != disabledModName), "MO2 mod deactivation did not remove its plugins");
+                            Console.WriteLine("PASS: native mod deactivation command disabled the mod and removed its plugins from the right panel");
                         }
                         await Task.Delay(500);
                         foreach (var table in liveWindow.GetVisualDescendants().OfType<TreeDataGrid>())

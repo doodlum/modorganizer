@@ -43,9 +43,23 @@ Use an isolated MO2 FNV instance/profile to avoid altering Skyrim instances.
 6. Verify disabling the mod in MO2 is reflected by both frontends and the next
    launch. Keep test saves separate from existing playthrough saves.
 
-## Current evidence and remaining work
+## Current acceptance status
 
-The default frontend opens the real My Loadouts catalog without assuming an
+The FNV in-game acceptance run passed: usable gameplay, MCM’s visible menu,
+disabling through the frontend and absence on the next launch, restoration,
+and agreement between all 14 running-game plugin indices and the MO2 order.
+See [FNV acceptance evidence](FNV_ACCEPTANCE.md). Both game instances and the
+native NMA navigation/panel controls have also been exercised against MO2.
+
+Full integration remains open. The bridge currently exports basic mod and
+plugin state, but overwrite/conflict details and richer plugin diagnostics still
+need implementation and validation against the required mappings above. The
+profile rename entry in the live data provider also remains a placeholder;
+MO2’s native profile manager is available for profile operations.
+
+## Implementation history
+
+The default frontend opens NMA’s My Games and the real profile catalog without assuming an
 active profile. Fixture mode requires `MO2_FIXTURES=1` or `run-fixtures.sh`.
 `Mo2ProfileFiles` reads
 actual instance/profile files and the downloads folder without writing them:
