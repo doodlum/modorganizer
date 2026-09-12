@@ -169,6 +169,26 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { Launching = false; Changed?.Invoke(); _commands.Release(); }
     }
+    public async Task ManageProfile(Mo2Registration registration, Mo2ProfileSnapshot target, string operation)
+    {
+        if (!await _commands.WaitAsync(0)) return;
+        try {
+            SelectingProfile = true; Status = "Manage " + target.Name + " in MO2"; Changed?.Invoke();
+            var snapshot = await Mo2HostStartup.Connect(registration, message => { Status = message; Changed?.Invoke(); });
+            if (!snapshot.GetProperty("profiles").EnumerateArray().Any(x =>
+                Mo2InstanceCatalog.LocalPath(x.GetProperty("path").GetString()!) == Path.GetFullPath(target.Directory)))
+                throw new InvalidOperationException("The MO2 host does not own this profile");
+            var client = new Mo2BridgeClient(registration.Endpoint);
+            snapshot = await client.SendAsync("manageProfile", new() {
+                ["profilePath"] = snapshot.GetProperty("profile").GetProperty("path").GetString(),
+                ["name"] = target.Name, ["operation"] = operation
+            }, timeout: TimeSpan.FromMinutes(30));
+            // Acting on a card does not select that profile; MO2 remains authoritative.
+            if (Endpoint == registration.Endpoint) { _lastSnapshot = null; Apply(snapshot); }
+            else Status = "Profile action finished in MO2";
+        } catch (Exception error) { Report(error); }
+        finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public async Task ManageProfiles()
     {
         var profile = ProfilePath;

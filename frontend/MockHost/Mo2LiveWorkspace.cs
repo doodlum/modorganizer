@@ -41,6 +41,22 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly WorkspaceId _profileWorkspace;
     public ScenarioHomeMenu HomeMenu { get; }
     public Mo2InstanceCatalog Catalog { get; }
+    public IReadOnlyList<Mo2CatalogEntry> CatalogEntries { get; private set; } = [];
+    private string? _catalogSnapshot;
+    public event Action? CatalogChanged;
+    public void RefreshCatalog()
+    {
+        var entries = Catalog.Read();
+        var snapshot = System.Text.Json.JsonSerializer.Serialize(entries.Select(entry => new {
+            entry.Registration, entry.Error, Game = entry.Instance?.Game, Selected = entry.Instance?.SelectedProfile,
+            Profiles = entry.Instance?.Profiles.Select(profile => new {
+                profile.Name, profile.Directory, Total = profile.ModEntries.Length, Enabled = profile.ModEntries.Count(x => x.Enabled)
+            })
+        }));
+        CatalogEntries = entries;
+        if (snapshot == _catalogSnapshot) return;
+        _catalogSnapshot = snapshot; CatalogChanged?.Invoke();
+    }
     public string GameName => Profile.NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
     public Mo2LiveProfile Profile { get; }
     public ScenarioInstalledPage? ModsPage { get; private set; }
@@ -49,6 +65,8 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     {
         Profile = new(endpoint);
         Catalog = new(endpoint);
+        RefreshCatalog();
+        Profile.Changed += RefreshCatalog;
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         services.Add<IWindowManager>(windows);
@@ -168,7 +186,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
         Profile.Changed += () => { title.Text = Profile.CollectionName.Value; status.Text = Profile.Status; };
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        timer.Tick += async (_, _) => await Profile.Refresh();
+        timer.Tick += async (_, _) => { await Profile.Refresh(); RefreshCatalog(); };
         window.Opened += async (_, _) => { await Profile.Refresh(); timer.Start(); };
         window.Closed += (_, _) => timer.Stop();
         return window;

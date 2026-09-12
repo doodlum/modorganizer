@@ -109,6 +109,22 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='snapshot'))
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
         self.assertEqual(organizer.mods.calls, 0)
+    def test_profile_card_action_preserves_active_profile_and_rejects_stale_request(self):
+        organizer = self.organizer
+        class Profiles:
+            refreshing = False
+            calls = []
+            def snapshot(self): return [{'name': 'Other', 'path': 'Z:/profiles/Other'}]
+            def manage_profile(self, name, operation): self.calls.append((name, operation))
+        profiles = Profiles()
+        self.bridge.profiles = profiles
+        request = self.request(action='manageProfile', name='Other', operation='copy')
+        result = self.bridge.execute(request)
+        self.assertEqual(profiles.calls, [('Other', 'copy')])
+        self.assertEqual(result['profile']['path'], 'Z:/profiles/Test')
+        organizer.current = 'Z:/profiles/Changed'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(len(profiles.calls), 1)
     def test_download_control_uses_host_and_rejects_stale_profile(self):
         class Downloads:
             calls = []

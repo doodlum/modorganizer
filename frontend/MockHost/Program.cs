@@ -142,6 +142,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_CARDS") == "1") await VerifyProfileCards(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
                             await VerifyCrossGame(live, liveWindow, skyrimInstance);
@@ -320,6 +321,56 @@ public partial class MockApp : Application
         await WaitFor(() => live.Profile.Downloads.All(x => x.Name != paused.Name), "MO2 did not cancel the transfer", seconds: 20);
         if (!live.Profile.Downloads.Select(x => x.Name).Order().SequenceEqual(original)) throw new InvalidOperationException("Transfer controls changed other archives");
         Console.WriteLine("PASS: native frontend Pause, Resume and Cancel buttons route through MO2; paused bytes stop, resumed bytes grow, cancelled partial is removed; other archives unchanged");
+    }
+
+    private static async Task VerifyProfileCards(Mo2LiveWorkspace live, Window window)
+    {
+        const string target = "Frontend Card Action Verification";
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Profile card check requires the isolated FNV profile");
+        var source = Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath);
+        var root = Path.GetFullPath(Path.Combine(source, "..", ".."));
+        var destination = Path.Combine(root, "profiles", target);
+        if (Directory.Exists(destination)) throw new InvalidOperationException("Disposable profile already exists");
+        var originals = Directory.GetDirectories(Path.Combine(root, "profiles")).SelectMany(directory =>
+            new[] { "modlist.txt", "plugins.txt", "loadorder.txt" }.Select(file => Path.Combine(directory, file)))
+            .Where(File.Exists).ToDictionary(path => path, File.ReadAllBytes);
+        var backup = Path.Combine(root, "profile-card-test-before", DateTime.UtcNow.ToString("yyyyMMddHHmmss"));
+        foreach (var (path, bytes) in originals) {
+            var saved = Path.Combine(backup, Path.GetRelativePath(Path.Combine(root, "profiles"), path));
+            Directory.CreateDirectory(Path.GetDirectoryName(saved)!); File.WriteAllBytes(saved, bytes);
+        }
+        var originalProfile = live.Profile.ProfilePath;
+        live.OpenLoadouts(live.CatalogEntries.Single(x => x.Registration.Directory == root).Instance!.Game);
+        async Task ClickCard(string name, string buttonName, string operation, string answer)
+        {
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Any(x =>
+                x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == root && card.LoadoutName == name), "Profile card did not refresh");
+            var card = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Single(x =>
+                x.ViewModel is Mo2LoadoutCard model && model.Registration.Directory == root && model.LoadoutName == name);
+            var button = card.GetVisualDescendants().OfType<Button>().Single(x => x.Name == buttonName);
+            if (!button.Command!.CanExecute(button.CommandParameter)) throw new InvalidOperationException("Profile action is disabled");
+            File.WriteAllText(Path.Combine(root, "profile-card-test.json"), System.Text.Json.JsonSerializer.Serialize(new { target, operation, answer }));
+            button.Command.Execute(button.CommandParameter);
+            await WaitFor(() => !File.Exists(Path.Combine(root, "profile-card-test.json")) && !live.Profile.SelectingProfile,
+                "Native profile action did not finish: " + live.Profile.Status, seconds: 45);
+            if (live.Profile.ProfilePath != originalProfile) throw new InvalidOperationException("Card action changed MO2’s active profile");
+        }
+        await ClickCard("Frontend Test", "CreateCopyButton", "copy", "");
+        foreach (var file in new[] { "modlist.txt", "plugins.txt", "loadorder.txt" })
+            if (!File.ReadAllBytes(Path.Combine(source, file)).SequenceEqual(File.ReadAllBytes(Path.Combine(destination, file))))
+                throw new InvalidOperationException("Native profile copy did not preserve " + file);
+        await ClickCard(target, "DeleteButton", "remove", "No");
+        if (!Directory.Exists(destination)) throw new InvalidOperationException("Cancelled removal deleted the profile");
+        await ClickCard(target, "DeleteButton", "remove", "Yes");
+        await WaitFor(() => !Directory.Exists(destination) && live.CatalogEntries.Where(x => x.Registration.Directory == root)
+            .All(x => x.Instance!.Profiles.All(p => p.Name != target)), "Removed profile remains in catalog");
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>()
+            .All(x => x.ViewModel is not Mo2LoadoutCard card || card.LoadoutName != target), "Removed profile card remains visible");
+        foreach (var (path, bytes) in originals)
+            if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
+        Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
+        live.ShowProfile();
     }
 
     private static async Task VerifyNativePanels(Mo2LiveWorkspace live, Window window)

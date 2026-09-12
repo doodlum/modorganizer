@@ -15,7 +15,9 @@ The sidebar, game widgets, loadout cards, top bar and panel system use the origi
 NMA views. My Games → View → profile switches the connected game. My Loadouts
 shows real profiles grouped by game across registered MO2 instances. Selection
 uses each running host. **Manage MO2 profiles…** opens MO2’s original dialog;
-card-level Create Copy/Delete remain disabled until their native actions are connected.
+**Create Copy** and **Delete** on each card open MO2’s original prompts and
+confirmation. The active profile cannot be deleted. Cards refresh when MO2
+profile files change, including changes made in the original interface.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
 Successful in-game FNV validation and remaining mod-management controls are unfinished.

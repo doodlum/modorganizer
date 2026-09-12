@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Reactive.Disposables;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using NexusMods.Abstractions.GameLocators;
@@ -26,9 +27,19 @@ internal sealed class Mo2GamesPage : APageViewModel<IMyGamesViewModel>, IMyGames
     public Mo2GamesPage(IWindowManager windows, Mo2LiveWorkspace shell) : base(windows)
     {
         TabTitle = "My Games"; TabIcon = IconValues.GamepadOutline;
-        InstalledGames = new(new ObservableCollection<IGameWidgetViewModel>(shell.Catalog.Read()
-            .Where(x => x.Instance is not null).GroupBy(x => x.Instance!.Game)
-            .Select(group => new Mo2GameCard(group.Key, () => shell.OpenLoadouts(group.Key)))));
+        var games = new ObservableCollection<IGameWidgetViewModel>();
+        InstalledGames = new(games);
+        void Refresh() {
+            var names = shell.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
+            if (names.SequenceEqual(games.Select(x => x.Name))) return;
+            games.Clear();
+            foreach (var name in names) games.Add(new Mo2GameCard(name, () => shell.OpenLoadouts(name)));
+        }
+        Refresh();
+        this.WhenActivated(d => {
+            Refresh(); shell.CatalogChanged += Refresh;
+            Disposable.Create(() => shell.CatalogChanged -= Refresh).DisposeWith(d);
+        });
     }
 }
 internal sealed class Mo2GameCard : AViewModel<IGameWidgetViewModel>, IGameWidgetViewModel
@@ -62,9 +73,18 @@ internal sealed class Mo2LoadoutsPage : APageViewModel<IMyLoadoutsViewModel>, IM
     public Mo2LoadoutsPage(IWindowManager windows, Mo2LiveWorkspace shell, string? game) : base(windows)
     {
         TabTitle = "My Loadouts"; TabIcon = IconValues.Package;
-        GameSectionViewModels = new(new ObservableCollection<IGameLoadoutsSectionEntryViewModel>(shell.Catalog.Read()
-            .Where(x => x.Instance is not null && (game is null || x.Instance.Game == game))
-            .GroupBy(entry => entry.Instance!.Game).Select(group => new Mo2LoadoutsSection(shell, group.Key, group))));
+        var sections = new ObservableCollection<IGameLoadoutsSectionEntryViewModel>();
+        GameSectionViewModels = new(sections);
+        void Refresh() {
+            sections.Clear();
+            foreach (var group in shell.CatalogEntries.Where(x => x.Instance is not null && (game is null || x.Instance.Game == game)).GroupBy(x => x.Instance!.Game))
+                sections.Add(new Mo2LoadoutsSection(shell, group.Key, group));
+        }
+        Refresh();
+        this.WhenActivated(d => {
+            Refresh(); shell.CatalogChanged += Refresh;
+            Disposable.Create(() => shell.CatalogChanged -= Refresh).DisposeWith(d);
+        });
     }
 }
 internal sealed class Mo2LoadoutsSection : AViewModel<IGameLoadoutsSectionEntryViewModel>, IGameLoadoutsSectionEntryViewModel
@@ -93,13 +113,17 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
     public string LoadoutModCount => $"Mods {Profile.ModEntries.Count(x => x.Enabled)} enabled / {Profile.ModEntries.Length}";
     public bool IsDeleting => false;
     public bool IsSkeleton => false;
-    public bool IsLastLoadout => true;
+    public bool IsLastLoadout { get; }
     public ReactiveCommand<Unit, Unit> VisitLoadoutCommand { get; }
-    public ReactiveCommand<Unit, Unit> CloneLoadoutCommand { get; } = ReactiveCommand.Create(() => { }, Observable.Return(false));
-    public ReactiveCommand<Unit, Unit> DeleteLoadoutCommand { get; } = ReactiveCommand.Create(() => { }, Observable.Return(false));
+    public ReactiveCommand<Unit, Unit> CloneLoadoutCommand { get; }
+    public ReactiveCommand<Unit, Unit> DeleteLoadoutCommand { get; }
     public Mo2LoadoutCard(Mo2LiveWorkspace shell, Mo2CatalogEntry entry, Mo2ProfileSnapshot profile, int number)
     {
         Registration = entry.Registration; Profile = profile;
+        IsLastLoadout = entry.Instance!.Profiles.Length <= 1;
+        CloneLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "copy"));
+        DeleteLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "remove"),
+            Observable.Return(!IsLastLoadout && entry.Instance.SelectedProfile != profile.Name));
         LoadoutImage = Mo2GameArt.Cover(entry.Instance!.Game);
         LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = number.ToString() };
         VisitLoadoutCommand = ReactiveCommand.CreateFromTask(async () => {

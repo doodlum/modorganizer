@@ -231,3 +231,37 @@ executable contexts switch too. FNV returns with 11 mods and 14 plugins.
 This verifies navigation and MO2 state, not Skyrim gameplay or the remaining
 FNV MCM-menu/disabled-mod acceptance checks. Build passes with the existing
 upstream OpenTelemetry NU1902 advisory.
+
+### Native profile card actions and live catalog refresh — 2026-09-12
+
+Create Copy and Delete now target the card’s profile through MO2’s original
+profile manager controls. The adapter selects the manager row, invokes its
+copy or removal button, and leaves the original name prompt/confirmation and
+save handling intact. It does not activate the target profile. MO2 rejects
+removal of its active profile; the card disables that action too. Acting on
+another instance’s profile does not replace the current frontend connection.
+The profile manager remains open until the user closes it.
+
+My Games, My Loadouts and the game spine observe catalog changes. Visible
+cards update when profiles appear/disappear or their mod counts change; pages
+refresh again when reactivated. The catalog comparison excludes download byte
+progress, so downloading does not continually rebuild profile cards. The
+catalog remains a read-only view of MO2 files, not an independent profile store.
+
+`MO2_VERIFY_PROFILE_CARDS=1` exercised the actual native card commands against
+the isolated FNV host. MO2 copied Frontend Test to a disposable profile with
+identical modlist/plugins/loadorder files. Its original deletion confirmation
+was answered No (profile retained), then Yes (directory and card removed).
+The active profile remained Frontend Test. A repeat run saved the before-state
+and verified all original profiles’ modlist/plugins/loadorder bytes unchanged.
+The first run had detected an unrelated profile-file rewrite without preserving
+its before-bytes; its exact change cannot be attributed from that run. MO2’s
+native manager constructs every Profile and can flush their pending mod lists;
+the adapter does not replace that behavior. The disposable profile was removed
+through MO2, and the temporary dialog driver was removed before production
+host restart. No Skyrim profiles were copied or deleted by this check.
+
+Thirteen bridge contract checks and the frontend build pass (the existing
+upstream OpenTelemetry NU1902 warning remains). This adds real profile actions;
+it does not close the pending in-game MCM menu, disabled-mod comparison, or
+FNV DLC load-order investigation.

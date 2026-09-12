@@ -75,13 +75,15 @@ class Bridge:
             if self.mod_actions is None:
                 raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.remove(request.get('name'))
-        if action in ('selectProfile', 'manageProfiles'):
+        if action in ('selectProfile', 'manageProfiles', 'manageProfile'):
             if self.profiles is None:
                 raise ValueError('MO2 profile integration is unavailable')
             if action == 'selectProfile':
                 name = request.get('name')
                 if not isinstance(name, str): raise ValueError('A profile name is required')
                 self.profiles.select(name)
+            elif action == 'manageProfile':
+                self.profiles.manage_profile(request.get('name'), request.get('operation'))
             else:
                 self.profiles.manage()
             return self.snapshot()

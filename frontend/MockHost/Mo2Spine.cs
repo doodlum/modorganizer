@@ -25,13 +25,22 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         Home = new IconButtonViewModel { Name = "Home", Click = ReactiveCommand.Create(shell.OpenGames) };
         AddLoadout = new IconButtonViewModel { Name = "Manage MO2 instances", Click = ReactiveCommand.Create(shell.OpenConnections) };
         Downloads = new SpineDownloadButtonDesignerViewModel { Number = 0, Units = "", Click = ReactiveCommand.Create(shell.OpenDownloads) };
-        LoadoutSpineItems = new(new ObservableCollection<IImageButtonViewModel>(shell.Catalog.Read().Where(x => x.Instance is not null)
-            .GroupBy(x => x.Instance!.Game).Select(group => new ImageButtonViewModel {
-                Name = group.Key, Image = Mo2GameArt.Cover(group.Key), Click = ReactiveCommand.Create(() => shell.OpenLoadouts(group.Key)) })));
+        var games = new ObservableCollection<IImageButtonViewModel>();
+        LoadoutSpineItems = new(games);
+        void RefreshGames() {
+            var names = shell.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
+            if (names.SequenceEqual(games.Select(x => x.Name))) return;
+            games.Clear();
+            foreach (var name in names) games.Add(new ImageButtonViewModel {
+                Name = name, Image = Mo2GameArt.Cover(name), Click = ReactiveCommand.Create(() => shell.OpenLoadouts(name)) });
+            RefreshSelection();
+        }
+        RefreshGames();
+        shell.CatalogChanged += RefreshGames;
         void RefreshSelection() {
             var home = shell.WorkspaceController.ActiveWorkspace.Context is HomeContext;
             ((IconButtonViewModel)Home).IsActive = home;
-            foreach (var item in LoadoutSpineItems.Cast<ImageButtonViewModel>()) item.IsActive = !home && item.Name == shell.GameName;
+            foreach (var item in LoadoutSpineItems.Cast<ImageButtonViewModel>()) item.IsActive = !home && (item.Name == shell.GameName || (item.Name == "New Vegas" && shell.Profile.NexusGame == "newvegas"));
         }
         shell.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => RefreshSelection());
         shell.Profile.Changed += RefreshSelection;

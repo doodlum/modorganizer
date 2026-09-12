@@ -231,3 +231,12 @@ row command with a disposable `Frontend Uninstall Verification` mod in the
 isolated FNV instance. It requires a narrow test-only dialog responder. Both
 Cancel and Confirm passed, including file/profile cleanup and preservation of
 other mods and archives. The responder is not part of the production bridge.
+
+
+`manageProfile` accepts `name` and `operation` (`copy` or `remove`) with the
+usual active `profilePath` and session guard. It targets the existing profile
+in MO2’s original profile manager without activating it, then invokes the
+original copy or removal control. MO2 owns the name prompt, confirmation,
+profile copy semantics, save handling, and active-profile deletion restriction.
+The manager remains open until the user closes it; then the bridge returns a
+fresh host snapshot. No profile files are written by this adapter.
