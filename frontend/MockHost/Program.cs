@@ -39,6 +39,7 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--inspect-mo2") { Mo2ProfileFiles.Inspect(args.Skip(1).ToArray()); return; }
         IconProvider.Current.Register<MaterialDesignIconProvider>();
         AppBuilder.Configure<MockApp>().UsePlatformDetect()
             .With(new X11PlatformOptions { UseDBusMenu = false })

@@ -1,3 +1,8 @@
+> **Current target:** integrate the frontend with MO2-owned profiles, mods,
+> plugins and downloads. Earlier fixture sections below describe scaffolding,
+> not completed integration. See [MO2 integration and FNV acceptance](MO2_INTEGRATION.md).
+> Proton is acceptable; existing MO2 extensions must retain their APIs.
+
 # Alternate Nexus frontend (in progress)
 
 Standalone Linux Avalonia host for Mod Organizer. The MO2 C++ application is not required.
