@@ -36,6 +36,24 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     public ScenarioPluginOrder PluginOrder { get; } = new();
     public ScenarioData Data { get; }
     public ScenarioHomeMenu HomeMenu { get; }
+    private readonly Dictionary<WorkspaceId, ILeftMenuViewModel> _menus = new();
+    private ScenarioLoadoutFactory _loadoutFactory = null!;
+    public WorkspaceId HomeWorkspaceId { get; private set; }
+    public ILeftMenuViewModel GetActiveMenu() => _menus.GetValueOrDefault(WorkspaceController.ActiveWorkspaceId) ?? HomeMenu;
+    public void GoHome() => WorkspaceController.ChangeActiveWorkspace(HomeWorkspaceId);
+    public void VisitLoadout(ScenarioLoadoutCard card)
+    {
+        var workspace = WorkspaceController.ChangeOrCreateWorkspaceByContext<ScenarioWorkspaceContext>(
+            context => context.Number == card.Number,
+            () => _loadoutFactory.Data(card.Number, true),
+            () => new ScenarioWorkspaceContext(card.Number, card.LoadoutName));
+        if (!_menus.ContainsKey(workspace.Id))
+            _menus.Add(workspace.Id, new ScenarioLoadoutMenu(WorkspaceController, workspace.Id, _loadoutFactory.Data(card.Number), _loadoutFactory.Data(card.Number, true)));
+        // The view also listens to this event: a freshly-created workspace becomes
+        // active before its menu can be registered.
+        MenuChanged?.Invoke();
+    }
+    public event Action? MenuChanged;
     public ScenarioWorkspace()
     {
         InstalledMods = new ScenarioInstalledMods(PluginOrder);
@@ -70,17 +88,24 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
             () => new ScenarioInstalledPage(services, windows, InstalledMods, PluginOrder));
         InstalledPage = installedPage.Data;
         var loadoutDetail = new ScenarioLoadoutFactory(services, windows, Data);
-        Data.Section.Visit = card => {
+        _loadoutFactory = loadoutDetail;
+        Data.Section.Visit = VisitLoadout;
+        Data.Section.Removed += card => {
             var controller = WorkspaceController!;
-            var panel = controller.ActiveWorkspace.SelectedPanel;
-            controller.OpenPage(controller.ActiveWorkspaceId, loadoutDetail.Data(card.Number), new OpenPageBehavior.ReplaceTab(panel.Id, panel.SelectedTab.Id));
+            var workspace = controller.AllWorkspaces.FirstOrDefault(x => x.Context is ScenarioWorkspaceContext context && context.Number == card.Number);
+            if (workspace is null) return;
+            if (controller.ActiveWorkspaceId == workspace.Id) GoHome();
+            _menus.Remove(workspace.Id);
+            controller.UnregisterWorkspaceByContext<ScenarioWorkspaceContext>(context => context.Number == card.Number);
         };
+        services.Add(Data);
         services.Add(new PageFactoryController([games, loadouts, settingsPage, orderPage, installedPage, loadoutDetail, new NewTabPageFactory(services)]));
         // The controller is internal upstream. Instantiate its public constructor without forking
         // its implementation so panel geometry, tab navigation, drag/drop and history stay original.
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", throwOnError: true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var workspace = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
+        HomeWorkspaceId = workspace.Id;
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
         HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, loadouts.Data);
     }
@@ -115,8 +140,8 @@ internal sealed class FixturePageFactory(string id, string title, IconValue icon
 internal sealed class FixtureAttachments : IWorkspaceAttachmentsFactoryManager
 {
     public ILeftMenuViewModel? CreateLeftMenuFor(IWorkspaceContext context, WorkspaceId workspaceId, IWorkspaceController workspaceController) => null;
-    public string CreateTitleFor(IWorkspaceContext context) => "Home";
-    public string CreateSubtitleFor(IWorkspaceContext context) => "";
+    public string CreateTitleFor(IWorkspaceContext context) => context is ScenarioWorkspaceContext ? "Fallout: New Vegas" : "Home";
+    public string CreateSubtitleFor(IWorkspaceContext context) => context is ScenarioWorkspaceContext loadout ? loadout.Name : "";
 }
 
 internal sealed class FixtureWindows : IWindowManager

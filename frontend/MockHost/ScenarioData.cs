@@ -88,6 +88,7 @@ internal sealed class ScenarioLoadoutsSection : AViewModel<IGameLoadoutsSectionE
     public ReadOnlyObservableCollection<IViewModelInterface> CardViewModels { get; }
     public IReadOnlyList<ScenarioLoadoutCard> Loadouts => _cards.OfType<ScenarioLoadoutCard>().ToArray();
     private int _nextId;
+    public event Action<ScenarioLoadoutCard>? Removed;
     public Action<ScenarioLoadoutCard> Visit { get; set; } = _ => { };
     public ScenarioLoadoutsSection()
     {
@@ -102,8 +103,8 @@ internal sealed class ScenarioLoadoutsSection : AViewModel<IGameLoadoutsSectionE
         _cards.Add(card);
         Refresh();
     }
-    public void Remove(ScenarioLoadoutCard card) { _cards.Remove(card); Refresh(); }
-    public void Clear() { foreach (var card in Loadouts) _cards.Remove(card); }
+    public void Remove(ScenarioLoadoutCard card) { _cards.Remove(card); Removed?.Invoke(card); Refresh(); }
+    public void Clear() { foreach (var card in Loadouts) Remove(card); }
     private void Refresh() { foreach (var card in Loadouts) card.Refresh(); }
     public void Dispose() { foreach (var card in Loadouts) { card.CloneLoadoutCommand.Dispose(); card.DeleteLoadoutCommand.Dispose(); } }
 }

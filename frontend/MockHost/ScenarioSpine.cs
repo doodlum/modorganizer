@@ -29,16 +29,18 @@ internal sealed class ScenarioSpine : AViewModel<ISpineViewModel>, ISpineViewMod
         AddLoadout = new IconButtonViewModel { Name = "Add game", Click = ReactiveCommand.Create(NavigateToHome) };
         LoadoutSpineItems = new(_loadouts);
         ((System.Collections.Specialized.INotifyCollectionChanged)scenario.Data.Section.CardViewModels).CollectionChanged += (_, _) => Refresh();
+        scenario.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => Refresh());
         Refresh();
     }
-    public void NavigateToHome() => _scenario.HomeMenu.LeftMenuItemMyGames.NavigateCommand
-        .Execute(NavigationInformation.From(NavigationInput.Default)).Subscribe();
+    public void NavigateToHome() => _scenario.GoHome();
     private void Refresh()
     {
         _loadouts.Clear();
+        ((IconButtonViewModel)Home).IsActive = _scenario.WorkspaceController.ActiveWorkspace.Context is HomeContext;
         foreach (var card in _scenario.Data.Section.Loadouts)
             _loadouts.Add(new ImageButtonViewModel { Name = card.LoadoutName, Image = card.LoadoutImage,
                 LoadoutBadgeViewModel = card.LoadoutBadgeViewModel,
+                IsActive = _scenario.WorkspaceController.ActiveWorkspace.Context is ScenarioWorkspaceContext context && context.Number == card.Number,
                 Click = card.VisitLoadoutCommand });
     }
 }

@@ -107,3 +107,23 @@ connection satisfies the original table adapter's constructor; the displayed
 rows come entirely from fixture providers. No installed game or MO2 database is
 opened. The loadout sidebar/context, file viewing, collection actions and full
 reference image comparisons still need implementation and verification.
+
+## Workspace switching
+
+Home and each fixture loadout now use separate original workspace instances.
+Spine navigation restores their current panels and tabs. The top bar, active
+spine item and original loadout sidebar follow the active workspace. My Mods
+opens the native collection header and Mods/Rules view; new-tab discovery also
+provides All and My Mods for the current loadout. Deleting a loadout unregisters
+its workspace and returns Home if needed.
+
+```sh
+MO2_VERIFY_CONTEXTS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/loadout-workspace.png" ./frontend/run.sh
+```
+
+The check verifies workspace independence, panel/tab identity on returning,
+sidebar rendering, collection navigation and deletion cleanup. The resulting
+My Mods screen was visually inspected. This does not prove full mouse/keyboard
+interaction parity or restart persistence. Library, New Collection, utilities,
+Preview/Apply and Play in this sidebar still use upstream design placeholders;
+they require functional fixtures before the frontend is complete.

@@ -36,7 +36,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public LoadoutPageSubTabs SelectedSubTab { get; }
     public bool HasRulesSection => true;
     public ISortingSelectionViewModel RulesSectionViewModel { get; }
-    public bool IsCollection => false;
+    public bool IsCollection { get; }
     public bool EnableCollectionSharing => false;
     public IReadOnlyBindableReactiveProperty<bool> IsCollectionUploaded { get; } = new BindableReactiveProperty<bool>(false);
     public IReadOnlyBindableReactiveProperty<string> CollectionName { get; } = new BindableReactiveProperty<string>("My Mods");
@@ -59,9 +59,10 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
 
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, ScenarioInstalledMods mods, ScenarioPluginOrder order,
-        LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods) : base(windows)
+        LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false) : base(windows)
     {
-        TabTitle = "All"; TabIcon = IconValues.FormatAlignJustify;
+        IsCollection = isCollection;
+        TabTitle = isCollection ? "My Mods" : "All"; TabIcon = isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
         SelectedSubTab = selected;
         RulesSectionViewModel = new ScenarioRules(services, order);
         var filter = new LoadoutFilter { LoadoutId = default, CollectionGroupId = default };

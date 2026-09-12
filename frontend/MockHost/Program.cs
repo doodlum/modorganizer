@@ -24,7 +24,7 @@ using NexusMods.App.UI.Pages.MyGames;
 using NexusMods.App.UI.Pages.MyLoadouts;
 using NexusMods.UI.Sdk;
 using NexusMods.App.UI.WorkspaceSystem;
-using Projektanker.Icons.Avalonia;
+using IconProvider = Projektanker.Icons.Avalonia.IconProvider;
 using Projektanker.Icons.Avalonia.MaterialDesign;
 using ReactiveUI;
 using Splat;
@@ -77,9 +77,16 @@ public partial class MockApp : Application
             Add(grid, new Spine { ViewModel = new ScenarioSpine(scenario) }, 0, 0, rowSpan: 2);
             var topbar = new ScenarioTopBar(scenario);
             Add(grid, new TopBarView { ViewModel = topbar }, 1, 0, columnSpan: 2);
-            Add(grid, new HomeLeftMenuView { ViewModel = scenario.HomeMenu }, 1, 1);
-            Add(grid, new WorkspaceView { ViewModel = scenario.WorkspaceController.ActiveWorkspace,
-                Margin = new Thickness(0, 0, 12, 12) }, 2, 1);
+            var sidebar = new ViewModelViewHost { ViewModel = scenario.HomeMenu };
+            Add(grid, sidebar, 1, 1);
+            var workspaceView = new WorkspaceView { ViewModel = scenario.WorkspaceController.ActiveWorkspace,
+                Margin = new Thickness(0, 0, 12, 12) };
+            Add(grid, workspaceView, 2, 1);
+            scenario.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => {
+                workspaceView.ViewModel = workspace;
+                sidebar.ViewModel = scenario.GetActiveMenu();
+            });
+            scenario.MenuChanged += () => sidebar.ViewModel = scenario.GetActiveMenu();
             var window = new Window { Title = "Mod Organizer — Nexus frontend scenarios", Width = 1440, Height = 900,
                 Background = (IBrush)this.FindResource("SurfaceBaseBrush")!, Content = grid };
             Add(grid, new DevelopmentBuildBannerView { ViewModel = new DevelopmentBuildBannerDesignViewModel() }, 0, 2, columnSpan: 3);
@@ -95,6 +102,8 @@ public partial class MockApp : Application
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyOrder(scenario); }, TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALLED") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyInstalled(scenario, window); }, TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTEXTS") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyContexts(scenario, window); }, TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -107,6 +116,50 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyContexts(ScenarioWorkspace scenario, Window window)
+    {
+        var controller = scenario.WorkspaceController;
+        var home = controller.ActiveWorkspace;
+        home.SelectedPanel.AddDefaultTab();
+        var homeTab = home.SelectedTab.Id;
+        await scenario.Data.Game.AddGameCommand.Execute();
+        var first = scenario.Data.Section.Loadouts.Single();
+        await first.VisitLoadoutCommand.Execute();
+        var firstWorkspace = controller.ActiveWorkspace;
+        controller.AddPanel(firstWorkspace.Id, firstWorkspace.AddPanelButtonViewModels.First().NewLayoutState,
+            new AddPanelBehavior(new AddPanelBehavior.WithDefaultTab()));
+        firstWorkspace.SelectedPanel.AddDefaultTab();
+        var firstTab = firstWorkspace.SelectedTab.Id;
+        var firstPanels = firstWorkspace.Panels.Select(x => x.Id).ToArray();
+        await first.CloneLoadoutCommand.Execute();
+        var second = scenario.Data.Section.Loadouts.Last();
+        await second.VisitLoadoutCommand.Execute();
+        var secondWorkspace = controller.ActiveWorkspace;
+        if (secondWorkspace.Id == firstWorkspace.Id || secondWorkspace.Panels.Count != 1)
+            throw new InvalidOperationException("Loadout workspace was shared");
+        scenario.GoHome();
+        if (controller.ActiveWorkspace.Id != home.Id || home.SelectedTab.Id != homeTab)
+            throw new InvalidOperationException("Home tab state was lost");
+        await first.VisitLoadoutCommand.Execute();
+        await Task.Delay(100);
+        if (controller.ActiveWorkspace.Id != firstWorkspace.Id || firstWorkspace.SelectedTab.Id != firstTab ||
+            !firstWorkspace.Panels.Select(x => x.Id).SequenceEqual(firstPanels))
+            throw new InvalidOperationException("Loadout panel or tab state was lost");
+        if (!window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView>().Any())
+            throw new InvalidOperationException("Loadout sidebar did not render");
+        await first.DeleteLoadoutCommand.Execute();
+        if (controller.AllWorkspaces.Any(x => x.Id == firstWorkspace.Id) || controller.ActiveWorkspace.Id != home.Id)
+            throw new InvalidOperationException("Deleted loadout left its workspace active");
+        await second.VisitLoadoutCommand.Execute();
+        await Task.Delay(100);
+        var menu = (ScenarioLoadoutMenu)scenario.GetActiveMenu();
+        await menu.LeftMenuCollectionItems.Single().NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await Task.Delay(100);
+        if (controller.ActiveWorkspace.SelectedTab.Contents.ViewModel is not ScenarioInstalledPage { IsCollection: true } collection || collection.ItemCount.Value != 4)
+            throw new InvalidOperationException("My Mods sidebar navigation failed");
+        Console.WriteLine("PASS: independent Home/loadout workspaces; panel/tab restoration; native loadout sidebar; deleted workspace cleanup");
     }
 
     private static async Task VerifyInstalled(ScenarioWorkspace scenario, Window window)

@@ -27,6 +27,10 @@ internal sealed class ScenarioTopBar : TopBarDesignViewModel, ITopBarViewModel
         Username = "Test User";
         AddPanelDropDownViewModel = new AddPanelDropDownViewModel(controller);
         NewTabCommand = ReactiveCommand.Create(() => controller.ActiveWorkspace.SelectedPanel.AddDefaultTab());
+        controller.WhenAnyValue(c => c.ActiveWorkspace).Subscribe(workspace => {
+            ActiveWorkspaceTitle = workspace.Title;
+            ActiveWorkspaceSubtitle = workspace.Context is ScenarioWorkspaceContext context ? context.Name : "";
+        });
         controller.WhenAnyValue(c => c.ActiveWorkspace)
             .Select(workspace => workspace.WhenAnyValue(w => w.SelectedTab))
             .Switch()
