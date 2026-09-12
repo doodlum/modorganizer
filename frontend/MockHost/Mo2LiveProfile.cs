@@ -275,7 +275,6 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
-    public void Rename(string name) => Report(new NotSupportedException("Use MO2 to rename profiles while profile management is being connected."));
     public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => Observable.Defer(() => _mods.CountChanged.StartWith(_mods.Count).DistinctUntilChanged());
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveLoadoutItems(LoadoutFilter filter)
         => _mods.Connect().Transform(mod => {

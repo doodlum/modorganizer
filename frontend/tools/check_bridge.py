@@ -134,9 +134,11 @@ class ContractTests(unittest.TestCase):
         result = self.bridge.execute(request)
         self.assertEqual(profiles.calls, [('Other', 'copy')])
         self.assertEqual(result['profile']['path'], 'Z:/profiles/Test')
+        self.bridge.execute(self.request(action='manageProfile', name='Other', operation='rename'))
+        self.assertEqual(profiles.calls[-1], ('Other', 'rename'))
         organizer.current = 'Z:/profiles/Changed'
         with self.assertRaises(ValueError): self.bridge.execute(request)
-        self.assertEqual(len(profiles.calls), 1)
+        self.assertEqual(len(profiles.calls), 2)
     def test_download_control_uses_host_and_rejects_stale_profile(self):
         class Downloads:
             calls = []

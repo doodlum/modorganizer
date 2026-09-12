@@ -67,9 +67,10 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         IsMo2Profile = LiveProfile is not null;
         CollectionName = mods.CollectionName;
         CommandRenameGroup = new(async (_, token) => {
+            if (mods is not ScenarioInstalledMods fixtureMods) return;
             var result = await windows.ShowDialog(LoadoutDialogs.RenameCollection(mods.CollectionName.Value), NexusMods.App.UI.Dialog.Enums.DialogWindowType.Modal);
             if (result.ButtonId == NexusMods.UI.Sdk.Dialog.ButtonDefinitionId.Accept && !string.IsNullOrWhiteSpace(result.InputText))
-                mods.Rename(result.InputText.Trim());
+                fixtureMods.Rename(result.InputText.Trim());
         });
         IsCollection = isCollection;
         TabTitle = isCollection ? "My Mods" : "All"; TabIcon = isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;

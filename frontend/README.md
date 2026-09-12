@@ -15,8 +15,8 @@ The sidebar, game widgets, loadout cards, top bar and panel system use the origi
 NMA views. My Games → View → profile switches the connected game. My Loadouts
 shows real profiles grouped by game across registered MO2 instances. Selection
 uses each running host. **Manage MO2 profiles…** opens MO2’s original dialog;
-**Create Copy** and **Delete** on each card open MO2’s original prompts and
-confirmation. The active profile cannot be deleted. Cards refresh when MO2
+**Create Copy**, **Rename** and **Delete** on each card open MO2’s original
+prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
@@ -98,7 +98,6 @@ acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
 - Expose richer native plugin diagnostics and forced-state information.
-- Replace the live profile rename placeholder with MO2’s original operation.
 - Verify panel drag/drop, history and state restoration more broadly.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.

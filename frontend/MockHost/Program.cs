@@ -91,6 +91,15 @@ internal sealed class FixtureViewLocator : IViewLocator
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
         if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return new Mo2PluginsView { ViewModel = plugins };
+        if (viewModel is Mo2LoadoutCard card) {
+            var cardView = new NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView { ViewModel = card };
+            var rename = new NexusMods.App.UI.Controls.StandardButton { Name = "RenameMo2ProfileButton", Text = "Rename", ShowLabel = false, ShowIcon = NexusMods.App.UI.Controls.StandardButton.ShowIconOptions.Left, LeftIcon = NexusMods.UI.Sdk.Icons.IconValues.FolderEditOutline, Command = card.RenameProfileCommand };
+            Avalonia.Automation.AutomationProperties.SetName(rename, "Rename profile");
+            ToolTip.SetTip(rename, "Rename this profile in MO2. Select a different profile first if this one is active.");
+            DockPanel.SetDock(rename, Dock.Right);
+            cardView.FindControl<DockPanel>("ActionsDock")!.Children.Insert(1, rename);
+            return cardView;
+        }
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
@@ -399,10 +408,26 @@ public partial class MockApp : Application
                 "Native profile action did not finish: " + live.Profile.Status, seconds: 45);
             if (live.Profile.ProfilePath != originalProfile) throw new InvalidOperationException("Card action changed MO2’s active profile");
         }
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Any(x =>
+            x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == root && card.LoadoutName == "Frontend Test"), "Active profile card missing");
+        var activeCard = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Single(x =>
+            x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == root && card.LoadoutName == "Frontend Test");
+        var activeRename = activeCard.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.StandardButton>().Single(x => x.Name == "RenameMo2ProfileButton");
+        if (activeRename.Command!.CanExecute(activeRename.CommandParameter)) throw new InvalidOperationException("Active profile rename must be disabled");
         await ClickCard("Frontend Test", "CreateCopyButton", "copy", "");
         foreach (var file in new[] { "modlist.txt", "plugins.txt", "loadorder.txt" })
             if (!File.ReadAllBytes(Path.Combine(source, file)).SequenceEqual(File.ReadAllBytes(Path.Combine(destination, file))))
                 throw new InvalidOperationException("Native profile copy did not preserve " + file);
+        await ClickCard(target, "RenameMo2ProfileButton", "rename", "Cancel");
+        if (!Directory.Exists(destination)) throw new InvalidOperationException("Cancelled rename moved the profile");
+        await ClickCard(target, "RenameMo2ProfileButton", "rename", "Renamed");
+        var renamed = destination + " Renamed";
+        if (Directory.Exists(destination) || !Directory.Exists(renamed)) throw new InvalidOperationException("Native rename did not move the profile");
+        foreach (var file in new[] { "modlist.txt", "plugins.txt", "loadorder.txt" })
+            if (!File.ReadAllBytes(Path.Combine(source, file)).SequenceEqual(File.ReadAllBytes(Path.Combine(renamed, file))))
+                throw new InvalidOperationException("Native rename changed " + file);
+        await ClickCard(target + " Renamed", "RenameMo2ProfileButton", "rename", "Original");
+        if (Directory.Exists(renamed) || !Directory.Exists(destination)) throw new InvalidOperationException("Native rename did not restore the profile name");
         await ClickCard(target, "DeleteButton", "remove", "No");
         if (!Directory.Exists(destination)) throw new InvalidOperationException("Cancelled removal deleted the profile");
         await ClickCard(target, "DeleteButton", "remove", "Yes");
@@ -412,7 +437,7 @@ public partial class MockApp : Application
             .All(x => x.ViewModel is not Mo2LoadoutCard card || card.LoadoutName != target), "Removed profile card remains visible");
         foreach (var (path, bytes) in originals)
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
-        Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
+        Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
     }
 

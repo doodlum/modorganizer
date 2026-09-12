@@ -54,9 +54,8 @@ native NMA navigation/panel controls have also been exercised against MO2.
 Full integration remains open. The bridge exports MO2 mod state, Overwrite,
 native priority labels, conflict/status text and plugin state. Details in MO2
 opens the original conflict/file dialog. Richer plugin diagnostics still need
-implementation and validation against the required mappings above. The
-profile rename entry in the live data provider also remains a placeholder;
-MO2’s native profile manager is available for profile operations.
+implementation and validation against the required mappings above. MO2’s native profile manager handles profile operations, including the
+My Loadouts card’s rename action.
 
 ## Implementation history
 
@@ -308,3 +307,29 @@ repeating with Windows WM_CLOSE passed for both dialogs. Fourteen bridge
 contract checks and the frontend build pass (existing OpenTelemetry NU1902
 warning). This check does not establish Skyrim gameplay or complete plugin
 diagnostics. FNV in-game acceptance is recorded separately above.
+
+### Profile rename through the original manager — 2026-09-12
+
+My Loadouts cards retain the upstream NMA view and add a Rename icon beside
+its existing actions. Rename opens MO2’s original profile manager and name
+prompt for that card’s profile, without selecting it. The active profile’s
+button is disabled, and the bridge rejects attempts to rename the active
+profile, matching MO2’s restriction. The original profile manager remains open
+after the prompt and must be closed to finish the action.
+
+The former live data-provider rename placeholder was actually NMA collection
+renaming. Collection naming now remains fixture-only; live profile renaming
+routes through the profile card and MO2’s original dialog. No profile directory
+or profile contents are written by the adapter.
+
+The extended isolated FNV card check copied a disposable profile, cancelled a
+rename, renamed it and restored its name, then exercised Delete No and Yes.
+Cards refreshed after each rename; modlist/plugins/loadorder files remained
+identical and all original profiles’ checked bytes and the active profile were
+unchanged. A narrow dialog-answer driver was used only for this verification
+and removed before restarting the production host.
+
+The final card layout uses NMA’s standard icon button with a Rename profile
+accessibility label and tooltip, preserving space for Create Copy. The active
+card’s rename command was checked as disabled. Fourteen bridge contract checks
+and the frontend build pass; richer plugin diagnostics remain open.

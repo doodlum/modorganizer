@@ -117,10 +117,13 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
     public ReactiveCommand<Unit, Unit> VisitLoadoutCommand { get; }
     public ReactiveCommand<Unit, Unit> CloneLoadoutCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteLoadoutCommand { get; }
+    public ReactiveCommand<Unit, Unit> RenameProfileCommand { get; }
     public Mo2LoadoutCard(Mo2LiveWorkspace shell, Mo2CatalogEntry entry, Mo2ProfileSnapshot profile, int number)
     {
         Registration = entry.Registration; Profile = profile;
         IsLastLoadout = entry.Instance!.Profiles.Length <= 1;
+        RenameProfileCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "rename"),
+            Observable.Return(entry.Instance.SelectedProfile != profile.Name));
         CloneLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "copy"));
         DeleteLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "remove"),
             Observable.Return(!IsLastLoadout && entry.Instance.SelectedProfile != profile.Name));

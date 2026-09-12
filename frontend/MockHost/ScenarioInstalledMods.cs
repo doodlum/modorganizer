@@ -16,7 +16,6 @@ internal interface IInstalledModsSource : ILoadoutDataProvider
     R3.BindableReactiveProperty<string> CollectionName { get; }
     void Toggle(IEnumerable<LoadoutItemId> ids);
     void Remove(IEnumerable<LoadoutItemId> ids);
-    void Rename(string name);
 }
 
 internal sealed class ScenarioInstalledMods : IInstalledModsSource
