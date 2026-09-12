@@ -1,4 +1,8 @@
 using System.Reactive;
+using System.Reactive.Linq;
+using Avalonia.ReactiveUI;
+using NexusMods.App.UI.Controls.Spine;
+using NexusMods.App.UI.Controls.TopBar;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -29,7 +33,15 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _downloadsPage;
     private readonly PageData _profilesPage;
     private readonly PageData _modsPage;
+    private readonly PageData _gamesPage;
+    private readonly PageData _gameLoadoutsPage;
+    private readonly PageData _connectionsPage;
+    public PageData ConnectionsPage => _connectionsPage;
+    private readonly WorkspaceId _homeWorkspace;
+    private readonly WorkspaceId _profileWorkspace;
+    public ScenarioHomeMenu HomeMenu { get; }
     public Mo2InstanceCatalog Catalog { get; }
+    public string GameName => Profile.NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
     public Mo2LiveProfile Profile { get; }
     public ScenarioInstalledPage? ModsPage { get; private set; }
     public ScenarioLoadOrderPage? PluginsPage { get; private set; }
@@ -56,26 +68,55 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             () => new Mo2DownloadsPage(windows, Profile));
         _downloadsPage = downloads.Data;
         var profiles = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82104", "My Loadouts", IconValues.Package,
+            () => new Mo2LoadoutsPage(windows, this, null));
+        var gameLoadouts = new Mo2GameLoadoutsFactory(windows, this);
+        _gameLoadoutsPage = gameLoadouts.Data;
+        var games = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82105", "My Games", IconValues.GamepadOutline,
+            () => new Mo2GamesPage(windows, this));
+        _gamesPage = games.Data;
+        var connections = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82106", "MO2 instances", IconValues.Folder,
             () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile));
+        _connectionsPage = connections.Data;
         _profilesPage = profiles.Data;
-        services.Add(new PageFactoryController([mods, plugins, downloads, profiles, new NewTabPageFactory(services)]));
+        services.Add(new PageFactoryController([mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
-        var workspace = WorkspaceController.CreateWorkspace(new HomeContext(), mods.Data);
+        var home = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
+        _homeWorkspace = home.Id;
+        WorkspaceController.ChangeActiveWorkspace(home.Id);
+        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data);
+        var workspace = WorkspaceController.CreateWorkspace(new Mo2WorkspaceContext(), mods.Data);
+        _profileWorkspace = workspace.Id;
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
         WorkspaceController.OpenPage(workspace.Id, plugins.Data, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true, new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)), new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
     }
-    public void OpenDownloads() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _downloadsPage,
-        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
-    public void OpenProfiles() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _profilesPage,
-        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
+    private void OpenHomePage(PageData page, bool replace = false)
+    {
+        WorkspaceController.ChangeActiveWorkspace(_homeWorkspace);
+        var panel = WorkspaceController.ActiveWorkspace.SelectedPanel ?? WorkspaceController.ActiveWorkspace.Panels.First();
+        var existing = panel.Tabs.FirstOrDefault(x => x.Contents.PageData.FactoryId == page.FactoryId);
+        if (existing is not null && !replace) {
+            panel.SelectTab(existing.Id);
+            // NMA restores selection from tab headers when a dormant panel activates.
+            foreach (var tab in panel.Tabs) tab.Header.IsSelected = tab.Id == existing.Id;
+        }
+        else WorkspaceController.OpenPage(_homeWorkspace, page, existing is not null
+            ? new OpenPageBehavior.ReplaceTab(panel.Id, existing.Id) : new OpenPageBehavior.NewTab(panel.Id));
+    }
+    public void OpenDownloads() => OpenHomePage(_downloadsPage);
+    public void OpenGames() => OpenHomePage(_gamesPage);
+    public void OpenConnections() => OpenHomePage(_connectionsPage);
+    public void OpenProfiles() => OpenLoadouts(null);
+    public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
     public void ShowProfile()
     {
+        WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
         var panel = WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First();
         var existing = panel.Tabs.FirstOrDefault(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true });
         if (existing is not null) {
             ModsPage = (ScenarioInstalledPage)existing.Contents.ViewModel;
             panel.SelectTab(existing.Id);
+            foreach (var tab in panel.Tabs) tab.Header.IsSelected = tab.Id == existing.Id;
         } else {
             WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _modsPage, new OpenPageBehavior.NewTab(panel.Id));
         }
@@ -88,8 +129,8 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         refresh.Click += async (_, _) => await Profile.Refresh();
         var downloads = new Button { Content = "Downloads", Margin = new Thickness(12) };
         downloads.Click += (_, _) => OpenDownloads();
-        var profiles = new Button { Content = "My Loadouts", Margin = new Thickness(12) };
-        profiles.Click += (_, _) => OpenProfiles();
+        var profiles = new Button { Content = "Manage MO2 profiles…", Margin = new Thickness(12) };
+        profiles.Click += async (_, _) => await Profile.ManageProfiles();
         var header = new DockPanel();
         DockPanel.SetDock(profiles, Dock.Right); header.Children.Add(profiles);
         DockPanel.SetDock(downloads, Dock.Right); header.Children.Add(downloads);
@@ -109,12 +150,20 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             launchBar.IsEnabled = !Profile.Launching && !Profile.Installing && !Profile.SelectingProfile && !Profile.ManagingMod;
             launch.IsEnabled = Profile.Executables.Count > 0;
         };
-        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
-        grid.Children.Add(top);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
+        Grid.SetColumn(top, 2);
+        var topBar = new TopBarView { ViewModel = new Mo2TopBar(this) };
+        Grid.SetColumn(topBar, 1); Grid.SetColumnSpan(topBar, 2); grid.Children.Add(topBar);
         var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
-        Grid.SetRow(view, 1); grid.Children.Add(view);
+        Grid.SetRow(top, 1); grid.Children.Add(top);
+        Grid.SetRow(view, 2); Grid.SetColumn(view, 2); grid.Children.Add(view);
+        var spine = new Spine { ViewModel = new Mo2Spine(this) };
+        Grid.SetRowSpan(spine, 3); grid.Children.Add(spine);
+        var sidebar = new ViewModelViewHost { ViewModel = HomeMenu };
+        Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); Grid.SetRowSpan(sidebar, 2); grid.Children.Add(sidebar);
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; top.IsVisible = workspace.Id == _profileWorkspace; });
         Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod; header.IsEnabled = !Profile.Launching && !Profile.ManagingMod; };
-        Grid.SetRow(status, 2); grid.Children.Add(status);
+        Grid.SetRow(status, 3); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
         Profile.Changed += () => { title.Text = Profile.CollectionName.Value; status.Text = Profile.Status; };
@@ -125,4 +174,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         return window;
     }
     public void Dispose() => Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult();
+}
+
+internal sealed record Mo2WorkspaceContext : IWorkspaceContext
+{
+    public bool IsValid(IServiceProvider services) => true;
 }

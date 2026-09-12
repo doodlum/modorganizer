@@ -5,15 +5,17 @@
 
 # Alternate Nexus frontend (in progress)
 
-Linux Avalonia frontend for Mod Organizer. `run.sh` opens My Loadouts with real
-MO2 profiles; it starts disconnected until you select a profile. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
+Linux Avalonia frontend for Mod Organizer. `run.sh` opens NMA’s My Games with your detected MO2 games; it starts disconnected until you select a profile. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
 running MO2 host with the [bridge extension](mo2-plugin/README.md) installed.
 Live mode shows the active MO2 profile's mods on the left and plugins on the
 right, and sends mod activation, mod priority, plugin activation and plugin ordering changes through MO2.
 The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
-My Loadouts discovers real profiles across registered MO2 instances. Selection
-uses each running host, and profile management opens MO2's original dialog.
+The sidebar, game widgets, loadout cards, top bar and panel system use the original
+NMA views. My Games → View → profile switches the connected game. My Loadouts
+shows real profiles grouped by game across registered MO2 instances. Selection
+uses each running host. **Manage MO2 profiles…** opens MO2’s original dialog;
+card-level Create Copy/Delete remain disabled until their native actions are connected.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
 Successful in-game FNV validation and remaining mod-management controls are unfinished.
@@ -32,7 +34,7 @@ The launcher also recognizes a repository-local SDK at `.tools/dotnet`.
 
 ## Instance startup
 
-Use **Choose MO2 launcher…** beside an instance in My Loadouts to select the
+Open the settings gear, then use **Choose MO2 launcher…** beside an instance to select the
 script or executable that starts that instance. Selecting a profile then starts
 it if needed and waits for the MO2 bridge. Setup and extension dialogs remain in
 MO2. An already-running host is reused, including when its bridge responds slowly.

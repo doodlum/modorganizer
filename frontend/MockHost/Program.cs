@@ -120,7 +120,7 @@ public partial class MockApp : Application
                 var live = new Mo2LiveWorkspace(endpoint);
                 var liveWindow = live.CreateWindow();
                 desktop.MainWindow = liveWindow;
-                if (endpoint.Length == 0) live.OpenProfiles();
+                if (endpoint.Length == 0) live.OpenGames();
                 desktop.Exit += (_, _) => live.Dispose();
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -128,17 +128,21 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATALOG") == "1") {
                             if (endpoint.Length != 0 || live.Profile.Mods.Count != 0 || live.Profile.Order.Plugins.Count != 0)
                                 throw new InvalidOperationException("Default startup must have no fixture or assumed active profile data");
-                            if (!liveWindow.GetVisualDescendants().OfType<Mo2ProfilesView>().Any())
-                                throw new InvalidOperationException("Default startup did not show My Loadouts");
-                            var entry = live.Catalog.Read().Single(x => x.Registration.Directory.EndsWith("/frontend/artifacts/mo2-fnv-host"));
-                            var original = entry.Instance!.Profiles.Single(x => x.Name == "Frontend Test");
-                            var button = liveWindow.GetVisualDescendants().OfType<Button>().Single(x => x.Content is StackPanel panel && panel.Children.OfType<TextBlock>().Any(text => text.Text == original.Name));
-                            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                            if (!liveWindow.GetVisualDescendants().OfType<MyGamesView>().Any())
+                                throw new InvalidOperationException("Default startup did not show native My Games");
+                            await live.HomeMenu.LeftMenuItemMyLoadouts.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                            await WaitFor(() => liveWindow.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Any(), "Native loadout cards missing");
+                            var cardView = liveWindow.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>()
+                                .Single(x => x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory.EndsWith("/frontend/artifacts/mo2-fnv-host") && card.LoadoutName == "Frontend Test");
+                            var original = ((Mo2LoadoutCard)cardView.ViewModel!).Profile;
+                            var visitButton = cardView.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "CardOuterButton");
+                            visitButton.Command!.Execute(visitButton.CommandParameter);
                             await WaitFor(() => live.Profile.ProfilePath.Length > 0 && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(original.Directory)
                                 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Catalog selection did not connect both live panels", seconds: 110);
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
                             await VerifyCrossGame(live, liveWindow, skyrimInstance);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TRANSFERS") == "1") await VerifyTransfers(live, liveWindow);
@@ -318,6 +322,32 @@ public partial class MockApp : Application
         Console.WriteLine("PASS: native frontend Pause, Resume and Cancel buttons route through MO2; paused bytes stop, resumed bytes grow, cancelled partial is removed; other archives unchanged");
     }
 
+    private static async Task VerifyNativePanels(Mo2LiveWorkspace live, Window window)
+    {
+        live.OpenGames();
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyGamesView>().Any(), "Native My Games missing");
+        var workspace = live.WorkspaceController.ActiveWorkspace;
+        var first = workspace.Panels.Single();
+        var originalTabs = first.Tabs.Select(x => x.Id).ToHashSet();
+        var top = window.GetVisualDescendants().OfType<TopBarView>().Single().ViewModel!;
+        await top.NewTabCommand.Execute();
+        await WaitFor(() => first.Tabs.Count == originalTabs.Count + 1, "Native top bar did not add a tab");
+        first.CloseTab(first.Tabs.Single(x => !originalTabs.Contains(x.Id)).Id);
+        for (var count = 2; count <= 4; count++) {
+            await workspace.AddPanelButtonViewModels.First().AddPanelCommand.Execute();
+            await WaitFor(() => workspace.Panels.Count == count, "Native Add Panel command failed");
+        }
+        foreach (var panel in workspace.Panels.Where(x => x.Id != first.Id).ToArray()) await panel.CloseCommand.Execute();
+        await WaitFor(() => workspace.Panels.Count == 1, "Native Close Panel command failed");
+        live.OpenProfiles();
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.MyLoadouts.MyLoadoutsView>().Any(), "Native My Loadouts missing");
+        var countBefore = first.Tabs.Count;
+        live.OpenProfiles();
+        if (first.Tabs.Count != countBefore) throw new InvalidOperationException("Repeated navigation duplicated My Loadouts tab");
+        Console.WriteLine("PASS: native top bar adds tabs; NMA commands split to 2/3/4 panels and close back to one; My Loadouts navigation reuses its tab");
+        if (live.Profile.ProfilePath.Length > 0) live.ShowProfile();
+    }
+
     private static async Task VerifyCrossGame(Mo2LiveWorkspace live, Window window, string skyrimInstance)
     {
         if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
@@ -329,9 +359,24 @@ public partial class MockApp : Application
         if (skyrim.Instance?.Game != "Skyrim Special Edition") throw new InvalidOperationException("Choose a Skyrim instance for the cross-game check");
         var selected = skyrim.Instance.Profiles.Single(x => x.Name == "Default");
         var originalNames = live.Profile.Mods.Select(x => x.Name).Order().ToArray();
+        async Task VisitGameProfile(Mo2CatalogEntry entry, Mo2ProfileSnapshot profile)
+        {
+            live.OpenGames();
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.GameWidget.GameWidget>().Any(), "My Games widgets missing");
+            var gameView = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.GameWidget.GameWidget>()
+                .Single(x => x.ViewModel!.Name == entry.Instance!.Game);
+            var viewButton = gameView.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "ViewGameButton");
+            viewButton.Command!.Execute(viewButton.CommandParameter);
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Any(x => x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == entry.Registration.Directory && card.Profile.Directory == profile.Directory), "Selected game’s loadout cards missing");
+            var cardView = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>()
+                .Single(x => x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == entry.Registration.Directory && card.Profile.Directory == profile.Directory);
+            var visit = cardView.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "CardOuterButton");
+            visit.Command!.Execute(visit.CommandParameter);
+            await WaitFor(() => !live.Profile.SelectingProfile && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(profile.Directory)
+                && live.WorkspaceController.ActiveWorkspace.Context is Mo2WorkspaceContext, "Game card did not switch both panels: " + live.Profile.Status, seconds: 110);
+        }
         try {
-            if (!await live.Profile.SelectProfile(skyrim.Registration, selected)) throw new InvalidOperationException(live.Profile.Status);
-            live.ShowProfile();
+            await VisitGameProfile(skyrim, selected);
             if (live.WorkspaceController.ActiveWorkspace.Panels.SelectMany(x => x.Tabs).Count(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true }) != 1)
                 throw new InvalidOperationException("Profile selection duplicated the mod-list tab");
             await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
@@ -356,7 +401,7 @@ public partial class MockApp : Application
             }
             Console.WriteLine($"PASS: Skyrim host connected; {mods.Length} mod states/priorities and {plugins.Length} plugin states/priorities match independent host snapshot; game context switched");
         } finally {
-            if (!await live.Profile.SelectProfile(original.Registration, originalProfile)) throw new InvalidOperationException("Unable to restore FNV connection: " + live.Profile.Status);
+            await VisitGameProfile(original, originalProfile);
         }
         if (live.Profile.NexusGame != "newvegas" || !live.Profile.Mods.Select(x => x.Name).Order().SequenceEqual(originalNames))
             throw new InvalidOperationException("Original FNV connection was not restored");

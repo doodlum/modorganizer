@@ -199,3 +199,35 @@ reported xNVSE 6.4.8 and `GetModIndex "The Mod Configuration Menu.esp"` returned
 actual ESP loading through the frontend/MO2 launch, beyond the DLL log. The
 game also auto-loaded the DLCs, putting MCM after them despite their inactive
 checkboxes in the host; this load-order difference still needs investigation.
+
+
+### Native NMA navigation and cross-game UI — 2026-09-12
+
+Live mode now uses upstream NMA Spine, HomeLeftMenuView, TopBarView,
+MyGamesView/GameWidget and MyLoadoutsView/LoadoutCardView with MO2 catalog
+adapters. No upstream source was changed. My Games groups real instances by
+game; My Loadouts groups their actual profiles by game and identifies the
+instance on each card. The settings gear opens the MO2 connection settings.
+Profile creation/copy/removal stays in the original MO2 profile manager;
+the individual card copy/delete controls are disabled, not simulated.
+The top-bar account control is disabled; MO2 still owns Nexus authentication.
+
+Home browsing has a separate workspace from the live mod/plugin panels.
+Selecting a profile changes the host and returns to mods on the left and
+plugins on the right. Filtered game pages have distinct navigation contexts,
+and tab-header selection is synchronized when restoring dormant panels.
+These avoid reusing Skyrim’s filtered page when opening FNV and losing the
+selected My Games tab during workspace activation.
+
+The combined `MO2_VERIFY_CATALOG=1`, `MO2_VERIFY_NATIVE_PANELS=1` and
+`MO2_VERIFY_CROSS_GAME=<registered Skyrim instance>` run passed. It starts
+without fixture data, follows the native sidebar and profile-card command to
+FNV, adds/closes a tab through the native top bar, splits to 2/3/4 panels and
+closes back to one through native commands, and checks repeated My Loadouts
+navigation does not duplicate its tab. The game widget View and profile-card
+buttons then switch to Skyrim and back to FNV. All 150 Skyrim mod and 150
+plugin states/priorities match an independent MO2 snapshot; download and
+executable contexts switch too. FNV returns with 11 mods and 14 plugins.
+This verifies navigation and MO2 state, not Skyrim gameplay or the remaining
+FNV MCM-menu/disabled-mod acceptance checks. Build passes with the existing
+upstream OpenTelemetry NU1902 advisory.
