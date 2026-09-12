@@ -78,6 +78,7 @@ class ModActions:
                 'priority': plugins.priority(name), 'loadOrder': plugins.loadOrder(name),
                 'masters': list(plugins.masters(name)), 'origin': plugins.origin(name),
                 'diagnostics': document.toPlainText(),
+                'hasWarning': ':/MO/gui/warning' in (index.data(int(Qt.ItemDataRole.UserRole) + 1) or []),
                 'modIndex': str(model.index(row, 3).data(Qt.ItemDataRole.DisplayRole) or ''),
                 'canToggle': bool(flags & Qt.ItemFlag.ItemIsUserCheckable),
                 'canMove': bool(flags & Qt.ItemFlag.ItemIsDragEnabled),

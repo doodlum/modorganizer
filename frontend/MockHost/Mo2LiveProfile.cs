@@ -72,6 +72,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             plugin.GetProperty("name").GetString()!, plugin.GetProperty("origin").GetString()!, plugin.GetProperty("priority").GetInt32(),
             plugin.GetProperty("masters").EnumerateArray().Select(x => x.GetString()!).ToArray()) {
                 IsActive = plugin.GetProperty("state").GetInt32() == 2,
+                HasWarning = plugin.TryGetProperty("hasWarning", out var warning) && warning.GetBoolean(),
                 CanToggle = !plugin.TryGetProperty("canToggle", out var toggle) || toggle.GetBoolean(),
                 CanMove = !plugin.TryGetProperty("canMove", out var move) || move.GetBoolean(),
                 Diagnostics = plugin.TryGetProperty("diagnostics", out var diagnostics) ? diagnostics.GetString() ?? "" : "",

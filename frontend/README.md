@@ -23,7 +23,7 @@ Pause, resume and cancel route through MO2’s existing download controls.
 FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
 verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.
 **Details in MO2** opens its original conflict/file dialog. Selecting plugins
-shows MO2’s diagnostics and hexadecimal mod indices. Activation and row movement
+shows MO2’s diagnostics and hexadecimal mod indices; native warnings are marked in plugin rows. Activation and row movement
 controls reflect MO2’s restrictions. The shared drop path rejects fixed plugins;
 reordering refreshes MO2 first and rejects stale plugin state.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
@@ -99,7 +99,7 @@ games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
 acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
-- Expand verification of native plugin diagnostics, including missing-master and LOOT messages.
+- Expand verification of other native LOOT message categories. Missing-master text and the native warning flag have passed an isolated install/activate/remove check.
 - Verify multi-selection plugin gestures, panel drag/drop, history and state restoration more broadly. Single-plugin pointer reorder and fixed-plugin rejection have passed against FNV.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.

@@ -228,6 +228,21 @@ public partial class MockApp : Application
                             await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == modName).State & 2) != 0 && live.Profile.Order.Plugins.Any(x => x.ModName == modName), "MO2 mod activation did not expose its plugin");
                             Console.WriteLine("PASS: native mod activation command enabled installed mod and exposed its ESP in the right panel");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_MISSING_MASTER") == "1") {
+                            const string name = "MO2 Missing Master Verification.esp";
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Diagnostic check requires isolated FNV");
+                            await WaitFor(() => live.Profile.Order.Plugins.Any(x => x.DisplayName == name), "Diagnostic plugin missing");
+                            await live.Profile.SetPluginsActive([name], true);
+                            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.DisplayName == name).HasWarning, "MO2 did not mark the missing master");
+                            var plugin = live.Profile.Order.Plugins.Single(x => x.DisplayName == name);
+                            if (!plugin.Diagnostics.Contains("Missing Masters") || !plugin.Diagnostics.Contains("MO2 Diagnostic Absent Master.esm")) throw new InvalidOperationException("Missing-master diagnostic text was not preserved");
+                            await WaitFor(() => live.PluginsPage!.Adapter.Source.Value.Items.Any(x => x.Key.Equals(plugin.Key)), "Diagnostic row missing");
+                            var row = live.PluginsPage!.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key));
+                            if (!row.Get<StringComponent>(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey).Value.Value.StartsWith("⚠ ")) throw new InvalidOperationException("Native warning marker missing from row");
+                            live.PluginsPage.Adapter.SelectedModels.Clear(); live.PluginsPage.Adapter.SelectedModels.Add(row);
+                            await WaitFor(() => liveWindow.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "Mo2PluginDiagnostics" && x.Text!.Contains("Missing Masters") && x.Text.Contains("MO2 Diagnostic Absent Master.esm")), "Missing-master details were not rendered");
+                            Console.WriteLine("PASS: actual MO2 missing-master warning is marked in the plugin row and rendered in selected details");
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DISABLE_MOD") is { } disabledModName) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Deactivation check requires the isolated FNV profile");
                             var mod = live.Profile.Mods.Single(x => x.Name == disabledModName);

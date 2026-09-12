@@ -262,3 +262,8 @@ converted to plain text), displayed mod indices, and checkable/draggable flags.
 These accompany the existing plugin API fields. This preserves MO2’s current
 messages and restrictions without adding a second plugin analyzer. Diagnostic
 text may include LOOT results already available in the original host.
+
+Plugin snapshots also include `hasWarning`, derived from the original model’s
+warning icon. It is not inferred from diagnostic text. A deliberately missing
+master was verified through the native installer, activation and removal path
+in the isolated FNV instance.

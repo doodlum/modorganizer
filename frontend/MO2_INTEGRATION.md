@@ -410,3 +410,30 @@ This establishes single-plugin pointer drag and a fixed-plugin rejection on
 FNV. Multi-selection gestures, panel drag arrangements and broader diagnostics
 remain separate verification work. The frontend build passes with the existing
 upstream OpenTelemetry NU1902 warning.
+
+### Native warning marker and missing-master scenario — 2026-09-12
+
+The plugin row now prefixes a warning marker when the original MO2 plugin
+model reports its warning icon. This is the native warning result, not a
+frontend scan or text-based guess. Plugin keys and names used for commands
+remain unchanged. Selected details continue to show MO2’s full tooltip text.
+
+A 138-byte diagnostic ESP was packaged in a temporary archive and installed
+with MO2’s original Quick Install dialog in the isolated FNV instance. It
+contained only a TES4 header referencing MO2 Diagnostic Absent Master.esm.
+Enabling its mod through the native frontend toggle exposed the ESP; enabling
+the plugin made MO2 report Missing Masters with that exact name. The live
+check asserted the native warning flag, row label marker and rendered details.
+Screenshot: artifacts/missing-master-diagnostics.png. No game was launched with
+the diagnostic plugin.
+
+The mod was then removed through MO2’s original Yes/No confirmation. The
+complete plugin snapshot and profile identity matched the pre-test snapshot
+exactly, and the diagnostic mod directory was gone. Evidence:
+artifacts/warning-before.json and warning-after.json. The diagnostic archive
+remains only in ignored test artifacts for reproduction. Both production hosts
+have the updated bridge; no temporary MO2 driver was installed for this test.
+
+The missing-master path is now verified. Other LOOT message categories,
+multi-selection gestures and the remaining navigation/extension coverage still
+require review. Build and fourteen bridge contract checks pass.

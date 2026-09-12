@@ -18,7 +18,7 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
         var id = variety.GetSortOrderIdFor(loadout).Value;
         return variety.GetSortOrderItemsChangeSet(id).Transform(item => {
             var model = new CompositeItemModel<ISortItemKey>(item.Key);
-            model.Add(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey, new StringComponent(item.DisplayName));
+            model.Add(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey, new StringComponent((item is ScenarioPlugin { HasWarning: true } ? "⚠ " : "") + item.DisplayName));
             model.Add(LoadOrderColumns.ModNameColumn.ModNameComponentKey, new StringComponent(item.ModName));
             model.Add(LoadOrderColumns.IsActiveComponentKey, new ValueComponent<bool>(item.IsActive));
             var index = item.WhenAnyValue(x => x.SortIndex).ToObservable();

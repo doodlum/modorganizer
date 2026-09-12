@@ -57,7 +57,7 @@ class ContractTests(unittest.TestCase):
         class ModActions:
             def snapshot(self): return [{'name': 'Overwrite', 'state': 4, 'priority': 1,
                 'priorityText': '', 'overwrite': True, 'conflicts': 'Native archive conflict', 'flags': 'Native status'}]
-            def plugin_snapshot(self): return [{'name': 'Base.esm', 'canToggle': False, 'canMove': False, 'modIndex': '00', 'diagnostics': 'Native missing master warning'}]
+            def plugin_snapshot(self): return [{'name': 'Base.esm', 'canToggle': False, 'canMove': False, 'modIndex': '00', 'diagnostics': 'Native missing master warning', 'hasWarning': True}]
             def details(self, name): return {'opened': True, 'modName': name}
         self.bridge.mod_actions = ModActions()
         result = self.bridge.execute(self.request(action='snapshot'))
