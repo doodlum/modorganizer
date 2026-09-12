@@ -49,7 +49,7 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
             () => _loadoutFactory.Data(card.Number, true),
             () => new ScenarioWorkspaceContext(card.Number, card.LoadoutName));
         if (!_menus.ContainsKey(workspace.Id))
-            _menus.Add(workspace.Id, new ScenarioLoadoutMenu(WorkspaceController, workspace.Id, _loadoutFactory.Data(card.Number), _loadoutFactory.Data(card.Number, true), _loadoutFactory.LibraryData(card.Number)));
+            _menus.Add(workspace.Id, new ScenarioLoadoutMenu(WorkspaceController, workspace.Id, _loadoutFactory.Data(card.Number), _loadoutFactory.Data(card.Number, true), _loadoutFactory.LibraryData(card.Number), card.InstalledMods));
         // The view also listens to this event: a freshly-created workspace becomes
         // active before its menu can be registered.
         MenuChanged?.Invoke();
@@ -155,7 +155,16 @@ internal sealed class FixtureWindows : IWindowManager
     public void UnregisterWindow(IWorkspaceWindow window) { }
     public void SaveWindowState(IWorkspaceWindow window) { }
     public bool RestoreWindowState(IWorkspaceWindow window) => false;
-    public Task<StandardDialogResult> ShowDialog(IDialog dialog, DialogWindowType windowType) => throw new NotSupportedException("Scenario dialogs are not wired yet.");
+    public Task<StandardDialogResult> ShowDialog(IDialog dialog, DialogWindowType windowType)
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime { MainWindow: not null } desktop)
+            throw new InvalidOperationException("No desktop window owns the dialog.");
+        return windowType switch {
+            DialogWindowType.Modal => dialog.Show(desktop.MainWindow, true),
+            DialogWindowType.Modeless => dialog.Show(desktop.MainWindow, false),
+            _ => throw new NotSupportedException("Upstream embedded dialogs are not implemented."),
+        };
+    }
 }
 
 internal sealed class MemorySettings(IServiceProvider services) : ISettingsManager

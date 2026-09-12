@@ -39,7 +39,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public bool IsCollection { get; }
     public bool EnableCollectionSharing => false;
     public IReadOnlyBindableReactiveProperty<bool> IsCollectionUploaded { get; } = new BindableReactiveProperty<bool>(false);
-    public IReadOnlyBindableReactiveProperty<string> CollectionName { get; } = new BindableReactiveProperty<string>("My Mods");
+    public IReadOnlyBindableReactiveProperty<string> CollectionName { get; }
     public IReadOnlyBindableReactiveProperty<CollectionStatus> CollectionStatus { get; } = new BindableReactiveProperty<CollectionStatus>(NexusMods.Abstractions.NexusModsLibrary.Models.CollectionStatus.Unlisted);
     public IReadOnlyBindableReactiveProperty<RevisionStatus> RevisionStatus { get; } = new BindableReactiveProperty<RevisionStatus>();
     public IReadOnlyBindableReactiveProperty<RevisionNumber> RevisionNumber { get; } = new BindableReactiveProperty<RevisionNumber>();
@@ -49,7 +49,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<NavigationInformation> CommandOpenFilesPage { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandRemoveItem { get; }
     public R3.ReactiveCommand<R3.Unit> CommandDeselectItems { get; }
-    public R3.ReactiveCommand<R3.Unit> CommandRenameGroup { get; } = new();
+    public R3.ReactiveCommand<R3.Unit> CommandRenameGroup { get; }
     public R3.ReactiveCommand<R3.Unit> CommandShareCollection { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandUploadDraftRevision { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandUploadAndPublishRevision { get; } = new();
@@ -61,6 +61,12 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, ScenarioInstalledMods mods, ScenarioPluginOrder order,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false) : base(windows)
     {
+        CollectionName = mods.CollectionName;
+        CommandRenameGroup = new(async (_, token) => {
+            var result = await windows.ShowDialog(LoadoutDialogs.RenameCollection(mods.CollectionName.Value), NexusMods.App.UI.Dialog.Enums.DialogWindowType.Modal);
+            if (result.ButtonId == NexusMods.UI.Sdk.Dialog.ButtonDefinitionId.Accept && !string.IsNullOrWhiteSpace(result.InputText))
+                mods.Rename(result.InputText.Trim());
+        });
         IsCollection = isCollection;
         TabTitle = isCollection ? "My Mods" : "All"; TabIcon = isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
         SelectedSubTab = selected;
@@ -74,6 +80,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         });
         this.WhenActivated(disposables => {
             Adapter.Activate().AddTo(disposables);
+            if (IsCollection) mods.CollectionName.Subscribe(name => TabTitle = name).AddTo(disposables);
             mods.CountLoadoutItems(filter).ToObservable().Subscribe(count => _count.Value = count).AddTo(disposables);
             Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true).Subscribe(count => _selected.Value = count).AddTo(disposables);
             Adapter.MessageSubject.Subscribe(message => message.Switch(

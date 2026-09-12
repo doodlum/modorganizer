@@ -1,3 +1,5 @@
+using NexusMods.App.UI.Dialog;
+using NexusMods.UI.Sdk.Dialog;
 using NexusMods.App.UI.Pages.LibraryPage;
 using Avalonia.VisualTree;
 using NexusMods.App.UI.Pages.LoadoutPage;
@@ -107,6 +109,8 @@ public partial class MockApp : Application
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyContexts(scenario, window); }, TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIBRARY") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyLibrary(scenario, window); }, TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOGS") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyDialogs(scenario, desktop); }, TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -119,6 +123,40 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyDialogs(ScenarioWorkspace scenario, IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        await scenario.Data.Game.AddGameCommand.Execute();
+        var card = scenario.Data.Section.Loadouts.Single();
+        await card.VisitLoadoutCommand.Execute();
+        var page = (ScenarioInstalledPage)scenario.WorkspaceController.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        var menu = (ScenarioLoadoutMenu)scenario.GetActiveMenu();
+        await menu.LeftMenuItemLibrary.NavigateCommand.Execute(NavigationInformation.From(OpenPageBehaviorType.NewPanel));
+        var library = (ScenarioLibraryPage)scenario.WorkspaceController.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        await WaitFor(() => library.Adapter.SourceCount.Value == 2, "Library did not activate");
+        page.CommandRenameGroup.Execute(R3.Unit.Default);
+        await WaitFor(() => desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Rename dialog did not open");
+        var dialog = desktop.Windows.OfType<DialogWindow>().Single();
+        ((IDialogStandardContentViewModel)dialog.ViewModel!.ContentViewModel!).InputText = "Cancelled name";
+        dialog.ViewModel.ButtonPressCommand.Execute(ButtonDefinitionId.Cancel);
+        await WaitFor(() => !desktop.Windows.OfType<DialogWindow>().Any(), "Cancel did not close dialog");
+        if (card.InstalledMods.CollectionName.Value != "My Mods") throw new InvalidOperationException("Cancelled rename changed state");
+        page.CommandRenameGroup.Execute(R3.Unit.Default);
+        await WaitFor(() => desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Second rename dialog did not open");
+        dialog = desktop.Windows.OfType<DialogWindow>().Single();
+        ((IDialogStandardContentViewModel)dialog.ViewModel!.ContentViewModel!).InputText = "Mojave Essentials";
+        await Task.Delay(200);
+        var capture = Environment.GetEnvironmentVariable("MO2_DIALOG_SCREENSHOT");
+        if (capture is not null) {
+            using var bitmap = new RenderTargetBitmap(new PixelSize((int)dialog.ClientSize.Width, (int)dialog.ClientSize.Height));
+            bitmap.Render(dialog); bitmap.Save(capture);
+        }
+        dialog.ViewModel.ButtonPressCommand.Execute(ButtonDefinitionId.Accept);
+        await WaitFor(() => card.InstalledMods.CollectionName.Value == "Mojave Essentials", "Accepted rename did not update state");
+        await WaitFor(() => menu.LeftMenuCollectionItems.Single().Text.Value.Value == "Mojave Essentials" && library.SelectedInstallationTarget?.Name == "Mojave Essentials", "Rename did not update sidebar and Library target");
+        if (page.CollectionName.Value != "Mojave Essentials" || page.TabTitle != "Mojave Essentials") throw new InvalidOperationException("Rename did not update open page");
+        Console.WriteLine("PASS: native modal rename; cancel preserves state; accept updates open page, sidebar and Library target");
     }
 
     private static async Task WaitFor(Func<bool> ready, string failure)

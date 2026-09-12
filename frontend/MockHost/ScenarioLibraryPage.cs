@@ -17,7 +17,8 @@ internal sealed class ScenarioLibraryPage : APageViewModel<ILibraryViewModel>, I
 {
     public LibraryTreeDataGridAdapter Adapter { get; }
     public ReadOnlyObservableCollection<ICollectionCardViewModel> Collections { get; } = new(new());
-    public ReadOnlyObservableCollection<InstallationTarget> InstallationTargets { get; } = new(new ObservableCollection<InstallationTarget> { new(default, "My Mods") });
+    public ReadOnlyObservableCollection<InstallationTarget> InstallationTargets { get; }
+    private readonly ObservableCollection<InstallationTarget> _targets = new();
     private InstallationTarget? _target;
     public InstallationTarget? SelectedInstallationTarget { get => _target; set => this.RaiseAndSetIfChanged(ref _target, value); }
     public string EmptyLibrarySubtitleText => "Add mods to your library to install them.";
@@ -41,6 +42,8 @@ internal sealed class ScenarioLibraryPage : APageViewModel<ILibraryViewModel>, I
     public ScenarioLibraryPage(IServiceProvider services, IWindowManager windows, ScenarioLibrary library, ScenarioInstalledMods installed) : base(windows)
     {
         TabTitle = "Library"; TabIcon = IconValues.LibraryOutline;
+        _targets.Add(new(default, installed.CollectionName.Value));
+        InstallationTargets = new(_targets);
         SelectedInstallationTarget = InstallationTargets[0];
         var local = new FixtureServices(services);
         local.Add<IEnumerable<ILibraryDataProvider>>([new ScenarioLibraryProvider(library, installed)]);
@@ -56,6 +59,10 @@ internal sealed class ScenarioLibraryPage : APageViewModel<ILibraryViewModel>, I
         });
         this.WhenActivated(disposables => {
             Adapter.Activate().AddTo(disposables);
+            installed.CollectionName.Subscribe(name => {
+                _targets[0] = new InstallationTarget(default, name);
+                SelectedInstallationTarget = _targets[0];
+            }).AddTo(disposables);
             Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true).Subscribe(count => SelectionCount = count).AddTo(disposables);
             Adapter.MessageSubject.Subscribe(message => message.Switch(
                 install => library.Install(install.Ids.Select(x => x.Value), installed),

@@ -14,6 +14,7 @@ internal sealed record ScenarioMod(EntityId Id, string Name, string Plugin, bool
 internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
 {
     private readonly SourceCache<ScenarioMod, EntityId> _mods = new(x => x.Id);
+    public R3.BindableReactiveProperty<string> CollectionName { get; } = new("My Mods");
     private readonly ScenarioPluginOrder _order;
     public ScenarioInstalledMods(ScenarioPluginOrder order)
     {
@@ -29,7 +30,15 @@ internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
         _mods.AddOrUpdate(item with { Installed = DateTimeOffset.Now, Enabled = true });
         _order.InstallPlugin(item.Plugin, item.Name);
     }
-    public void CopyFrom(ScenarioInstalledMods source) => _mods.Edit(cache => { cache.Clear(); cache.AddOrUpdate(source.Mods); });
+    public void Rename(string name)
+    {
+        CollectionName.Value = name;
+        _mods.Edit(cache => cache.AddOrUpdate(_mods.Items.ToArray()));
+    }
+    public void CopyFrom(ScenarioInstalledMods source) {
+        CollectionName.Value = source.CollectionName.Value;
+        _mods.Edit(cache => { cache.Clear(); cache.AddOrUpdate(source.Mods); });
+    }
     public IReadOnlyCollection<ScenarioMod> Mods => _mods.Items.ToArray();
     public void Toggle(IEnumerable<LoadoutItemId> ids)
     {
@@ -57,7 +66,7 @@ internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
             var model = new CompositeItemModel<EntityId>(mod.Id);
             model.Add(SharedColumns.Name.NameComponentKey, new NameComponent(mod.Name));
             model.Add(SharedColumns.InstalledDate.ComponentKey, new DateComponent(mod.Installed));
-            model.Add(LoadoutColumns.Collections.ComponentKey, new StringComponent("My Mods"));
+            model.Add(LoadoutColumns.Collections.ComponentKey, new StringComponent(CollectionName.Value));
             model.Add(LoadoutColumns.EnabledState.LoadoutItemIdsComponentKey, new LoadoutComponents.LoadoutItemIds(LoadoutItemId.From(mod.Id)));
             model.Add(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey, new LoadoutComponents.EnabledStateToggle(new ValueComponent<bool?>(mod.Enabled)));
             model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: true));

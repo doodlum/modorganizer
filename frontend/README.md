@@ -148,3 +148,23 @@ It also checks the empty-to-populated transition. The resulting two-panel view
 was visually inspected. Update flows, advanced installers, collection downloads,
 file-picker interaction and reference pixel comparisons remain unverified or
 unimplemented; the corresponding scenario commands are still placeholders.
+
+## Native dialogs and collection rename
+
+The fixture window manager now delegates modal and modeless dialogs to the
+original NMA dialog implementation. Rename Collection opens the original prompt,
+leaves state unchanged on Cancel, and updates shared collection state on Accept.
+The sidebar, open collection headers and tab titles, installed-mod collection
+labels, and Library installation target all observe the same name. Clone copies
+that name into the new loadout.
+
+```sh
+MO2_VERIFY_DIALOGS=1 MO2_DIALOG_SCREENSHOT="$PWD/frontend/artifacts/rename-dialog.png" MO2_SCREENSHOT="$PWD/frontend/artifacts/renamed-collection.png" ./frontend/run.sh
+```
+
+This check opens the actual modal twice, exercises Cancel and Accept, and checks
+updates across an already-open collection and Library panel. Both the dialog and
+the resulting two-panel screen were visually inspected. It invokes native button
+commands rather than physical mouse input; keyboard focus, modeless behavior,
+other dialogs and complete reference comparisons remain unverified. Multi-
+collection creation/deletion and sharing still need fixture implementations.

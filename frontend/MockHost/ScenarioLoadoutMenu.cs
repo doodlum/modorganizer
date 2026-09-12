@@ -20,12 +20,12 @@ internal sealed class ScenarioLoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel
     public ILeftMenuItemViewModel LeftMenuItemHealthCheck { get; } = Item("Health Check", IconValues.Cardiology);
     public ILeftMenuItemViewModel? LeftMenuItemExternalChanges { get; } = Item("External Changes", IconValues.Folder);
     private static ILeftMenuItemViewModel Item(string text, IconValue icon) => new LeftMenuItemDesignViewModel { Text = new StringComponent(text), Icon = icon };
-    public ScenarioLoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData all, PageData collection, PageData library)
+    public ScenarioLoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData all, PageData collection, PageData library, ScenarioInstalledMods mods)
     {
         WorkspaceId = workspace;
         LeftMenuItemLibrary = new LeftMenuItemViewModel(controller, workspace, library) { Text = new StringComponent("Library"), Icon = IconValues.LibraryOutline };
         LeftMenuCollectionItems = new(new ObservableCollection<ILeftMenuItemViewModel> {
-            new LeftMenuItemViewModel(controller, workspace, collection) { Text = new StringComponent("My Mods"), Icon = IconValues.CollectionsOutline }
+            new LeftMenuItemViewModel(controller, workspace, collection) { Text = new StringComponent(mods.CollectionName.Value, mods.CollectionName, subscribeWhenCreated: true), Icon = IconValues.CollectionsOutline }
         });
         LeftMenuItemLoadout = new LeftMenuItemViewModel(controller, workspace, all) {
             Text = new StringComponent("All"), Icon = IconValues.FormatAlignJustify };
