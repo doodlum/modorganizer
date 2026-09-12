@@ -168,3 +168,22 @@ the resulting two-panel screen were visually inspected. It invokes native button
 commands rather than physical mouse input; keyboard focus, modeless behavior,
 other dialogs and complete reference comparisons remain unverified. Multi-
 collection creation/deletion and sharing still need fixture implementations.
+
+## MO2 extension compatibility
+
+[Extension compatibility requirements](EXTENSION_COMPATIBILITY.md) record the
+requirement to preserve existing MO2 plugin interfaces, the Windows dependencies
+found in the host, and the separate Wine/native-Linux runtime considerations.
+The frontend does not load existing extensions yet. A read-only plugin inventory
+helper is available at `frontend/tools/audit_plugins.py`.
+
+## External interaction observation
+
+`MO2_INTERACTION_REPORT=/tmp/mo2-state.json` enables a read-only JSON report of
+panel/tab IDs and rendered control bounds for external mouse/keyboard checks.
+It does not drive commands. A mouse click on the native New Tab toolbar button
+was observed to create a tab. Cross-panel tab dragging has not been verified;
+the pinned release's tab header implements selection and close/middle-click,
+with no tab drag/drop handlers. Panel resize uses the separate native
+`PanelResizerView` and still needs a successful pointer test. Shared-desktop focus
+changes interrupted the initial drag attempts; these are not passing checks.

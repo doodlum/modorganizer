@@ -94,6 +94,8 @@ public partial class MockApp : Application
                 Background = (IBrush)this.FindResource("SurfaceBaseBrush")!, Content = grid };
             Add(grid, new DevelopmentBuildBannerView { ViewModel = new DevelopmentBuildBannerDesignViewModel() }, 0, 2, columnSpan: 3);
             desktop.MainWindow = window;
+            if (Environment.GetEnvironmentVariable("MO2_INTERACTION_REPORT") is { } interactionReport)
+                ScenarioInteractionReport.Attach(window, scenario, interactionReport);
             Task verification = Task.CompletedTask;
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => VerifyWorkspace(scenario), TimeSpan.FromSeconds(1));
