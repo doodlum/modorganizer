@@ -109,6 +109,18 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='snapshot'))
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
         self.assertEqual(organizer.mods.calls, 0)
+    def test_download_control_uses_host_and_rejects_stale_profile(self):
+        class Downloads:
+            calls = []
+            def control(self, path, operation):
+                self.calls.append((path, operation))
+                return {'requested': operation}
+        self.bridge.downloads = Downloads()
+        request = self.request(action='controlDownload', path='Z:/downloads/Test.zip.unfinished', operation='pause')
+        self.assertEqual(self.bridge.execute(request), {'requested': 'pause'})
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(self.bridge.downloads.calls, [('Z:/downloads/Test.zip.unfinished', 'pause')])
     def test_launch_rejects_stale_profile_before_starting_host_process(self):
         class Executables:
             calls = []

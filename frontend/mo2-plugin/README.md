@@ -64,8 +64,7 @@ work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
 Configured host startup is connected and tested with the isolated FNV instance.
-Cross-game startup is now verified with the existing Skyrim instance; advanced
-download controls and FNV gameplay validation remain incomplete. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
+Cross-game startup is now verified with the existing Skyrim instance; FNV gameplay validation and remaining mod-management controls are incomplete. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation
@@ -132,7 +131,8 @@ states to each profile's mod list. The test restored `Frontend Test` as active.
 An isolated Qt test driver supplied the copy name in the native dialog; it is
 not part of the distributed bridge. The rendered catalog also showed both
 existing Skyrim SE instances. Cross-game connection requires a running bridge
-in each selected instance; automatic host installation/startup remains pending.
+in each selected instance. Configured host startup is supported; automatic
+bridge installation remains pending.
 
 `MO2_VERIFY_PROFILES=1` with a screenshot checks that isolated copy/switch flow;
 the native manager must be completed if the copy does not exist. `MO2_SHOW_PROFILES=1`
@@ -203,3 +203,17 @@ compares both panels and game-specific context against an independent snapshot,
 and restores the FNV connection. `MO2_CROSS_GAME_SCREENSHOT=/path.png` optionally
 captures the Skyrim panels before returning. The check performs no mod toggles
 or reordering in Skyrim; MO2 may reconcile newly detected game content at startup.
+
+## Transfer controls
+
+Pause, Resume and Cancel in the Downloads tab route to the original
+DownloadListView slots. The bridge looks up downloadPath for each source-model
+row at execution time and matches the requested archive (including .unfinished),
+so UI sorting and filtering cannot change the target. MO2 validates the current
+transfer state; the frontend reports a request and then shows host metadata.
+No signed URL or private metadata is copied into the snapshot.
+
+`MO2_VERIFY_TRANSFERS=1` in live screenshot mode exercises these actual buttons
+against a throttled localhost transfer in the isolated FNV instance. It requires
+the isolated native test driver and local HTTP fixture; it does not make a Nexus
+download. This runtime check passed, including preservation of other archives.

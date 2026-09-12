@@ -80,6 +80,10 @@ class Bridge:
             else:
                 self.profiles.manage()
             return self.snapshot()
+        if action == 'controlDownload':
+            if self.downloads is None:
+                raise ValueError('Host downloads integration is unavailable')
+            return self.downloads.control(request.get('path'), request.get('operation'))
         if action in ('startNexusDownload', 'installArchive'):
 
             if self.downloads is None:

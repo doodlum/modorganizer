@@ -6,6 +6,7 @@ from pathlib import Path
 class Downloads:
     def __init__(self, organizer):
         self.organizer = organizer
+        self.window = None
 
     def game_domain(self):
         game = self.organizer.managedGame()
@@ -31,6 +32,39 @@ class Downloads:
                            'hidden': values.get('removed', 'false') == 'true',
                            'paused': values.get('paused', 'false') == 'true'})
         return result
+
+    def control(self, filename, action):
+        from PyQt6.QtCore import QAbstractProxyModel, QMetaObject, Q_ARG, Qt
+        from PyQt6.QtWidgets import QTreeView
+        slots = {'pause': 'issuePause', 'resume': 'issueResume', 'cancel': 'issueCancel'}
+        if action not in slots or not isinstance(filename, str):
+            raise ValueError('Choose a supported download action and archive')
+        if self.window is None:
+            raise ValueError('MO2 download controls are not ready')
+        view = self.window.findChild(QTreeView, 'downloadView')
+        if view is None or not view.isEnabled():
+            raise ValueError('MO2 download controls are unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel):
+            model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'DownloadList':
+            raise ValueError('This MO2 version has an unsupported download model')
+        requested = str(Path(filename)).casefold()
+        manager = self.organizer.downloadManager()
+        for row in range(model.rowCount()):
+            try:
+                host_path = str(Path(manager.downloadPath(row)))
+            except RuntimeError:
+                # Pending Nexus lookups have rows but no archive/download index yet.
+                continue
+            if requested not in (host_path.casefold(), (host_path + '.unfinished').casefold()):
+                continue
+            # Same slots used by the original context menu. The manager validates
+            # the current transfer state. Resolve the row immediately before use;
+            # never store row numbers in frontend state or requests.
+            QMetaObject.invokeMethod(view, slots[action], Qt.ConnectionType.DirectConnection, Q_ARG(int, row))
+            return {'requested': action}
+        raise ValueError('MO2 no longer manages this download; refresh the list')
 
     def start_nexus(self, mod_id, file_id, game):
         if not isinstance(game, str) or game.casefold() != self.game_domain().casefold():

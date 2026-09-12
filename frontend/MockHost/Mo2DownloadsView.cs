@@ -50,7 +50,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             var profile = ViewModel.Profile;
             void Refresh()
             {
-                import.IsEnabled = download.IsEnabled = !profile.Installing;
+                import.IsEnabled = download.IsEnabled = !profile.Installing && !profile.SelectingProfile && profile.ProfilePath.Length > 0;
                 rows.Children.Clear();
                 if (profile.Downloads.Count == 0) rows.Children.Add(new TextBlock { Text = "No downloads yet" });
                 foreach (var archive in profile.Downloads) {
@@ -58,6 +58,15 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     var install = new Button { Content = "Install", IsEnabled = !archive.Partial && !profile.Installing, Margin = new Thickness(12, 0, 0, 0) };
                     install.Click += async (_, _) => await profile.InstallArchive(archive.Path);
                     DockPanel.SetDock(install, Dock.Right); row.Children.Add(install);
+                    if (archive.Partial) {
+                        var controls = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+                        foreach (var operation in archive.Paused ? new[] { "resume" } : new[] { "pause", "resume", "cancel" }) {
+                            var button = new Button { Content = char.ToUpperInvariant(operation[0]) + operation[1..], IsEnabled = !profile.Installing && !profile.SelectingProfile };
+                            button.Click += async (_, _) => await profile.ControlDownload(archive.Path, operation);
+                            controls.Children.Add(button);
+                        }
+                        DockPanel.SetDock(controls, Dock.Bottom); row.Children.Add(controls);
+                    }
                     var text = new StackPanel { Spacing = 4 };
                     text.Children.Add(new TextBlock { Text = archive.Name, TextWrapping = TextWrapping.Wrap });
                     var state = archive.Paused ? "Paused" : archive.Partial ? "Downloading / incomplete" : archive.Installed ? "Previously installed" : "Downloaded";

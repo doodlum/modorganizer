@@ -33,6 +33,7 @@ class NexusFrontendBridge(mobase.IPluginTool):
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
         def ready(window):
+            self.bridge.downloads.window = window
             self.bridge.profiles = Profiles(organizer, window)
             self.bridge.executables = Executables(organizer, window)
             self.timer.start(100)

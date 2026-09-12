@@ -71,7 +71,7 @@ profile, 89 recorded modlist entries, four existing mod directories, 88 plugin
 load-order entries and no downloads. This is discovery evidence, not runtime
 integration. Two accessible MO2 configurations found in this session both manage
 Skyrim SE. FNV's executable exists, but there was no NVSE loader or ESP directly
-in its Data directory at inspection time. No FNV MO2 launch has been verified.
+in its Data directory at inspection time. No FNV gameplay through MO2 has been verified.
 
 The first host bridge now loads as an ordinary MO2 Python tool extension under
 Proton. Its C# client read the isolated FNV `Frontend Test` profile (nine DLC mod
@@ -100,8 +100,7 @@ Mod priority and plugin activation toolbar controls now call MO2 directly. A
 live check disabled MCM’s ESP independently of its enabled mod, changed mod
 priority, verified both against the host, and restored the original state.
 
-Next work is advanced download controls,
-and the FNV acceptance run above.
+Next work is remaining mod-management controls and the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.
 
 The live executable picker now calls MO2's configured process runner and waits
@@ -154,3 +153,13 @@ were backed up privately under `artifacts/skyrim-before-bridge`. Native MO2
 startup added 121 detected entries to its mod list and removed none. Existing
 plugin activation and load-order files were unchanged. No Skyrim game launch
 was performed. The separate `~/ModOrganizer2` instance is still catalog-only.
+
+Download Pause, Resume and Cancel now invoke the existing MO2 download-view
+slots. Each command resolves the archive path against the current unfiltered
+host download model immediately before acting; frontend requests never retain
+row indices. A throttled local HTTP archive test exercised the actual frontend
+buttons: paused bytes stayed constant, resumed bytes grew, and cancellation
+removed the partial archive while leaving the original downloads unchanged.
+The transfer itself was created through MO2's startDownloadURLs API by a narrow
+isolated test driver. The driver was removed from disk, its trigger consumed,
+and the local server/test payload cleaned up. No Nexus bandwidth was used.

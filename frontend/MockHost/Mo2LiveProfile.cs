@@ -193,6 +193,17 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { Installing = false; Changed?.Invoke(); _commands.Release(); }
     }
+    public async Task ControlDownload(string path, string operation)
+    {
+        var profile = ProfilePath;
+        await _commands.WaitAsync();
+        try {
+            await Client.SendAsync("controlDownload", new() { ["profilePath"] = profile, ["path"] = path, ["operation"] = operation });
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = operation + " requested through MO2"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
     public async Task DownloadNexus(string link)
     {
         var profile = ProfilePath;

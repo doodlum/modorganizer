@@ -15,7 +15,8 @@ MO2's logged-in downloader, and installs archives through its existing installer
 My Loadouts discovers real profiles across registered MO2 instances. Selection
 uses each running host, and profile management opens MO2's original dialog.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
-Advanced download controls and successful in-game FNV validation remain unfinished.
+Pause, resume and cancel route through MO2’s existing download controls.
+Successful in-game FNV validation and remaining mod-management controls are unfinished.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run

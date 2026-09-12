@@ -141,6 +141,7 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
                             await VerifyCrossGame(live, liveWindow, skyrimInstance);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_TRANSFERS") == "1") await VerifyTransfers(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
                             await live.Profile.Launch(executable);
@@ -264,6 +265,30 @@ public partial class MockApp : Application
         if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim profiles missing from catalog");
         Console.WriteLine("PASS: native MO2 profile manager clone; profile switching; independent saved activation; original profile restored; Skyrim profiles discovered");
         live.OpenProfiles();
+    }
+
+    private static async Task VerifyTransfers(Mo2LiveWorkspace live, Window window)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || live.Profile.Downloads.Any(x => x.Partial))
+            throw new InvalidOperationException("Transfer check requires the isolated FNV profile without existing partial downloads");
+        var original = live.Profile.Downloads.Select(x => x.Name).Order().ToArray();
+        live.OpenDownloads();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DownloadsView>().Any(), "Downloads view did not open");
+        File.WriteAllText(Path.Combine(Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath), "..", "..", "frontend-transfer-test.url"), "http://127.0.0.1:18642/mo2-transfer-test.zip");
+        await WaitFor(() => live.Profile.Downloads.Any(x => x.Name == "mo2-transfer-test.zip.unfinished" && x.Bytes > 262144), "Host test transfer did not start", seconds: 30);
+        void Click(string text) => window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single().GetVisualDescendants().OfType<Button>()
+            .Single(x => Equals(x.Content, text)).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Click("Pause");
+        await WaitFor(() => live.Profile.Downloads.Any(x => x.Name == "mo2-transfer-test.zip.unfinished" && x.Paused), "MO2 did not pause the transfer", seconds: 20);
+        var paused = live.Profile.Downloads.Single(x => x.Name == "mo2-transfer-test.zip.unfinished");
+        await Task.Delay(800); await live.Profile.Refresh();
+        if (live.Profile.Downloads.Single(x => x.Name == paused.Name).Bytes != paused.Bytes) throw new InvalidOperationException("Paused transfer continued writing");
+        Click("Resume");
+        await WaitFor(() => live.Profile.Downloads.Any(x => x.Name == paused.Name && !x.Paused && x.Bytes > paused.Bytes), "MO2 did not resume the transfer", seconds: 20);
+        Click("Cancel");
+        await WaitFor(() => live.Profile.Downloads.All(x => x.Name != paused.Name), "MO2 did not cancel the transfer", seconds: 20);
+        if (!live.Profile.Downloads.Select(x => x.Name).Order().SequenceEqual(original)) throw new InvalidOperationException("Transfer controls changed other archives");
+        Console.WriteLine("PASS: native frontend Pause, Resume and Cancel buttons route through MO2; paused bytes stop, resumed bytes grow, cancelled partial is removed; other archives unchanged");
     }
 
     private static async Task VerifyCrossGame(Mo2LiveWorkspace live, Window window, string skyrimInstance)
