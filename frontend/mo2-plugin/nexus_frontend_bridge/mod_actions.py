@@ -6,6 +6,51 @@ class ModActions:
         self.organizer = organizer
         self.window = window
 
+    def health_check(self):
+        from PyQt6.QtCore import QObject, QEvent, QMetaObject, QTimer, Qt
+        from PyQt6.QtGui import QTextDocument
+        from PyQt6.QtWidgets import QApplication, QDialog, QTreeWidget
+        if not self.window.isEnabled():
+            raise ValueError('MO2 is busy; wait before checking health')
+        captured, failures = [], []
+        class Capture(QObject):
+            def eventFilter(inner, watched, event):
+                if (isinstance(watched, QDialog) and watched.objectName() == 'ProblemsDialog'
+                        and event.type() == QEvent.Type.Polish):
+                    # Polish occurs before QWidget maps its native window.
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def read():
+                        try:
+                            tree = watched.findChild(QTreeWidget, 'problemsWidget')
+                            if tree is None: raise ValueError('MO2 diagnostics tree is unavailable')
+                            entries = []
+                            for row in range(tree.topLevelItemCount()):
+                                item = tree.topLevelItem(row)
+                                description = item.data(0, Qt.ItemDataRole.UserRole)
+                                # MO2's empty placeholder has an empty description and italic title.
+                                if not description and item.font(0).italic(): continue
+                                document = QTextDocument(); document.setHtml(str(description or ''))
+                                entries.append({'title': item.text(0), 'details': document.toPlainText()})
+                            captured.append(entries)
+                        except Exception as error:
+                            failures.append(str(error))
+                        finally:
+                            watched.reject()
+                    QTimer.singleShot(0, read)
+                return False
+        app = QApplication.instance()
+        capture = Capture()
+        app.installEventFilter(capture)
+        try:
+            # Invoke the native slot even when the last cached notification count
+            # was zero; it refreshes diagnostics before constructing the dialog.
+            QMetaObject.invokeMethod(self.window, 'on_actionNotifications_triggered', Qt.ConnectionType.DirectConnection)
+        finally:
+            app.removeEventFilter(capture)
+        if failures: raise ValueError(failures[0])
+        if len(captured) != 1: raise ValueError('MO2 diagnostics did not complete')
+        return {'problems': captured[0]}
+
     def snapshot(self):
         import os
         from PyQt6.QtCore import QAbstractProxyModel, Qt

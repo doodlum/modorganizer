@@ -160,6 +160,13 @@ public partial class MockApp : Application
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_SKYRIM") == "1") {
+                            var entry = live.CatalogEntries.Single(x => x.Registration.Directory == "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2");
+                            var target = entry.Instance!.Profiles.Single(x => x.Name == "Default");
+                            var spine = liveWindow.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+                            await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + entry.Registration.Directory + ")").Click.Execute();
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH") == "1") await VerifyHealth(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEXUS_ACCOUNT") == "1") {
@@ -506,6 +513,84 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyHealth(Mo2LiveWorkspace live, Window window)
+    {
+        if (live.Profile.ProfilePath.Length == 0) {
+            live.ShowProfile();
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any(), "Disconnected profile workspace did not render");
+        }
+        var original = (live.Profile.ProfilePath,
+            Mods: live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray(),
+            Plugins: live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray());
+        await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Any(), "Native Health Check page missing");
+        var view = window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Single();
+        var page = (Mo2HealthPage)view.ViewModel!;
+        if (live.Profile.ProfilePath.Length == 0) {
+            await WaitFor(() => page.DiagnosticEntries.Any(x => x.Title == "Health check unavailable"), "Disconnected health check did not report unavailability");
+            if (page.HasResult || page.NumWarnings != 1 || view.FindControl<NexusMods.App.UI.Controls.EmptyState>("EmptyState")!.IsActive)
+                throw new InvalidOperationException("Disconnected Health Check displayed success");
+            Console.WriteLine("PASS: disconnected Health Check reports unavailability and never displays the green success state");
+            return;
+        }
+        await WaitFor(() => page.HasResult, "MO2 Health Check did not return a successful result", seconds: 60);
+        var expected = await live.Profile.ReadHealth();
+        if (!expected.SequenceEqual(page.DiagnosticEntries.Select(x => (x.Title, x.Summary))))
+            throw new InvalidOperationException("Native Health Check does not match MO2 Notifications");
+        if (expected.Length > 0) {
+            var first = page.DiagnosticEntries.First();
+            var entryView = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>().First();
+            var button = entryView.FindControl<NavigationControl>("EntryButton")!;
+            button.Command!.Execute(NavigationInformation.From(NavigationInput.Default));
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(), "Native health details page missing");
+            var details = window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Single().ViewModel!;
+            if (details.Severity != first.Severity || details.MarkdownRendererViewModel.Contents.Length == 0)
+                throw new InvalidOperationException("Health details are empty");
+            await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Any(), "Health Check did not return after details");
+            view = window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Single();
+            page = (Mo2HealthPage)view.ViewModel!;
+            await WaitFor(() => page.HasResult, "Health Check did not refresh after returning from details");
+        }
+        await live.Profile.Refresh();
+        if (original.ProfilePath != live.Profile.ProfilePath || !original.Mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))) ||
+            !original.Plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))))
+            throw new InvalidOperationException("Health Check changed MO2 profile state");
+        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_FIXTURE") == "1") {
+            const string marker = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host/plugins/data/frontend-health-fixture-active";
+            if (!expected.Any(x => x.Title == "Frontend diagnostic verification") || !live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/"))
+                throw new InvalidOperationException("Expected isolated diagnostic fixture was not reported");
+            try {
+                File.Delete(marker);
+                await page.Refresh();
+                if (!page.HasResult || page.DiagnosticEntries.Any(x => x.Title == "Frontend diagnostic verification"))
+                    throw new InvalidOperationException("Resolved MO2 diagnostic did not clear");
+            } finally { File.WriteAllText(marker, ""); }
+            await page.Refresh();
+            if (!page.DiagnosticEntries.Any(x => x.Title == "Frontend diagnostic verification"))
+                throw new InvalidOperationException("MO2 diagnostic did not return after invalidation");
+            Console.WriteLine("PASS: original MO2 diagnostic extension appears, clears and returns in native Health Check without changing profiles");
+        }
+        if (expected.Length > 0)
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>().Count() == page.DiagnosticEntries.Length,
+                "Diagnostic entries did not render after returning from details");
+        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_SWITCH") == "1") {
+            var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+            foreach (var directory in new[] { "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" }) {
+                var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+                var target = entry.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
+                await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + directory + ")").Click.Execute();
+                await WaitFor(() => page.HasResult && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == target.Directory,
+                    "Existing Health Check page did not refresh for the selected game", seconds: 110);
+                var reports = await live.Profile.ReadHealth();
+                if (!reports.SequenceEqual(page.DiagnosticEntries.Select(x => (x.Title, x.Summary))))
+                    throw new InvalidOperationException("Health Check retained diagnostics from the previous game");
+            }
+            Console.WriteLine("PASS: existing native Health Check follows FNV to Skyrim and back without reopening the page");
+        }
+        Console.WriteLine($"PASS: native Health Check matches {expected.Length} MO2 notification reports; details verified={expected.Length > 0}; profile/mod/plugin state preserved");
     }
 
     private static async Task VerifyProfileNavigation(Mo2LiveWorkspace live, Window window)

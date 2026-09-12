@@ -184,6 +184,22 @@ class ContractTests(unittest.TestCase):
         self.organizer.current = 'Z:/profiles/Other'
         with self.assertRaises(ValueError): self.bridge.execute(request)
         self.assertEqual(self.bridge.mod_actions.calls, ['Test Mod'])
+    def test_health_checks_use_native_adapter_and_reject_stale_profile(self):
+        class ModActions:
+            calls = 0
+            def health_check(self):
+                self.calls += 1
+                return {'problems': [{'title': 'MO2 diagnostic', 'details': 'Native description'}]}
+        request = self.request(action='healthCheck')
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.bridge.mod_actions = ModActions()
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(self.bridge.mod_actions.calls, 0)
+        result = self.bridge.execute(self.request(action='healthCheck'))
+        self.assertEqual(result['problems'][0]['title'], 'MO2 diagnostic')
+        self.assertEqual(self.bridge.mod_actions.calls, 1)
+
     def test_nested_dialog_poll_does_not_replay_request(self):
         calls = []
         bridge = self.bridge

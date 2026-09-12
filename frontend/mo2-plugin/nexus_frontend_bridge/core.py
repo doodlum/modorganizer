@@ -67,6 +67,10 @@ class Bridge:
             raise ValueError('Active MO2 profile changed; refresh before editing')
         if self.profiles is not None and self.profiles.refreshing:
             raise ValueError('MO2 is refreshing the selected profile')
+        if action == 'healthCheck':
+            if self.mod_actions is None:
+                raise ValueError('MO2 health checks are unavailable')
+            return self.mod_actions.health_check()
         if action == 'launch':
             if self.executables is None:
                 raise ValueError('MO2 launch integration is unavailable')

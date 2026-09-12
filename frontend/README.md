@@ -31,6 +31,12 @@ reordering refreshes MO2 first and rejects stale plugin state.
 The **Nexus account** button opens the selected MO2 instance’s original Nexus
 settings tab. Select a profile first when disconnected. Account handling stays
 inside MO2.
+**Health Check** uses NMA's native diagnostic list and details pages. It reads
+MO2's Notifications result, including enabled diagnostic extensions, without
+showing that dialog. MO2 notifications appear as warnings because its diagnostic
+API does not supply severity. Checks refresh on MO2 changes and periodically;
+an unavailable host produces an error state. FNV, Skyrim, a temporary diagnostic
+extension, and game switching were tested; see [fidelity evidence](NMA_FIDELITY.md).
 Live desktop actions use NMA’s native platform service. The help menu’s
 GitHub, MO2 Discord and Nexus status links open through the default handler.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).

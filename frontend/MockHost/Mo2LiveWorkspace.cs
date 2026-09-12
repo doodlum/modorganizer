@@ -38,6 +38,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _gamesPage;
     private readonly PageData _gameLoadoutsPage;
     private readonly PageData _connectionsPage;
+    private readonly Mo2HealthDetailsFactory _healthDetailsFactory;
     public PageData ConnectionsPage => _connectionsPage;
     private readonly WorkspaceId _homeWorkspace;
     private readonly WorkspaceId _profileWorkspace;
@@ -103,7 +104,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile));
         _connectionsPage = connections.Data;
         _profilesPage = profiles.Data;
-        services.Add(new PageFactoryController([mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
+        var health = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82108", "Health Check", IconValues.Cardiology,
+            () => new Mo2HealthPage(windows, this));
+        _healthDetailsFactory = new Mo2HealthDetailsFactory(windows);
+        services.Add(new PageFactoryController([health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var home = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
@@ -112,7 +116,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data);
         var workspace = WorkspaceController.CreateWorkspace(new Mo2WorkspaceContext(), mods.Data);
         _profileWorkspace = workspace.Id;
-        ProfileMenu = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, mods.Data, plugins.Data, downloads.Data);
+        ProfileMenu = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, mods.Data, plugins.Data, downloads.Data, health.Data);
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
         WorkspaceController.OpenPage(workspace.Id, plugins.Data, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true, new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)), new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
     }
@@ -134,6 +138,11 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public void OpenConnections() => OpenHomePage(_connectionsPage);
     public void OpenProfiles() => OpenLoadouts(null);
     public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
+    public void OpenHealthDetails(NexusMods.Abstractions.Diagnostics.Diagnostic diagnostic, NavigationInformation info)
+    {
+        var page = new PageData { FactoryId = _healthDetailsFactory.Id, Context = new Mo2HealthDetailsContext(diagnostic) };
+        WorkspaceController.OpenPage(_profileWorkspace, page, WorkspaceController.GetOpenPageBehavior(page, info));
+    }
     public void ShowProfile()
     {
         WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
@@ -189,8 +198,8 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var spine = new Spine { ViewModel = new Mo2Spine(this) };
         Grid.SetRowSpan(spine, 3); grid.Children.Add(spine);
         var profileSidebar = new NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView { ViewModel = ProfileMenu };
-        // MO2 has no separate collection/deployment authority. Health Check is wired separately.
-        foreach (var name in new[] { "NewCollection", "HealthCheckItem", "ApplyControlViewHost" })
+        // MO2 has no separate collection/deployment authority.
+        foreach (var name in new[] { "NewCollection", "ApplyControlViewHost" })
             profileSidebar.FindControl<Control>(name)!.IsVisible = false;
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
         var sidebar = new ContentControl { Content = homeSidebar };

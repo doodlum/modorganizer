@@ -89,6 +89,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
+    public async Task<(string Title, string Details)[]> ReadHealth()
+    {
+        var path = ProfilePath;
+        if (path.Length == 0) throw new InvalidOperationException("Select an MO2 profile to check its health.");
+        await _commands.WaitAsync();
+        try {
+            if (ProfilePath != path) throw new InvalidOperationException("Profile changed; checking the selected profile again.");
+            var result = await Client.SendAsync("healthCheck", new() { ["profilePath"] = path });
+            return result.GetProperty("problems").EnumerateArray().Select(x =>
+                (x.GetProperty("title").GetString()!, x.GetProperty("details").GetString()!)).ToArray();
+        } finally { _commands.Release(); }
+    }
     private void Report(Exception error) { _lastSnapshot = null; Status = error.Message; Changed?.Invoke(); }
     public void Toggle(IEnumerable<LoadoutItemId> ids)
     {

@@ -63,3 +63,43 @@ the main window only in that mode using Qt's `WA_DontShowOnScreen`. Both hosts
 still connected during the navigation test. The splash and command window
 were visibly present during startup: background UI suppression is incomplete.
 Explicit native dialogs and hidden-host lifetime still need separate checks.
+
+## Health Check integration
+
+Health Check now opens NMA's native diagnostic list and detail pages. A guarded
+bridge command invokes MO2's Notifications slot, which refreshes all enabled
+`IPluginDiagnose` providers before reading their descriptions. The adapter
+marks only the temporary ProblemsDialog as `WA_DontShowOnScreen` before it is
+shown, reads its tree, and closes it. No guided fix is executed by a health scan.
+MO2 supplies no severity, so its notification reports appear as warnings.
+
+The page refreshes while active and invalidates its result when the profile
+changes. A missing connection or failed scan produces an unavailable state,
+not an empty successful result. Diagnostic descriptions are converted from
+MO2 HTML to plain text and escaped for the native Markdown detail renderer.
+
+FNV runtime checks passed for the normal zero-report profile and a temporary
+original `IPluginDiagnose` extension in the isolated host. Its issue appeared,
+opened a native detail page through the issue-row control, cleared, and returned.
+The final rendered issue list was checked after returning from details. All
+mod, plugin and profile state stayed unchanged. The temporary extension and its
+marker were removed after verification. Evidence: `artifacts/health-fnv.png`,
+`artifacts/health-fnv-diagnostic.png`, `/tmp/mo2-health-fnv.log` and
+`/tmp/mo2-health-fixture.log`. The bridge contract suite has 15 passing checks,
+including stale-profile rejection for health scans.
+
+Skyrim's native host also returned zero reports without changing state
+(`artifacts/health-skyrim.png`, `/tmp/mo2-health-skyrim.log`). The disconnected
+page displayed unavailability rather than green success
+(`artifacts/health-disconnected.png`, `/tmp/mo2-health-disconnected.log`).
+With a report present only in the isolated FNV host, the same open Health Check
+page changed from one warning to zero on Skyrim and back to one on FNV without
+reopening the page (`artifacts/health-cross-game.png`,
+`/tmp/mo2-health-cross-game.log`). Native MO2 changes trigger a refresh, in
+addition to the periodic scan.
+
+Remaining fidelity work includes the mods page, launch/header controls and
+startup splash/console suppression. The current shared profile workspace also
+needs an audit of profile-specific tabs and historical diagnostic details;
+passing the live list switch check does not prove every tab has the right
+profile lifetime.
