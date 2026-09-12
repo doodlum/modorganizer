@@ -26,3 +26,4 @@ frontend/artifacts/
 
 # Separate working branch of the Nexus reference fork
 /reference-fnv/
+**/__pycache__/

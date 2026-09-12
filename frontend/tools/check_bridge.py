@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Contract tests with a fake MO2 API. These do not prove MO2 runtime compatibility."""
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import uuid
+
+source = Path(__file__).resolve().parents[1] / 'mo2-plugin/nexus_frontend_bridge/core.py'
+spec = importlib.util.spec_from_file_location('bridge_core', source)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class ListApi:
+    def __init__(self): self.active = False; self.calls = 0
+    def allMods(self): return ['Test Mod']
+    def allModsByProfilePriority(self): return self.allMods()
+    def displayName(self, name): return name
+    def state(self, name): return 2 if self.active else 1
+    def priority(self, name): return 0
+    def setActive(self, name, active): self.active = active; self.calls += 1; return True
+    def setPriority(self, name, priority): self.calls += 1; return True
+    def pluginNames(self): return ['Test.esp']
+    def setState(self, name, state): self.active = state == 2; self.calls += 1
+    def loadOrder(self, name): return 0
+    def masters(self, name): return ['FalloutNV.esm']
+    def origin(self, name): return 'Test Mod'
+
+
+class Organizer:
+    def __init__(self): self.mods = ListApi(); self.plugins = ListApi(); self.current = 'Z:/profiles/Test'
+    def modList(self): return self.mods
+    def pluginList(self): return self.plugins
+    def profilePath(self): return self.current
+    def profileName(self): return 'Test'
+    def instanceName(self): return 'FNV Test'
+    def basePath(self): return 'Z:/instance'
+    def modsPath(self): return 'Z:/instance/mods'
+    def downloadsPath(self): return 'Z:/instance/downloads'
+
+
+class ContractTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.organizer = Organizer()
+        self.bridge = module.Bridge(self.organizer, self.temp.name, {True: 2, False: 1})
+    def request(self, **fields):
+        return dict(protocol=1, session=self.bridge.session, profilePath=self.organizer.current, **fields)
+    def test_snapshot_reports_host_order_state_and_origin(self):
+        result = self.bridge.execute(self.request(action='snapshot'))
+        self.assertEqual(result['plugins'][0]['masters'], ['FalloutNV.esm'])
+        self.assertEqual(result['mods'][0]['state'], 1)
+    def test_mutations_use_host_and_return_actual_state(self):
+        result = self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
+        self.assertEqual(self.organizer.mods.calls, 1)
+        self.assertEqual(result['mods'][0]['state'], 2)
+        self.bridge.execute(self.request(action='setPluginActive', name='Test.esp', enabled=True))
+        self.assertTrue(self.organizer.plugins.active)
+    def test_older_host_without_instance_name(self):
+        class OlderOrganizer:
+            def __getattr__(self, name):
+                if name == 'instanceName': raise AttributeError(name)
+                return getattr(self.organizer, name)
+        older = OlderOrganizer()
+        older.organizer = self.organizer
+        self.bridge.organizer = older
+        result = self.bridge.execute(self.request(action='snapshot'))
+        self.assertIsNone(result['instance']['name'])
+        self.assertEqual(result['profile']['name'], 'Test')
+    def test_stale_profile_or_session_rejected(self):
+        request = self.request(action='setModActive', name='Test Mod', enabled=True)
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        request['session'] = str(uuid.uuid4())
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(self.organizer.mods.calls, 0)
+    def test_invalid_value_rejected(self):
+        with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled='false'))
+        with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setPluginPriority', name='Test.esp', priority=-1))
+    def test_mailbox_replay_does_not_repeat_mutation(self):
+        identifier = str(uuid.uuid4())
+        path = Path(self.temp.name) / 'requests' / (identifier + '.json')
+        body = self.request(action='setModActive', name='Test Mod', enabled=True)
+        path.write_text(json.dumps(body)); self.bridge.poll()
+        self.assertTrue(json.loads((Path(self.temp.name) / 'responses' / path.name).read_text())['ok'])
+        path.write_text(json.dumps(body)); self.bridge.poll()
+        self.assertEqual(self.organizer.mods.calls, 1)
+
+
+if __name__ == '__main__': unittest.main()

@@ -71,6 +71,12 @@ integration. Two accessible MO2 configurations found in this session both manage
 Skyrim SE. FNV's executable exists, but there was no NVSE loader or ESP directly
 in its Data directory at inspection time. No FNV MO2 launch has been verified.
 
-Next implementation work is the MO2 host bridge, binding real profiles/mods/
-plugins/downloads to the frontend, then the isolated FNV acceptance run above.
+The first host bridge now loads as an ordinary MO2 Python tool extension under
+Proton. Its C# client read the isolated FNV `Frontend Test` profile (nine DLC mod
+entries, ten plugins). A real plugin activation and restoration through the MO2
+API succeeded. See [bridge setup and protocol](mo2-plugin/README.md). No added mod
+or in-game launch has been verified; the visual frontend remains fixture-backed.
+
+Next implementation work is binding real profiles/mods/plugins/downloads to the
+frontend and extending the host operations, then the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.

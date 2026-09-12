@@ -39,6 +39,16 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--mo2-bridge-snapshot") {
+            try {
+                if (args.Length != 2) throw new ArgumentException("Expected MO2 bridge directory");
+                Console.WriteLine(new Mo2BridgeClient(args[1]).SendAsync("snapshot").GetAwaiter().GetResult().GetRawText());
+            } catch (Exception error) {
+                Console.Error.WriteLine(error.Message);
+                Environment.ExitCode = 1;
+            }
+            return;
+        }
         if (args.FirstOrDefault() == "--inspect-mo2") { Mo2ProfileFiles.Inspect(args.Skip(1).ToArray()); return; }
         IconProvider.Current.Register<MaterialDesignIconProvider>();
         AppBuilder.Configure<MockApp>().UsePlatformDetect()
