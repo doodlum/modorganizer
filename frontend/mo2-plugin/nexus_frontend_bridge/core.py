@@ -10,7 +10,9 @@ def number(value):
 
 
 class Bridge:
-    def __init__(self, organizer, directory, plugin_states, credentials=None):
+    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None):
+        self.downloads = downloads
+        self._polling = False
         self.credentials = credentials
         self.organizer = organizer
         self.directory = Path(directory)
@@ -31,6 +33,8 @@ class Bridge:
         mods = organizer.modList()
         plugins = organizer.pluginList()
         return {
+            'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
+            'downloads': self.downloads.snapshot() if self.downloads is not None else [],
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
                          'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath()},
@@ -54,6 +58,12 @@ class Bridge:
             return self.snapshot()
         if request.get('profilePath') != self.organizer.profilePath():
             raise ValueError('Active MO2 profile changed; refresh before editing')
+        if action in ('startNexusDownload', 'installArchive'):
+            if self.downloads is None:
+                raise ValueError('Host downloads integration is unavailable')
+            if action == 'startNexusDownload':
+                return self.downloads.start_nexus(request.get('modId'), request.get('fileId'), request.get('game'))
+            return self.downloads.install(request.get('path'))
         name = request.get('name')
         if not isinstance(name, str):
             raise ValueError('A mod or plugin name is required')
@@ -94,6 +104,17 @@ class Bridge:
         return self.snapshot()
 
     def poll(self):
+        # Installer dialogs run nested Qt loops. A second timer tick must never
+        # replay the in-flight request or run another operation within a dialog.
+        if self._polling:
+            return
+        self._polling = True
+        try:
+            self._poll_requests()
+        finally:
+            self._polling = False
+
+    def _poll_requests(self):
         # Invoked by a QTimer on the host UI thread; do not call MO2 from workers.
         for path in sorted((self.directory / 'requests').glob('*.json'))[:8]:
             try:

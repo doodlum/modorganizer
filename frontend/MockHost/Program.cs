@@ -77,6 +77,7 @@ internal sealed class FixtureViewLocator : IViewLocator
 {
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
+        if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
         if (viewModel is not IViewModel vm) return null;
         var viewType = typeof(MyGamesView).Assembly.GetTypes().FirstOrDefault(type =>
@@ -108,6 +109,32 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIVE") == "1") await VerifyLive(live, endpoint);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOADS") is { } downloadLink) {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Download check requires the isolated FNV profile");
+                            var before = live.Profile.Downloads.Select(x => x.Name).ToHashSet();
+                            await live.Profile.DownloadNexus(downloadLink);
+                            var deadline = DateTime.UtcNow.AddSeconds(60);
+                            while (!live.Profile.Downloads.Any(x => !x.Partial && !before.Contains(x.Name))) {
+                                if (DateTime.UtcNow > deadline) throw new InvalidOperationException("MO2 download did not finish: " + live.Profile.Status);
+                                await Task.Delay(500); await live.Profile.Refresh();
+                            }
+                            live.OpenDownloads();
+                            Console.WriteLine("PASS: Nexus file requested through MO2; completed archive appears in its download directory and frontend");
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALL_ARCHIVE") is { } installArchive) {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Install check requires the isolated FNV profile");
+                            await live.Profile.InstallArchive(installArchive);
+                            Console.WriteLine("INSTALL: " + live.Profile.Status);
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENABLE_MOD") is { } modName) {
+                            if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Activation check requires the isolated FNV profile");
+                            var mod = live.Profile.Mods.Single(x => x.Name == modName);
+                            if ((mod.State & 2) != 0) throw new InvalidOperationException("Activation check requires an initially disabled mod");
+                            var row = live.ModsPage!.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id);
+                            row.Get<LoadoutComponents.EnabledStateToggle>(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey).CommandToggle.Execute(R3.Unit.Default);
+                            await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == modName).State & 2) != 0 && live.Profile.Order.Plugins.Any(x => x.ModName == modName), "MO2 mod activation did not expose its plugin");
+                            Console.WriteLine("PASS: native mod activation command enabled installed mod and exposed its ESP in the right panel");
+                        }
                         await Task.Delay(500);
                         foreach (var table in liveWindow.GetVisualDescendants().OfType<TreeDataGrid>())
                             Console.WriteLine($"TABLE: source={table.Source?.Items.Cast<object>().Count()} rows={table.Rows?.Count} bounds={table.Bounds} visualRows={table.GetVisualDescendants().Count(x => x is Avalonia.Controls.Primitives.TreeDataGridRow)}");

@@ -4,7 +4,7 @@ namespace Mo2.Frontend;
 
 internal sealed class Mo2BridgeClient(string directory)
 {
-    public async Task<JsonElement> SendAsync(string action, Dictionary<string, object?>? arguments = null, CancellationToken cancellationToken = default)
+    public async Task<JsonElement> SendAsync(string action, Dictionary<string, object?>? arguments = null, CancellationToken cancellationToken = default, TimeSpan? timeout = null)
     {
         using var endpoint = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "endpoint.json"), cancellationToken));
         var session = endpoint.RootElement.GetProperty("session").GetString()!;
@@ -15,7 +15,7 @@ internal sealed class Mo2BridgeClient(string directory)
         var responsePath = Path.Combine(directory, "responses", id + ".json");
         await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(request), cancellationToken);
         File.Move(path + ".tmp", path);
-        var deadline = DateTime.UtcNow.AddSeconds(15);
+        var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(15));
         while (!File.Exists(responsePath)) {
             cancellationToken.ThrowIfCancellationRequested();
             if (DateTime.UtcNow >= deadline)

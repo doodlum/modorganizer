@@ -34,7 +34,7 @@ Responses retained while a request exists prevent duplicate execution of that
 request. This is a local extension endpoint with the same access as the user's
 MO2 files; it is not a network service.
 
-Validation: seven Python contract checks (`python3 frontend/tools/check_bridge.py`)
+Validation: eight Python contract checks (`python3 frontend/tools/check_bridge.py`)
 cover authoritative state, mutations, stale profile/session rejection, invalid
 values, older-host metadata and mailbox replay. A C# client read a real isolated
 New Vegas `Frontend Test` profile under Proton: nine DLC mod entries and ten
@@ -63,10 +63,49 @@ the live checks. Setting it only in the outer Linux launch environment did not
 work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
-Profile management, downloads/installers, plugin activation controls, mod
+Profile management, advanced download controls, plugin activation controls, mod
 priority editing and launch remain to be connected. Nexus account access will
 reuse MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
+
+## Downloads and installation
+
+The live header's Downloads button opens a native workspace tab. It lists files
+from MO2's downloads folder and reads only relevant flags from each `.meta` file.
+"Previously installed" is MO2's archive history, not membership in the current
+profile. Partial files cannot be installed. Signed download URLs and credentials
+are excluded from snapshots.
+
+Paste a Nexus file URL containing `file_id` or an `nxm://game/mods/id/files/id`
+link. The host calls `IDownloadManager.startDownloadNexusFile` for the current
+game using its existing Nexus account. This ID-based path was tested with Premium
+access; it does not forward free-account authorization parameters from nxm links.
+The bridge rejects links for another game. Progress currently shows downloaded
+bytes and partial/paused status; pause, resume, cancel and detailed errors still
+need the corresponding MO2 runtime integration.
+
+Install buttons and the local archive picker call `IOrganizer.installMod`.
+MO2 selects its original installer plugin and presents any Qt dialogs. The
+frontend waits for completion, then refreshes MO2's mod/plugin lists. Nested Qt
+timer events cannot repeat an in-flight request. A null installer result means
+cancelled or failed, not successful installation. Installer calls allow up to
+30 minutes; a timeout still requires checking the host before retrying.
+
+Live evidence: MO2 downloaded the original MCM archive (Nexus mod 42507, file
+105803) and its XML FOMOD edition (file 1000164772). The original archive returned
+without a mod. The XML edition opened the existing FOMOD installer and installed
+MCM's ESP, NVSE DLL and menu files into MO2's mod directory. An isolated Qt test
+driver pressed the native Install button with its default choices after Wayland
+pointer automation proved unreliable. That driver is not in the distributed
+extension. A profile temporary-file error occurred before restarting the test
+host, then did not recur during the successful installation.
+
+The frontend's native mod toggle enabled MCM, its ESP appeared in the right
+panel, and MO2 saved the entries in `modlist.txt`, `plugins.txt` and `loadorder.txt`.
+This proves download/install/activation persistence, not in-game MCM operation.
+`check_downloads.py` adds three tests for archive metadata, game validation,
+native downloader/installer routing and partial-file rejection. The bridge tests
+also cover reentrant polling during installer dialogs.
 
 ## Nexus account
 

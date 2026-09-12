@@ -26,6 +26,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
     public ReactiveCommand<Unit, bool> BringWindowToFront { get; } = ReactiveCommand.Create(() => true);
+    private readonly PageData _downloadsPage;
     public Mo2LiveProfile Profile { get; }
     public ScenarioInstalledPage? ModsPage { get; private set; }
     public ScenarioLoadOrderPage? PluginsPage { get; private set; }
@@ -46,20 +47,28 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             () => ModsPage = new ScenarioInstalledPage(services, windows, Profile, Profile.Order));
         var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
             () => PluginsPage = new ScenarioLoadOrderPage(services, Profile.Order));
-        services.Add(new PageFactoryController([mods, plugins, new NewTabPageFactory(services)]));
+        var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.LibraryOutline,
+            () => new Mo2DownloadsPage(windows, Profile));
+        _downloadsPage = downloads.Data;
+        services.Add(new PageFactoryController([mods, plugins, downloads, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var workspace = WorkspaceController.CreateWorkspace(new HomeContext(), mods.Data);
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
         WorkspaceController.OpenPage(workspace.Id, plugins.Data, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true, new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)), new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
     }
+    public void OpenDownloads() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _downloadsPage,
+        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
     public Window CreateWindow()
     {
         var title = new TextBlock { Text = Profile.CollectionName.Value, FontSize = 20, Margin = new Thickness(16, 12) };
         var status = new TextBlock { Text = Profile.Status, Margin = new Thickness(16, 8), TextWrapping = TextWrapping.Wrap };
         var refresh = new Button { Content = "Refresh from MO2", Margin = new Thickness(12) };
         refresh.Click += async (_, _) => await Profile.Refresh();
+        var downloads = new Button { Content = "Downloads", Margin = new Thickness(12) };
+        downloads.Click += (_, _) => OpenDownloads();
         var header = new DockPanel();
+        DockPanel.SetDock(downloads, Dock.Right); header.Children.Add(downloads);
         DockPanel.SetDock(refresh, Dock.Right); header.Children.Add(refresh); header.Children.Add(title);
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         grid.Children.Add(header);

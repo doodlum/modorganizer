@@ -95,6 +95,21 @@ class ContractTests(unittest.TestCase):
         request['session'] = str(uuid.uuid4())
         with self.assertRaises(ValueError): self.bridge.execute(request)
         self.assertEqual(len(credentials.calls), 1)
+    def test_nested_dialog_poll_does_not_replay_request(self):
+        calls = []
+        bridge = self.bridge
+        class Credentials:
+            def import_file(self, path):
+                calls.append(path)
+                bridge.poll()
+                return {'stored': True}
+        bridge.credentials = Credentials()
+        identifier = str(uuid.uuid4())
+        path = Path(self.temp.name) / 'requests' / (identifier + '.json')
+        path.write_text(json.dumps(self.request(action='importNexusKey', path='private.txt')))
+        bridge.poll()
+        self.assertEqual(calls, ['private.txt'])
+        self.assertFalse(bridge._polling)
     def test_mailbox_replay_does_not_repeat_mutation(self):
         identifier = str(uuid.uuid4())
         path = Path(self.temp.name) / 'requests' / (identifier + '.json')

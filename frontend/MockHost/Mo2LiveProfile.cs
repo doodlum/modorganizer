@@ -9,6 +9,7 @@ using NexusMods.MnemonicDB.Abstractions;
 
 namespace Mo2.Frontend;
 
+internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused);
 internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority);
 
 // Only a view of the running host. No activation/order/profile files are written here.
@@ -19,7 +20,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     private readonly SourceCache<Mo2LiveMod, EntityId> _mods = new(x => x.Id);
     private readonly Dictionary<string, EntityId> _ids = new(StringComparer.OrdinalIgnoreCase);
     public R3.BindableReactiveProperty<string> CollectionName { get; } = new("Connecting to MO2…");
+    public IReadOnlyCollection<Mo2LiveMod> Mods => _mods.Items.ToArray();
     public ScenarioPluginOrder Order { get; } = new(false);
+    public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
+    public string NexusGame { get; private set; } = "";
+    public bool Installing { get; private set; }
     public string ProfilePath { get; private set; } = "";
     public string Status { get; private set; } = "Connecting to MO2…";
     public event Action? Changed;
@@ -34,6 +39,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var raw = snapshot.GetRawText();
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
+        NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
+        Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
+            .Where(x => !x.GetProperty("hidden").GetBoolean())
+            .Select(x => new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean())).ToArray() : [];
         var profile = snapshot.GetProperty("profile");
         ProfilePath = profile.GetProperty("path").GetString()!;
         CollectionName.Value = profile.GetProperty("name").GetString()!;
@@ -85,6 +94,33 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 if (current?.SortIndex == index) continue;
                 Apply(await _client.SendAsync("setPluginPriority", new() { ["profilePath"] = profile, ["name"] = desired[index].DisplayName, ["priority"] = index }, token));
             }
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
+    public async Task InstallArchive(string path)
+    {
+        var profile = ProfilePath;
+        await _commands.WaitAsync();
+        try {
+            Installing = true; Status = "Complete installation in MO2"; Changed?.Invoke();
+            var hostPath = path.StartsWith('/') ? "Z:" + path : path;
+            var result = await _client.SendAsync("installArchive", new() { ["profilePath"] = profile, ["path"] = hostPath }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null;
+            Apply(await _client.SendAsync("snapshot"));
+            Status = result.GetProperty("installed").GetBoolean() ? "Installed " + result.GetProperty("modName").GetString() : "MO2 did not install the archive (cancelled or failed)";
+        } catch (Exception error) { Report(error); }
+        finally { Installing = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    public async Task DownloadNexus(string link)
+    {
+        var profile = ProfilePath;
+        var game = NexusGame;
+        await _commands.WaitAsync();
+        try {
+            var file = Mo2NexusLink.Parse(link);
+            if (!string.Equals(file.Game, game, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Choose a Nexus file for the current game");
+            await _client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
+            Status = "Download requested through MO2"; Changed?.Invoke();
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
