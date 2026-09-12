@@ -177,6 +177,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
         Grid.SetColumn(top, 2);
         var topBar = new TopBarView { ViewModel = new Mo2TopBar(this) };
+        var account = topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>("LoginButton")!;
+        account.Text = "Nexus account";
+        ToolTip.SetTip(account, "Manage the selected instance’s Nexus account in MO2. Select a profile first.");
         Grid.SetColumn(topBar, 1); Grid.SetColumnSpan(topBar, 2); grid.Children.Add(topBar);
         var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
         Grid.SetRow(top, 1); grid.Children.Add(top);

@@ -33,7 +33,11 @@ internal sealed class Mo2TopBar : TopBarDesignViewModel, ITopBarViewModel
         ActiveWorkspaceSubtitle = "";
         IsLoggedIn = false;
         Username = null;
-        LoginCommand = R3.ReactiveCommandExtensions.ToReactiveCommand<R3.Unit, R3.Unit>(R3.Observable.Return(false), _ => R3.Unit.Default);
+        LoginCommand = R3.ReactiveCommandExtensions.ToReactiveCommand<R3.Unit, R3.Unit>(R3.Observable.Return(true), async (_, _) => {
+            if (shell.Profile.ProfilePath.Length == 0) shell.OpenLoadouts(null);
+            else await shell.Profile.ManageNexusAccount();
+            return R3.Unit.Default;
+        }, awaitOperation: R3.AwaitOperation.Drop);
         AddPanelDropDownViewModel = new AddPanelDropDownViewModel(controller);
         NewTabCommand = ReactiveCommand.Create(() => controller.ActiveWorkspace.SelectedPanel.AddDefaultTab());
         controller.WhenAnyValue(c => c.ActiveWorkspace).Subscribe(workspace => {

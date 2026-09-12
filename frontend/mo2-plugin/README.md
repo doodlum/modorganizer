@@ -268,3 +268,8 @@ Plugin snapshots also include `hasWarning`, derived from the original model’s
 warning icon. It is not inferred from diagnostic text. A deliberately missing
 master was verified through the native installer, activation and removal path
 in the isolated FNV instance.
+
+`manageNexusAccount` opens the original MO2 SettingsDialog and selects nexusTab.
+It returns only whether that tab opened, after the user closes the dialog.
+No account fields or credentials are included in its response. It uses the
+same profile/session guard as other host actions.

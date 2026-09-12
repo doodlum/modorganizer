@@ -204,6 +204,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
     }
+    public async Task ManageNexusAccount()
+    {
+        var profile = ProfilePath;
+        if (profile.Length == 0 || !await _commands.WaitAsync(0)) return;
+        try {
+            ManagingMod = true; Status = "Manage the Nexus account in MO2"; Changed?.Invoke();
+            var result = await Client.SendAsync("manageNexusAccount", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
+            if (!result.GetProperty("opened").GetBoolean() || result.GetProperty("tab").GetString() != "nexusTab") throw new InvalidOperationException("MO2 did not open Nexus settings");
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public async Task ManageProfiles()
     {
         var profile = ProfilePath;

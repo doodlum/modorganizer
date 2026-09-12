@@ -161,6 +161,14 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEXUS_ACCOUNT") == "1") {
+                            var button = liveWindow.GetVisualDescendants().OfType<TopBarView>().Single().FindControl<NexusMods.App.UI.Controls.StandardButton>("LoginButton")!;
+                            button.Command!.Execute(button.CommandParameter);
+                            await WaitFor(() => live.Profile.ManagingMod, "Nexus account button did not begin");
+                            await WaitFor(() => !live.Profile.ManagingMod, "Close MO2 Nexus settings to finish verification", seconds: 180);
+                            if (!live.Profile.Status.EndsWith("Connected to MO2")) throw new InvalidOperationException(live.Profile.Status);
+                            Console.WriteLine("PASS: native account button opened MO2 settings on nexusTab and returned to the live profile");
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DESKTOP") == "1") {
                             if (live.DesktopInterop.GetType().Name != "LinuxInterop") throw new InvalidOperationException("Live desktop service is not NMA’s native Linux implementation");
                             var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");

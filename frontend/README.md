@@ -28,6 +28,9 @@ verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2�
 shows MO2’s diagnostics and hexadecimal mod indices; native warnings are marked in plugin rows. Activation and row movement
 controls reflect MO2’s restrictions. The shared drop path rejects fixed plugins;
 reordering refreshes MO2 first and rejects stale plugin state.
+The **Nexus account** button opens the selected MO2 instance’s original Nexus
+settings tab. Select a profile first when disconnected. Account handling stays
+inside MO2.
 Live desktop actions use NMA’s native platform service. The help menu’s
 GitHub, MO2 Discord and Nexus status links open through the default handler.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).

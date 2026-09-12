@@ -87,6 +87,42 @@ class ModActions:
             raise ValueError('MO2 plugin list changed; refresh before reading details')
         return result
 
+    def nexus_settings(self):
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QDialog, QTabWidget, QWidget
+        action = self.window.findChild(QAction, 'actionSettings')
+        if action is None or not action.isEnabled():
+            raise ValueError('MO2 settings are unavailable')
+        selected = []
+        errors = []
+        timer = QTimer()
+        timer.setSingleShot(True)
+        def select_nexus():
+            dialog = next((d for d in self.window.findChildren(QDialog)
+                           if d.objectName() == 'SettingsDialog' and d.isVisible()), None)
+            try:
+                if dialog is None:
+                    raise ValueError('MO2 settings dialog did not open')
+                tabs = dialog.findChild(QTabWidget, 'tabWidget')
+                page = dialog.findChild(QWidget, 'nexusTab')
+                if tabs is None or page is None or tabs.indexOf(page) < 0:
+                    raise ValueError('This MO2 version does not expose its Nexus settings tab')
+                tabs.setCurrentWidget(page)
+                selected.append(tabs.currentWidget() == page)
+            except Exception as error:
+                errors.append(str(error))
+                if dialog is not None: dialog.reject()
+        timer.timeout.connect(select_nexus)
+        self.window.show(); self.window.raise_(); timer.start(0)
+        try:
+            action.trigger()
+        finally:
+            timer.stop()
+        if errors: raise ValueError(errors[0])
+        if selected != [True]: raise ValueError('MO2 did not display Nexus settings')
+        return {'opened': True, 'tab': 'nexusTab'}
+
     def details(self, name):
         from PyQt6.QtCore import QAbstractProxyModel, QEventLoop, QTimer, Qt
         from PyQt6.QtWidgets import QApplication, QDialog, QTreeView

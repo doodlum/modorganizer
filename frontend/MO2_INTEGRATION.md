@@ -485,3 +485,24 @@ The full dependency build passed with upstream NU1902, source-generator CS8785
 and CS1690 warnings; the incremental frontend build passed. The live catalog,
 2/3/4-panel controls and FNV → Skyrim → FNV regression also passed after wiring
 the real service. No archive/profile store was added by this change.
+
+### Nexus account settings stay in MO2 — 2026-09-12
+
+The top-bar NMA login placeholder is replaced by a Nexus account action. With
+a selected profile, it invokes MO2’s original Settings action and selects the
+native nexusTab in SettingsDialog. Without a selected profile it opens My
+Loadouts so the user can choose an instance. The bridge retains the normal
+profile/session guard and waits until the original dialog closes before
+refreshing the live profile.
+
+The adapter only selects the tab. It does not read account fields, export
+credentials, emulate authentication or toggle NMA login state. Login, API-key
+and disconnect controls are the original MO2 controls. Changing accounts was
+not part of the verification.
+
+MO2_VERIFY_NEXUS_ACCOUNT=1 invokes the actual native top-bar button command.
+Both the isolated FNV and registered Skyrim hosts opened SettingsDialog on
+nexusTab and returned successfully after Windows WM_CLOSE. The selected tab
+is checked inside the bridge without reading its contents. Screenshots only
+capture the returned frontend, not the account dialog. Fourteen bridge
+contract checks and the frontend build pass with the existing NU1902 warning.
