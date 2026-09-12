@@ -88,7 +88,13 @@ and eleven plugins. FNV gameplay and MCM runtime prerequisites remain unverified
 The supplied Skyrim directory now contains `SkyrimSE.exe`; its two existing MO2
 instances remain available for profile discovery and subsequent tests.
 
-Next work is profile management across instances, advanced download controls,
+My Loadouts now lists these instances' real profiles. A copy made through MO2's
+native profile manager retained independent mod activation when switching
+between it and the original. The bridge waits for the host refresh and checks
+profile ownership before applying a selection. Cross-game host startup and
+connection still need testing; listing a Skyrim profile is not runtime proof.
+
+Next work is host startup and cross-game connection, advanced download controls,
 the remaining activation and ordering controls, and the FNV
 acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.

@@ -10,7 +10,8 @@ def number(value):
 
 
 class Bridge:
-    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None):
+    def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None):
+        self.profiles = profiles
         self.downloads = downloads
         self._polling = False
         self.credentials = credentials
@@ -29,10 +30,13 @@ class Bridge:
         os.replace(temporary, path)
 
     def snapshot(self):
+        if self.profiles is not None and self.profiles.refreshing:
+            raise ValueError('MO2 is refreshing the selected profile')
         organizer = self.organizer
         mods = organizer.modList()
         plugins = organizer.pluginList()
         return {
+            'profiles': self.profiles.snapshot() if self.profiles is not None else [],
             'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
@@ -58,7 +62,20 @@ class Bridge:
             return self.snapshot()
         if request.get('profilePath') != self.organizer.profilePath():
             raise ValueError('Active MO2 profile changed; refresh before editing')
+        if self.profiles is not None and self.profiles.refreshing:
+            raise ValueError('MO2 is refreshing the selected profile')
+        if action in ('selectProfile', 'manageProfiles'):
+            if self.profiles is None:
+                raise ValueError('MO2 profile integration is unavailable')
+            if action == 'selectProfile':
+                name = request.get('name')
+                if not isinstance(name, str): raise ValueError('A profile name is required')
+                self.profiles.select(name)
+            else:
+                self.profiles.manage()
+            return self.snapshot()
         if action in ('startNexusDownload', 'installArchive'):
+
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')
             if action == 'startNexusDownload':

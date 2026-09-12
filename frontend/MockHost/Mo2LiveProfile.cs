@@ -15,7 +15,7 @@ internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, 
 // Only a view of the running host. No activation/order/profile files are written here.
 internal sealed class Mo2LiveProfile : IInstalledModsSource
 {
-    private readonly Mo2BridgeClient _client;
+    private Mo2BridgeClient _client;
     private readonly SemaphoreSlim _commands = new(1);
     private readonly SourceCache<Mo2LiveMod, EntityId> _mods = new(x => x.Id);
     private readonly Dictionary<string, EntityId> _ids = new(StringComparer.OrdinalIgnoreCase);
@@ -23,6 +23,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public IReadOnlyCollection<Mo2LiveMod> Mods => _mods.Items.ToArray();
     public ScenarioPluginOrder Order { get; } = new(false);
     public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
+    public string Endpoint { get; private set; }
+    public bool SelectingProfile { get; private set; }
     public string NexusGame { get; private set; } = "";
     public bool Installing { get; private set; }
     public string ProfilePath { get; private set; } = "";
@@ -30,6 +32,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public event Action? Changed;
     public Mo2LiveProfile(string endpoint)
     {
+        Endpoint = endpoint;
         _client = new(endpoint);
         Order.ApplyOrder = Reorder;
     }
@@ -96,6 +99,40 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             }
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
+    }
+    public async Task<bool> SelectProfile(Mo2Registration registration, Mo2ProfileSnapshot selected)
+    {
+        await _commands.WaitAsync();
+        try {
+            SelectingProfile = true;
+            Status = "Connecting to " + selected.Name; Changed?.Invoke();
+            if (!File.Exists(Path.Combine(registration.Endpoint, "endpoint.json"))) throw new InvalidOperationException("Start MO2 with the frontend bridge enabled for this instance");
+            var client = new Mo2BridgeClient(registration.Endpoint);
+            var snapshot = await client.SendAsync("snapshot");
+            if (!snapshot.GetProperty("profiles").EnumerateArray().Any(x =>
+                Mo2InstanceCatalog.LocalPath(x.GetProperty("path").GetString()!) == Path.GetFullPath(selected.Directory)))
+                throw new InvalidOperationException("The MO2 host does not own the selected profile");
+            var current = snapshot.GetProperty("profile");
+            if (Mo2InstanceCatalog.LocalPath(current.GetProperty("path").GetString()!) != Path.GetFullPath(selected.Directory))
+                snapshot = await client.SendAsync("selectProfile", new() { ["profilePath"] = current.GetProperty("path").GetString(), ["name"] = selected.Name }, timeout: TimeSpan.FromMinutes(2));
+            if (Mo2InstanceCatalog.LocalPath(snapshot.GetProperty("profile").GetProperty("path").GetString()!) != Path.GetFullPath(selected.Directory))
+                throw new InvalidOperationException("MO2 did not finish selecting the requested profile");
+            _client = client; Endpoint = registration.Endpoint;
+            _lastSnapshot = null; Apply(snapshot);
+            return true;
+        } catch (Exception error) { Report(error); return false; }
+        finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    public async Task ManageProfiles()
+    {
+        var profile = ProfilePath;
+        await _commands.WaitAsync();
+        try {
+            SelectingProfile = true; Status = "Manage profiles in MO2"; Changed?.Invoke();
+            var snapshot = await _client.SendAsync("manageProfiles", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(snapshot);
+        } catch (Exception error) { Report(error); }
+        finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
     }
     public async Task InstallArchive(string path)
     {

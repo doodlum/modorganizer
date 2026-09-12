@@ -34,7 +34,7 @@ Responses retained while a request exists prevent duplicate execution of that
 request. This is a local extension endpoint with the same access as the user's
 MO2 files; it is not a network service.
 
-Validation: eight Python contract checks (`python3 frontend/tools/check_bridge.py`)
+Validation: nine Python contract checks (`python3 frontend/tools/check_bridge.py`)
 cover authoritative state, mutations, stale profile/session rejection, invalid
 values, older-host metadata and mailbox replay. A C# client read a real isolated
 New Vegas `Frontend Test` profile under Proton: nine DLC mod entries and ten
@@ -63,7 +63,7 @@ the live checks. Setting it only in the outer Linux launch environment did not
 work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
-Profile management, advanced download controls, plugin activation controls, mod
+Automatic host startup, advanced download controls, plugin activation controls, mod
 priority editing and launch remain to be connected. Nexus account access will
 reuse MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
@@ -106,6 +106,37 @@ This proves download/install/activation persistence, not in-game MCM operation.
 `check_downloads.py` adds three tests for archive metadata, game validation,
 native downloader/installer routing and partial-file rejection. The bridge tests
 also cover reentrant polling during installer dialogs.
+
+## Profiles across instances
+
+My Loadouts reads the active host's instance, `~/ModOrganizer2`, conventional
+`~/Games/*/modorganizer2` directories, and user-added instances. Add MO2 instance
+stores only connection paths in `$XDG_CONFIG_HOME/mo2-nexus-frontend/instances.json`
+(defaulting to `~/.config`). Game/profile content remains in MO2. Multiple
+instances of the same game stay distinct, with their instance directories shown.
+Unreadable instances report errors without hiding other instances.
+
+Selecting a profile connects to that instance's bridge and checks that the host
+owns the exact profile directory before changing anything. MO2 2.5.2 lacks the
+newer Python profile-management API, so `profiles.py` uses its named `profileBox`
+control and `actionAdd_Profile` action. MO2 saves the old profile, selects the new
+one, and performs its usual refresh. The bridge waits for `onNextRefresh` before
+returning mod/plugin state, and rejects edits while that refresh is pending.
+Manage current instance's profiles opens the original MO2 dialog, including its
+create/copy/rename/delete actions and local-save/INI options.
+
+The live test copied `Frontend Test` to `Frontend Clone Test` through MO2's
+manager, switched to the copy, disabled MCM, and switched back and forth. The
+original stayed enabled, the copy stayed disabled, and MO2 wrote those independent
+states to each profile's mod list. The test restored `Frontend Test` as active.
+An isolated Qt test driver supplied the copy name in the native dialog; it is
+not part of the distributed bridge. The rendered catalog also showed both
+existing Skyrim SE instances. Cross-game connection requires a running bridge
+in each selected instance; automatic host installation/startup remains pending.
+
+`MO2_VERIFY_PROFILES=1` with a screenshot checks that isolated copy/switch flow;
+the native manager must be completed if the copy does not exist. `MO2_SHOW_PROFILES=1`
+opens the catalog for a read-only screenshot. These checks do not launch a game.
 
 ## Nexus account
 

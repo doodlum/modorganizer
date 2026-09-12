@@ -12,7 +12,9 @@ Live mode shows the active MO2 profile's mods on the left and plugins on the
 right, and sends mod activation and plugin ordering changes through MO2.
 The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
-Profile management, advanced download controls and game launch remain unfinished.
+My Loadouts discovers real profiles across registered MO2 instances. Selection
+uses each running host, and profile management opens MO2's original dialog.
+Automatic host startup, advanced download controls and game launch remain unfinished.
 
 ## Run
 

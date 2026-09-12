@@ -77,6 +77,7 @@ internal sealed class FixtureViewLocator : IViewLocator
 {
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
+        if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
         if (viewModel is not IViewModel vm) return null;
@@ -109,6 +110,8 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIVE") == "1") await VerifyLive(live, endpoint);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILES") == "1") await VerifyProfiles(live);
+                        if (Environment.GetEnvironmentVariable("MO2_SHOW_PROFILES") == "1") live.OpenProfiles();
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOADS") is { } downloadLink) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Download check requires the isolated FNV profile");
                             var before = live.Profile.Downloads.Select(x => x.Name).ToHashSet();
@@ -198,6 +201,31 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyProfiles(Mo2LiveWorkspace live)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Profile check requires the isolated FNV test instance");
+        var entry = live.Catalog.Read().Single(x => x.Instance?.Profiles.Any(p => Path.GetFullPath(p.Directory) == Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath)) == true);
+        var original = entry.Instance!.Profiles.Single(x => x.Name == "Frontend Test");
+        if (!entry.Instance.Profiles.Any(x => x.Name == "Frontend Clone Test")) await live.Profile.ManageProfiles();
+        var clone = Mo2ProfileFiles.Read(entry.Registration.Directory).Profiles.Single(x => x.Name == "Frontend Clone Test");
+        if (!await live.Profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException(live.Profile.Status);
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Cloned profile rows did not activate");
+        var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
+        if ((mod.State & 2) != 0) {
+            live.Profile.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
+            await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == mod.Name).State & 2) == 0 && live.Profile.Order.Plugins.All(x => x.ModName != mod.Name), "Cloned profile mod/plugin state did not disable");
+        }
+        if (!await live.Profile.SelectProfile(entry.Registration, original)) throw new InvalidOperationException(live.Profile.Status);
+        if ((live.Profile.Mods.Single(x => x.Name == mod.Name).State & 2) == 0 || !live.Profile.Order.Plugins.Any(x => x.ModName == mod.Name && x.IsActive)) throw new InvalidOperationException("Original profile mod/plugin state was not restored");
+        if (!await live.Profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException(live.Profile.Status);
+        if ((live.Profile.Mods.Single(x => x.Name == mod.Name).State & 2) != 0 || live.Profile.Order.Plugins.Any(x => x.ModName == mod.Name)) throw new InvalidOperationException("Clone mod/plugin state was not retained");
+        if (!await live.Profile.SelectProfile(entry.Registration, original)) throw new InvalidOperationException(live.Profile.Status);
+        if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim profiles missing from catalog");
+        Console.WriteLine("PASS: native MO2 profile manager clone; profile switching; independent saved activation; original profile restored; Skyrim profiles discovered");
+        live.OpenProfiles();
     }
 
     private static async Task VerifyLive(Mo2LiveWorkspace live, string endpoint)

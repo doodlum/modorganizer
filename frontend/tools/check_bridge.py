@@ -95,6 +95,20 @@ class ContractTests(unittest.TestCase):
         request['session'] = str(uuid.uuid4())
         with self.assertRaises(ValueError): self.bridge.execute(request)
         self.assertEqual(len(credentials.calls), 1)
+    def test_profiles_are_host_owned_and_refresh_blocks_edits(self):
+        organizer = self.organizer
+        class Profiles:
+            refreshing = False
+            def snapshot(self): return [{'name': organizer.profileName(), 'path': organizer.profilePath()}]
+            def select(self, name): organizer.current = 'Z:/profiles/' + name
+            def manage(self): pass
+        self.bridge.profiles = Profiles()
+        result = self.bridge.execute(self.request(action='selectProfile', name='Clone'))
+        self.assertEqual(result['profile']['path'], 'Z:/profiles/Clone')
+        self.bridge.profiles.refreshing = True
+        with self.assertRaises(ValueError): self.bridge.execute(self.request(action='snapshot'))
+        with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
+        self.assertEqual(organizer.mods.calls, 0)
     def test_nested_dialog_poll_does_not_replay_request(self):
         calls = []
         bridge = self.bridge

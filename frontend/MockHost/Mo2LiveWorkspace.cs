@@ -27,12 +27,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public IWorkspaceController WorkspaceController { get; }
     public ReactiveCommand<Unit, bool> BringWindowToFront { get; } = ReactiveCommand.Create(() => true);
     private readonly PageData _downloadsPage;
+    private readonly PageData _profilesPage;
+    private readonly PageData _modsPage;
+    public Mo2InstanceCatalog Catalog { get; }
     public Mo2LiveProfile Profile { get; }
     public ScenarioInstalledPage? ModsPage { get; private set; }
     public ScenarioLoadOrderPage? PluginsPage { get; private set; }
     public Mo2LiveWorkspace(string endpoint)
     {
         Profile = new(endpoint);
+        Catalog = new(endpoint);
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         services.Add<IWindowManager>(windows);
@@ -45,12 +49,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         services.Add<IEnumerable<ILoadoutDataProvider>>([Profile]);
         var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "Mods", IconValues.Package,
             () => ModsPage = new ScenarioInstalledPage(services, windows, Profile, Profile.Order));
+        _modsPage = mods.Data;
         var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
             () => PluginsPage = new ScenarioLoadOrderPage(services, Profile.Order));
         var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.LibraryOutline,
             () => new Mo2DownloadsPage(windows, Profile));
         _downloadsPage = downloads.Data;
-        services.Add(new PageFactoryController([mods, plugins, downloads, new NewTabPageFactory(services)]));
+        var profiles = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82104", "My Loadouts", IconValues.Package,
+            () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile));
+        _profilesPage = profiles.Data;
+        services.Add(new PageFactoryController([mods, plugins, downloads, profiles, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var workspace = WorkspaceController.CreateWorkspace(new HomeContext(), mods.Data);
@@ -58,6 +66,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         WorkspaceController.OpenPage(workspace.Id, plugins.Data, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true, new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)), new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
     }
     public void OpenDownloads() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _downloadsPage,
+        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
+    public void OpenProfiles() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _profilesPage,
+        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
+    public void ShowProfile() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _modsPage,
         new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
     public Window CreateWindow()
     {
@@ -67,7 +79,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         refresh.Click += async (_, _) => await Profile.Refresh();
         var downloads = new Button { Content = "Downloads", Margin = new Thickness(12) };
         downloads.Click += (_, _) => OpenDownloads();
+        var profiles = new Button { Content = "My Loadouts", Margin = new Thickness(12) };
+        profiles.Click += (_, _) => OpenProfiles();
         var header = new DockPanel();
+        DockPanel.SetDock(profiles, Dock.Right); header.Children.Add(profiles);
         DockPanel.SetDock(downloads, Dock.Right); header.Children.Add(downloads);
         DockPanel.SetDock(refresh, Dock.Right); header.Children.Add(refresh); header.Children.Add(title);
         var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };

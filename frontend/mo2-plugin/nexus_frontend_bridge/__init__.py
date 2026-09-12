@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QMessageBox
 from .core import Bridge
 from .credentials import NexusCredentials
 from .downloads import Downloads
+from .profiles import Profiles
 
 
 class NexusFrontendBridge(mobase.IPluginTool):
@@ -30,7 +31,10 @@ class NexusFrontendBridge(mobase.IPluginTool):
         # Profile and plugin APIs are only safe once the host has finished setup.
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
-        organizer.onUserInterfaceInitialized(lambda *args: self.timer.start(100))
+        def ready(window):
+            self.bridge.profiles = Profiles(organizer, window)
+            self.timer.start(100)
+        organizer.onUserInterfaceInitialized(ready)
         return True
 
     def name(self): return 'Nexus Frontend Bridge'
