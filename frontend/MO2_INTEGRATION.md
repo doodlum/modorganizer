@@ -94,7 +94,10 @@ between it and the original. The bridge waits for the host refresh and checks
 profile ownership before applying a selection. Cross-game host startup and
 connection still need testing; listing a Skyrim profile is not runtime proof.
 
+Mod priority and plugin activation toolbar controls now call MO2 directly. A
+live check disabled MCM’s ESP independently of its enabled mod, changed mod
+priority, verified both against the host, and restored the original state.
+
 Next work is host startup and cross-game connection, advanced download controls,
-the remaining activation and ordering controls, and the FNV
-acceptance run above.
+and the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.

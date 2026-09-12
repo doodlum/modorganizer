@@ -28,6 +28,7 @@ internal sealed class ScenarioRules : AViewModel<ISortingSelectionViewModel>, IS
 internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>, ILoadoutViewModel
 {
     public bool IsMo2Profile { get; }
+    public Mo2LiveProfile? LiveProfile { get; }
     public string EmptyStateTitleText => "No mods installed";
     public LoadoutTreeDataGridAdapter Adapter { get; }
     private readonly BindableReactiveProperty<int> _count = new();
@@ -62,7 +63,8 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, IInstalledModsSource mods, NexusMods.Abstractions.Games.ISortOrderVariety order,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false) : base(windows)
     {
-        IsMo2Profile = mods is Mo2LiveProfile;
+        LiveProfile = mods as Mo2LiveProfile;
+        IsMo2Profile = LiveProfile is not null;
         CollectionName = mods.CollectionName;
         CommandRenameGroup = new(async (_, token) => {
             var result = await windows.ShowDialog(LoadoutDialogs.RenameCollection(mods.CollectionName.Value), NexusMods.App.UI.Dialog.Enums.DialogWindowType.Modal);

@@ -9,7 +9,7 @@ Linux Avalonia frontend for Mod Organizer. `run.sh` starts the original fixture
 scenarios. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
 running MO2 host with the [bridge extension](mo2-plugin/README.md) installed.
 Live mode shows the active MO2 profile's mods on the left and plugins on the
-right, and sends mod activation and plugin ordering changes through MO2.
+right, and sends mod activation, mod priority, plugin activation and plugin ordering changes through MO2.
 The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
 My Loadouts discovers real profiles across registered MO2 instances. Selection

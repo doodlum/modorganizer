@@ -51,7 +51,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             () => ModsPage = new ScenarioInstalledPage(services, windows, Profile, Profile.Order));
         _modsPage = mods.Data;
         var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
-            () => PluginsPage = new ScenarioLoadOrderPage(services, Profile.Order));
+            () => PluginsPage = new ScenarioLoadOrderPage(services, Profile.Order) { LiveProfile = Profile });
         var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.LibraryOutline,
             () => new Mo2DownloadsPage(windows, Profile));
         _downloadsPage = downloads.Data;

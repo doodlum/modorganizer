@@ -100,6 +100,32 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
+    public async Task SetPluginsActive(IEnumerable<string> names, bool enabled)
+    {
+        var profile = ProfilePath;
+        var selected = names.ToArray();
+        await _commands.WaitAsync();
+        try {
+            foreach (var name in selected)
+                Apply(await _client.SendAsync("setPluginActive", new() { ["profilePath"] = profile, ["name"] = name, ["enabled"] = enabled }));
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
+    public async Task MoveMod(EntityId id, int delta)
+    {
+        var profile = ProfilePath;
+        await _commands.WaitAsync();
+        try {
+            if (profile != ProfilePath) throw new InvalidOperationException("Active profile changed; select the mod again");
+            var found = _mods.Lookup(id);
+            if (!found.HasValue) return;
+            var mod = found.Value;
+            if ((mod.State & 4) != 0 || mod.Priority < 0) return;
+            var priority = Math.Clamp(mod.Priority + delta, 0, _mods.Count - 1);
+            Apply(await _client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
     public async Task<bool> SelectProfile(Mo2Registration registration, Mo2ProfileSnapshot selected)
     {
         await _commands.WaitAsync();

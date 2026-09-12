@@ -77,6 +77,7 @@ internal sealed class FixtureViewLocator : IViewLocator
 {
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
+        if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return new Mo2PluginsView { ViewModel = plugins };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
@@ -109,6 +110,7 @@ public partial class MockApp : Application
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTROLS") == "1") await VerifyControls(live, endpoint, desktop.MainWindow!);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIVE") == "1") await VerifyLive(live, endpoint);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILES") == "1") await VerifyProfiles(live);
                         if (Environment.GetEnvironmentVariable("MO2_SHOW_PROFILES") == "1") live.OpenProfiles();
@@ -226,6 +228,43 @@ public partial class MockApp : Application
         if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim profiles missing from catalog");
         Console.WriteLine("PASS: native MO2 profile manager clone; profile switching; independent saved activation; original profile restored; Skyrim profiles discovered");
         live.OpenProfiles();
+    }
+
+    private static async Task VerifyControls(Mo2LiveWorkspace live, string endpoint, Window window)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test", StringComparison.Ordinal))
+            throw new InvalidOperationException("Control check requires the isolated FNV test profile");
+        var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
+        var plugin = live.Profile.Order.Plugins.Single(x => x.ModName == mod.Name);
+        var originalMods = live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).ToArray();
+        async Task AssertHost(bool active, int priority)
+        {
+            var snapshot = await new Mo2BridgeClient(endpoint).SendAsync("snapshot");
+            if ((snapshot.GetProperty("plugins").EnumerateArray().Single(x => x.GetProperty("name").GetString() == plugin.DisplayName).GetProperty("state").GetInt32() == 2) != active)
+                throw new InvalidOperationException("Host plugin activation disagrees");
+            if (snapshot.GetProperty("mods").EnumerateArray().Single(x => x.GetProperty("name").GetString() == mod.Name).GetProperty("priority").GetInt32() != priority)
+                throw new InvalidOperationException("Host mod priority disagrees");
+        }
+        try {
+            live.PluginsPage!.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
+            window.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Disable selected"))
+                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive, "Plugin disable button failed");
+            if ((live.Profile.Mods.Single(x => x.Id == mod.Id).State & 2) == 0) throw new InvalidOperationException("Plugin disable also disabled its mod");
+            await AssertHost(false, mod.Priority);
+            live.ModsPage!.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
+            window.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Move earlier"))
+                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority - 1, "Mod priority button failed: " + live.Profile.Status);
+            await AssertHost(false, mod.Priority - 1);
+        } finally {
+            await live.Profile.SetPluginsActive([plugin.DisplayName], plugin.IsActive);
+            var current = live.Profile.Mods.Single(x => x.Id == mod.Id);
+            await live.Profile.MoveMod(mod.Id, mod.Priority - current.Priority);
+        }
+        await AssertHost(plugin.IsActive, mod.Priority);
+        if (!live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).SequenceEqual(originalMods)) throw new InvalidOperationException("Original mod order was not restored");
+        Console.WriteLine("PASS: plugin disable and mod priority toolbar buttons update MO2; plugin activation independent of mod activation; original state restored");
     }
 
     private static async Task VerifyLive(Mo2LiveWorkspace live, string endpoint)

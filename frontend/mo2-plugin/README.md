@@ -63,9 +63,8 @@ the live checks. Setting it only in the outer Linux launch environment did not
 work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
-Automatic host startup, advanced download controls, plugin activation controls, mod
-priority editing and launch remain to be connected. Nexus account access will
-reuse MO2's credential and download workflow; no credential belongs in this
+Automatic host startup, advanced download controls and launch remain to be
+connected. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation
@@ -161,3 +160,17 @@ After restarting, original MO2 displayed the account in its window title and
 populated its Nexus API quota indicator, confirming it loaded the stored key.
 The contract test checks path-only dispatch and stale-session rejection; the
 Windows credential implementation additionally requires the live host check.
+
+## List controls
+
+Live mod rows retain the native activation toggle. Select one mod and use
+Move earlier/later to change its MO2 priority. The native plugin ordering editor
+retains its row arrows and drag/drop; Enable selected and Disable selected
+change plugin activation independently of its parent mod. The host can enforce
+forced content and ordering rules; the frontend always displays its returned state.
+
+`MO2_VERIFY_CONTROLS=1` (with live endpoint and screenshot mode) exercises the
+actual toolbar click handlers in the isolated FNV profile: disables MCM's ESP
+while keeping its mod enabled, moves its mod earlier, checks both using an
+independent bridge client, then restores original activation and complete mod
+order. This runtime check passed. It does not establish in-game loading.

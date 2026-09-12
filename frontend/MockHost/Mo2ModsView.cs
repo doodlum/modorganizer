@@ -1,3 +1,4 @@
+using ObservableCollections;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
@@ -34,9 +35,25 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         table.Classes.Add("MainListsStyling");
         var layout = new DockPanel();
         var title = new TextBlock { Text = "Mods", FontSize = 22, Margin = new Thickness(16) };
-        DockPanel.SetDock(title, Dock.Top); layout.Children.Add(title); layout.Children.Add(table); Content = layout;
+        var header = new StackPanel { Spacing = 4 };
+        header.Children.Add(title);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Margin = new Thickness(12, 0), Spacing = 8 };
+        foreach (var (label, delta) in new[] { ("Move earlier", -1), ("Move later", 1) }) {
+            var button = new Button { Content = label };
+            button.Click += async (_, _) => {
+                if (ViewModel is { LiveProfile: { } profile } model && model.Adapter.SelectedModels.Count == 1)
+                    await profile.MoveMod(model.Adapter.SelectedModels.Single().Key, delta);
+            };
+            ToolTip.SetTip(button, "Change the selected mod’s MO2 priority");
+            actions.Children.Add(button);
+        }
+        actions.IsEnabled = false;
+        header.Children.Add(actions);
+        DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header); layout.Children.Add(table); Content = layout;
         TreeDataGridViewHelper.SetupTreeDataGridAdapter<Mo2ModsView, ScenarioInstalledPage, CompositeItemModel<EntityId>, EntityId>(this, table, vm => vm.Adapter);
         this.WhenActivated(disposables => {
+            ViewModel!.Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true)
+                .Subscribe(count => actions.IsEnabled = count == 1).AddTo(disposables);
             this.OneWayBind(ViewModel, vm => vm.Adapter.Source.Value, view => view.Table.Source).AddTo(disposables);
         });
     }

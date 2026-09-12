@@ -9,6 +9,10 @@ namespace Mo2.Frontend;
 internal sealed class ScenarioLoadOrderPage(IServiceProvider services, NexusMods.Abstractions.Games.ISortOrderVariety order)
     : LoadOrderViewModel(services, order, default), IPageViewModelInterface
 {
+    public Mo2LiveProfile? LiveProfile { get; init; }
+    public Task SetSelectedActive(bool enabled) => LiveProfile is { } profile
+        ? profile.SetPluginsActive(Adapter.SelectedModels.Select(row => profile.Order.Plugins.Single(x => x.Key.Equals(row.Key)).DisplayName), enabled)
+        : Task.CompletedTask;
     public IconValue TabIcon => IconValues.Package;
     public string TabTitle => "Plugin load order";
     public WindowId WindowId { get; set; }
