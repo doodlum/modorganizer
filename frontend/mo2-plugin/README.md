@@ -64,7 +64,8 @@ work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
 Configured host startup is connected and tested with the isolated FNV instance.
-Cross-game startup and advanced download controls still need work. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
+Cross-game startup is now verified with the existing Skyrim instance; advanced
+download controls and FNV gameplay validation remain incomplete. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation
@@ -195,3 +196,10 @@ the profile's windowed settings took effect. A black-screen startup stall
 occurred with MCM both enabled and disabled. The disabled run's xNVSE log omitted
 MCM, and the original profile was restored afterward. This remains incomplete
 gameplay validation; see `MO2_INTEGRATION.md` for the current acceptance status.
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_CROSS_GAME=/path/to/skyrim-instance` in screenshot
+mode starts from the registered isolated FNV profile, connects the Skyrim host,
+compares both panels and game-specific context against an independent snapshot,
+and restores the FNV connection. `MO2_CROSS_GAME_SCREENSHOT=/path.png` optionally
+captures the Skyrim panels before returning. The check performs no mod toggles
+or reordering in Skyrim; MO2 may reconcile newly detected game content at startup.

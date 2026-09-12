@@ -100,7 +100,7 @@ Mod priority and plugin activation toolbar controls now call MO2 directly. A
 live check disabled MCM’s ESP independently of its enabled mod, changed mod
 priority, verified both against the host, and restored the original state.
 
-Next work is cross-game connection, advanced download controls,
+Next work is advanced download controls,
 and the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.
 
@@ -139,4 +139,18 @@ host, with a new bridge session and exactly one launcher invocation. A separate
 frontend process then reconnected to the same live host without invoking the
 launcher again. A second deliberately stopped-host run also passed. The bundled
 Proton launcher holds a per-prefix lock during startup and uses the established
-Qt input workaround. Cross-game startup and connection remain unverified.
+Qt input workaround. Cross-game startup and connection are verified below.
+
+Cross-game startup now passed with the existing Skyrim MO2 instance at
+`~/Games/mod-organizer-2-skyrimspecialedition/modorganizer2`, running in a separate
+Proton prefix. Its bridge reported 150 mod entries and 150 plugins; every
+activation state and priority in both panels matched an independent snapshot.
+The game-specific executable and download contexts switched, and returning to
+FNV restored its mod list and Nexus domain. Switching profiles reuses the mod
+tab instead of adding another copy each time.
+
+Before installing the bridge, the Skyrim instance's configuration and profiles
+were backed up privately under `artifacts/skyrim-before-bridge`. Native MO2
+startup added 121 detected entries to its mod list and removed none. Existing
+plugin activation and load-order files were unchanged. No Skyrim game launch
+was performed. The separate `~/ModOrganizer2` instance is still catalog-only.

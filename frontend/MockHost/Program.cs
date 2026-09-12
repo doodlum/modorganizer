@@ -139,6 +139,8 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
+                            await VerifyCrossGame(live, liveWindow, skyrimInstance);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
                             await live.Profile.Launch(executable);
@@ -262,6 +264,51 @@ public partial class MockApp : Application
         if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim profiles missing from catalog");
         Console.WriteLine("PASS: native MO2 profile manager clone; profile switching; independent saved activation; original profile restored; Skyrim profiles discovered");
         live.OpenProfiles();
+    }
+
+    private static async Task VerifyCrossGame(Mo2LiveWorkspace live, Window window, string skyrimInstance)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Cross-game check must start in the isolated FNV profile");
+        var entries = live.Catalog.Read();
+        var original = entries.Single(x => x.Registration.Endpoint == live.Profile.Endpoint);
+        var originalProfile = original.Instance!.Profiles.Single(x => Path.GetFullPath(x.Directory) == Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath));
+        var skyrim = entries.Single(x => x.Registration.Directory == Path.GetFullPath(skyrimInstance));
+        if (skyrim.Instance?.Game != "Skyrim Special Edition") throw new InvalidOperationException("Choose a Skyrim instance for the cross-game check");
+        var selected = skyrim.Instance.Profiles.Single(x => x.Name == "Default");
+        var originalNames = live.Profile.Mods.Select(x => x.Name).Order().ToArray();
+        try {
+            if (!await live.Profile.SelectProfile(skyrim.Registration, selected)) throw new InvalidOperationException(live.Profile.Status);
+            live.ShowProfile();
+            if (live.WorkspaceController.ActiveWorkspace.Panels.SelectMany(x => x.Tabs).Count(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true }) != 1)
+                throw new InvalidOperationException("Profile selection duplicated the mod-list tab");
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
+            var snapshot = await new Mo2BridgeClient(skyrim.Registration.Endpoint).SendAsync("snapshot");
+            var mods = snapshot.GetProperty("mods").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32(), x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
+            if (!mods.SequenceEqual(live.Profile.Mods.Select(x => ((string?)x.Name, x.State, x.Priority)).OrderBy(x => x.Item1)))
+                throw new InvalidOperationException("Skyrim mod panel disagrees with independent host snapshot");
+            var plugins = snapshot.GetProperty("plugins").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32() == 2, x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
+            if (!plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, x.IsActive, x.SortIndex)).OrderBy(x => x.Item1)))
+                throw new InvalidOperationException("Skyrim plugin panel disagrees with independent host snapshot");
+            var archives = snapshot.GetProperty("downloads").EnumerateArray().Where(x => !x.GetProperty("hidden").GetBoolean()).Select(x => x.GetProperty("path").GetString()).Order().ToArray();
+            if (!archives.SequenceEqual(live.Profile.Downloads.Select(x => (string?)x.Path).Order()))
+                throw new InvalidOperationException("Download folder context disagrees with the Skyrim host");
+            if (!snapshot.GetProperty("executables").EnumerateArray().Select(x => x.GetString()).SequenceEqual(live.Profile.Executables))
+                throw new InvalidOperationException("Executable picker disagrees with the Skyrim host");
+            if (live.Profile.NexusGame != "skyrimspecialedition" || live.Profile.Executables.Contains("NVSE"))
+                throw new InvalidOperationException("Cross-game selection retained FNV download or executable context");
+            if (Environment.GetEnvironmentVariable("MO2_CROSS_GAME_SCREENSHOT") is { } capture) {
+                await Task.Delay(500);
+                using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
+                bitmap.Render(window); bitmap.Save(capture);
+            }
+            Console.WriteLine($"PASS: Skyrim host connected; {mods.Length} mod states/priorities and {plugins.Length} plugin states/priorities match independent host snapshot; game context switched");
+        } finally {
+            if (!await live.Profile.SelectProfile(original.Registration, originalProfile)) throw new InvalidOperationException("Unable to restore FNV connection: " + live.Profile.Status);
+        }
+        if (live.Profile.NexusGame != "newvegas" || !live.Profile.Mods.Select(x => x.Name).Order().SequenceEqual(originalNames))
+            throw new InvalidOperationException("Original FNV connection was not restored");
+        Console.WriteLine("PASS: FNV connection restored after cross-game selection");
     }
 
     private static async Task VerifyControls(Mo2LiveWorkspace live, string endpoint, Window window)

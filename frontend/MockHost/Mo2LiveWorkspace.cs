@@ -69,8 +69,17 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
     public void OpenProfiles() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _profilesPage,
         new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
-    public void ShowProfile() => WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _modsPage,
-        new OpenPageBehavior.NewTab(WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First().Id));
+    public void ShowProfile()
+    {
+        var panel = WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First();
+        var existing = panel.Tabs.FirstOrDefault(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true });
+        if (existing is not null) {
+            ModsPage = (ScenarioInstalledPage)existing.Contents.ViewModel;
+            panel.SelectTab(existing.Id);
+        } else {
+            WorkspaceController.OpenPage(WorkspaceController.ActiveWorkspaceId, _modsPage, new OpenPageBehavior.NewTab(panel.Id));
+        }
+    }
     public Window CreateWindow()
     {
         var title = new TextBlock { Text = Profile.CollectionName.Value, FontSize = 20, Margin = new Thickness(16, 12) };
