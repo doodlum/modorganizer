@@ -15,14 +15,15 @@ internal sealed class ScenarioLoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel
     public bool HasSingleCollection => true;
     public IApplyControlViewModel ApplyControlViewModel { get; } = new ApplyControlDesignViewModel();
     public ILeftMenuItemViewModel LeftMenuItemLoadout { get; }
-    public ILeftMenuItemViewModel LeftMenuItemLibrary { get; } = Item("Library", IconValues.LibraryOutline);
+    public ILeftMenuItemViewModel LeftMenuItemLibrary { get; }
     public ILeftMenuItemViewModel LeftMenuItemNewCollection { get; } = Item("New Collection", IconValues.Add);
     public ILeftMenuItemViewModel LeftMenuItemHealthCheck { get; } = Item("Health Check", IconValues.Cardiology);
     public ILeftMenuItemViewModel? LeftMenuItemExternalChanges { get; } = Item("External Changes", IconValues.Folder);
     private static ILeftMenuItemViewModel Item(string text, IconValue icon) => new LeftMenuItemDesignViewModel { Text = new StringComponent(text), Icon = icon };
-    public ScenarioLoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData all, PageData collection)
+    public ScenarioLoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData all, PageData collection, PageData library)
     {
         WorkspaceId = workspace;
+        LeftMenuItemLibrary = new LeftMenuItemViewModel(controller, workspace, library) { Text = new StringComponent("Library"), Icon = IconValues.LibraryOutline };
         LeftMenuCollectionItems = new(new ObservableCollection<ILeftMenuItemViewModel> {
             new LeftMenuItemViewModel(controller, workspace, collection) { Text = new StringComponent("My Mods"), Icon = IconValues.CollectionsOutline }
         });

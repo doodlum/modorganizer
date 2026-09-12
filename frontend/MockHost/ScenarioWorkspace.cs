@@ -32,6 +32,7 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     public PageData SettingsPage { get; }
     public PageData PluginOrderPage { get; }
     public PageData InstalledPage { get; }
+    public ScenarioLibrary Library { get; } = new();
     public ScenarioInstalledMods InstalledMods { get; }
     public ScenarioPluginOrder PluginOrder { get; } = new();
     public ScenarioData Data { get; }
@@ -48,7 +49,7 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
             () => _loadoutFactory.Data(card.Number, true),
             () => new ScenarioWorkspaceContext(card.Number, card.LoadoutName));
         if (!_menus.ContainsKey(workspace.Id))
-            _menus.Add(workspace.Id, new ScenarioLoadoutMenu(WorkspaceController, workspace.Id, _loadoutFactory.Data(card.Number), _loadoutFactory.Data(card.Number, true)));
+            _menus.Add(workspace.Id, new ScenarioLoadoutMenu(WorkspaceController, workspace.Id, _loadoutFactory.Data(card.Number), _loadoutFactory.Data(card.Number, true), _loadoutFactory.LibraryData(card.Number)));
         // The view also listens to this event: a freshly-created workspace becomes
         // active before its menu can be registered.
         MenuChanged?.Invoke();
@@ -87,7 +88,7 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         var installedPage = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30005", "All", IconValues.FormatAlignJustify,
             () => new ScenarioInstalledPage(services, windows, InstalledMods, PluginOrder));
         InstalledPage = installedPage.Data;
-        var loadoutDetail = new ScenarioLoadoutFactory(services, windows, Data);
+        var loadoutDetail = new ScenarioLoadoutFactory(services, windows, Data, Library);
         _loadoutFactory = loadoutDetail;
         Data.Section.Visit = VisitLoadout;
         Data.Section.Removed += card => {

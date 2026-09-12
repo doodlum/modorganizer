@@ -23,6 +23,12 @@ internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
         for (var i = 0; i < names.Length; i++)
             _mods.AddOrUpdate(new ScenarioMod(EntityId.From((ulong)(100 + i)), names[i], plugins[i], true, DateTimeOffset.Now.AddMinutes(-10 - i)));
     }
+    public void Install(ScenarioMod item)
+    {
+        if (_mods.Lookup(item.Id).HasValue) return;
+        _mods.AddOrUpdate(item with { Installed = DateTimeOffset.Now, Enabled = true });
+        _order.InstallPlugin(item.Plugin, item.Name);
+    }
     public void CopyFrom(ScenarioInstalledMods source) => _mods.Edit(cache => { cache.Clear(); cache.AddOrUpdate(source.Mods); });
     public IReadOnlyCollection<ScenarioMod> Mods => _mods.Items.ToArray();
     public void Toggle(IEnumerable<LoadoutItemId> ids)
@@ -45,7 +51,7 @@ internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
             _mods.RemoveKey(id.Value);
         }
     }
-    public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => _mods.CountChanged;
+    public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => System.Reactive.Linq.Observable.Defer(() => _mods.CountChanged.StartWith(_mods.Count).DistinctUntilChanged());
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveLoadoutItems(LoadoutFilter filter)
         => _mods.Connect().Transform(mod => {
             var model = new CompositeItemModel<EntityId>(mod.Id);

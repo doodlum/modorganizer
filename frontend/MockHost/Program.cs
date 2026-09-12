@@ -1,3 +1,4 @@
+using NexusMods.App.UI.Pages.LibraryPage;
 using Avalonia.VisualTree;
 using NexusMods.App.UI.Pages.LoadoutPage;
 using NexusMods.App.UI.Controls;
@@ -104,6 +105,8 @@ public partial class MockApp : Application
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyInstalled(scenario, window); }, TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTEXTS") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyContexts(scenario, window); }, TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIBRARY") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(() => { verification = VerifyLibrary(scenario, window); }, TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -116,6 +119,52 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task WaitFor(Func<bool> ready, string failure)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!ready()) {
+            if (DateTime.UtcNow >= deadline) throw new InvalidOperationException(failure);
+            await Task.Delay(50);
+        }
+    }
+
+    private static async Task VerifyLibrary(ScenarioWorkspace scenario, Window window)
+    {
+        await scenario.Data.Game.AddGameCommand.Execute();
+        var card = scenario.Data.Section.Loadouts.Single();
+        await card.VisitLoadoutCommand.Execute();
+        var installedPage = (ScenarioInstalledPage)scenario.WorkspaceController.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        var menu = (ScenarioLoadoutMenu)scenario.GetActiveMenu();
+        await menu.LeftMenuItemLibrary.NavigateCommand.Execute(NavigationInformation.From(OpenPageBehaviorType.NewPanel));
+        await Task.Delay(200);
+        var page = (ScenarioLibraryPage)scenario.WorkspaceController.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        await WaitFor(() => page.Adapter.SourceCount.Value == 2, "Library fixture rows missing");
+        var row = page.Adapter.Source.Value.Items.First();
+        row.Get<LibraryComponents.InstallAction>(LibraryColumns.Actions.InstallComponentKey).CommandInstall.Execute(R3.Unit.Default);
+        await Task.Delay(150);
+        if (card.InstalledMods.Mods.Count != 5 || !card.PluginOrder.Plugins.Any(x => x.DisplayName == card.InstalledMods.Mods.Single(m => m.Id == row.Key).Plugin && x.IsActive))
+            throw new InvalidOperationException("Library row install did not update mods and plugin order");
+        var updated = page.Adapter.Source.Value.Items.Single(x => x.Key == row.Key);
+        if (!updated.Get<LibraryComponents.InstallAction>(LibraryColumns.Actions.InstallComponentKey).IsInstalled.Value)
+            throw new InvalidOperationException("Library installed status did not update");
+        page.Adapter.SelectAll();
+        page.InstallSelectedItemsCommand.Execute(R3.Unit.Default);
+        await Task.Delay(100);
+        if (card.InstalledMods.Mods.Count != 6) throw new InvalidOperationException("Batch install duplicated existing mod");
+        await WaitFor(() => installedPage.ItemCount.Value == 6 && installedPage.Adapter.SourceCount.Value == 6, "Open Mods panel did not update after Library install");
+        if (scenario.WorkspaceController.ActiveWorkspace.Panels.Count != 2) throw new InvalidOperationException("Library did not open in a second panel");
+        page.Adapter.SelectAll();
+        page.RemoveSelectedItemsCommand.Execute(R3.Unit.Default);
+        await Task.Delay(100);
+        if (!page.Adapter.IsSourceEmpty.Value || card.InstalledMods.Mods.Count != 6)
+            throw new InvalidOperationException("Library deletion affected installed mods or failed to empty library");
+        scenario.Library.Add("Reticle archive");
+        await Task.Delay(100);
+        if (page.Adapter.SourceCount.Value != 1) throw new InvalidOperationException("Library add did not update live page");
+        if (!window.GetVisualDescendants().OfType<LibraryView>().Any()) throw new InvalidOperationException("Native Library view missing");
+        Console.WriteLine("PASS: native Library navigation; row and batch install; installed status; duplicate prevention; library deletion preserves installed mods; live add; live Mods panel updates");
     }
 
     private static async Task VerifyContexts(ScenarioWorkspace scenario, Window window)

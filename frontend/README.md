@@ -124,6 +124,27 @@ MO2_VERIFY_CONTEXTS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/loadout-workspace.
 The check verifies workspace independence, panel/tab identity on returning,
 sidebar rendering, collection navigation and deletion cleanup. The resulting
 My Mods screen was visually inspected. This does not prove full mouse/keyboard
-interaction parity or restart persistence. Library, New Collection, utilities,
-Preview/Apply and Play in this sidebar still use upstream design placeholders;
+interaction parity or restart persistence. New Collection, utilities, Preview/Apply and Play in this sidebar still use
+upstream design placeholders;
 they require functional fixtures before the frontend is complete.
+
+## Library fixture
+
+The Library sidebar entry and new-tab discovery now open the native Library
+view and table. A shared fake archive catalog installs into each loadout's
+independent mod list and plugin order. Native row and batch install commands,
+installed status, deselection, library deletion and live catalog additions work.
+The Add file picker imports names as fake metadata only; it does not unpack or
+install real archive contents. The two initial archive sizes are fixture values.
+
+```sh
+MO2_VERIFY_LIBRARY=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/library-panels.png" ./frontend/run.sh
+```
+
+This check opens Library in a second original panel, invokes row/batch installs,
+checks duplicate prevention and installed status, verifies that the already-open
+Mods panel updates, and confirms library deletion preserves installed mods.
+It also checks the empty-to-populated transition. The resulting two-panel view
+was visually inspected. Update flows, advanced installers, collection downloads,
+file-picker interaction and reference pixel comparisons remain unverified or
+unimplemented; the corresponding scenario commands are still placeholders.

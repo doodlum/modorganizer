@@ -50,6 +50,12 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
             new ScenarioPlugin("Compatibility Patch.esp", "Compatibility Patch (fixture)", 5, "Desert Lighting.esp", "Mojave Encounters.esp"),
         });
     }
+    public void InstallPlugin(string name, string mod)
+    {
+        var existing = _items.Items.FirstOrDefault(x => x.DisplayName == name);
+        if (existing is not null) { SetPluginActive(name, true); return; }
+        _items.AddOrUpdate(new ScenarioPlugin(name, mod, _items.Count, "FalloutNV.esm"));
+    }
     public void CopyFrom(ScenarioPluginOrder source)
     {
         _items.Edit(cache => {
