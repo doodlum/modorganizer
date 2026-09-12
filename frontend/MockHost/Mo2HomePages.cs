@@ -96,7 +96,21 @@ internal sealed class Mo2LoadoutsSection : AViewModel<IGameLoadoutsSectionEntryV
     {
         HeadingText = game + " Loadouts";
         CardViewModels = new(new ObservableCollection<IViewModelInterface>(entries.SelectMany(entry => entry.Instance!.Profiles.Select((profile, index) =>
-            new Mo2LoadoutCard(shell, entry, profile, index + 1)))));
+            new Mo2LoadoutCard(shell, entry, profile, index + 1)).Cast<IViewModelInterface>()
+                .Concat(entry.Instance.Profiles.Length > 0 ? [new Mo2CreateProfileCard(shell, entry)] : []))));
+    }
+}
+internal sealed class Mo2CreateProfileCard : AViewModel<ICreateNewLoadoutCardViewModel>, ICreateNewLoadoutCardViewModel
+{
+    public Mo2Registration Registration { get; }
+    public string InstanceLabel => Path.GetFileName(Registration.Directory) == "modorganizer2"
+        ? Path.GetFileName(Path.GetDirectoryName(Registration.Directory)) ?? "MO2" : Path.GetFileName(Registration.Directory);
+    public ReactiveCommand<Unit, Unit> AddLoadoutCommand { get; }
+    public Mo2CreateProfileCard(Mo2LiveWorkspace shell, Mo2CatalogEntry entry)
+    {
+        Registration = entry.Registration;
+        var target = entry.Instance!.Profiles.FirstOrDefault(x => x.Name == entry.Instance.SelectedProfile) ?? entry.Instance.Profiles.First();
+        AddLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, target, "create"));
     }
 }
 internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoadoutCardViewModel

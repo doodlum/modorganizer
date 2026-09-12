@@ -250,7 +250,8 @@ special Overwrite file dialog. It uses the same instance/profile guard as other
 actions and waits for the dialog to close before returning. Original MO2 filters
 must allow the selected row to be visible.
 
-`manageProfile` accepts `copy`, `rename` and `remove`. Rename selects the
+`manageProfile` accepts `create`, `copy`, `rename` and `remove`. Create invokes
+the original manager’s Create button and leaves ProfileInputDialog to MO2. Rename selects the
 requested row in the original profile manager and clicks its native rename
 button, leaving name validation and the prompt to MO2. Rename and removal of
 the active profile are rejected before opening the manager.

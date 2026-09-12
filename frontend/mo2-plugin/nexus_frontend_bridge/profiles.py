@@ -53,7 +53,7 @@ class Profiles:
             raise ValueError('MO2 did not select the requested profile')
 
     def manage_profile(self, name, operation):
-        buttons = {'copy': 'copyProfileButton', 'remove': 'removeProfileButton', 'rename': 'renameButton'}
+        buttons = {'create': 'addProfileButton', 'copy': 'copyProfileButton', 'remove': 'removeProfileButton', 'rename': 'renameButton'}
         if operation not in buttons:
             raise ValueError('Unknown profile operation')
         if not isinstance(name, str) or not any(item['name'] == name for item in self.snapshot()):

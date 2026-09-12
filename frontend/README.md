@@ -13,7 +13,9 @@ The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
 The sidebar, game widgets, loadout cards, top bar and panel system use the original
 NMA views. My Games → View → profile switches the connected game. My Loadouts
-shows real profiles grouped by game across registered MO2 instances. Selection
+shows real profiles grouped by game across registered MO2 instances. Each
+instance has a native Create new loadout card that opens MO2’s Create Profile
+dialog. Selection
 uses each running host. **Manage MO2 profiles…** opens MO2’s original dialog;
 **Create Copy**, **Rename** and **Delete** on each card open MO2’s original
 prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2

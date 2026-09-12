@@ -91,6 +91,14 @@ internal sealed class FixtureViewLocator : IViewLocator
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
         if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return new Mo2PluginsView { ViewModel = plugins };
+        if (viewModel is Mo2CreateProfileCard create) {
+            var createView = new NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView { ViewModel = create };
+            var text = createView.FindControl<TextBlock>("CreateNewLoadoutTextBlock")!;
+            text.Text = "Create new loadout\n" + create.InstanceLabel;
+            text.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
+            ToolTip.SetTip(createView, "Create an MO2 profile in " + create.Registration.Directory);
+            return createView;
+        }
         if (viewModel is Mo2LoadoutCard card) {
             var cardView = new NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView { ViewModel = card };
             var rename = new NexusMods.App.UI.Controls.StandardButton { Name = "RenameMo2ProfileButton", Text = "Rename", ShowLabel = false, ShowIcon = NexusMods.App.UI.Controls.StandardButton.ShowIconOptions.Left, LeftIcon = NexusMods.UI.Sdk.Icons.IconValues.FolderEditOutline, Command = card.RenameProfileCommand };
@@ -431,6 +439,28 @@ public partial class MockApp : Application
             x.ViewModel is Mo2LoadoutCard card && card.Registration.Directory == root && card.LoadoutName == "Frontend Test");
         var activeRename = activeCard.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.StandardButton>().Single(x => x.Name == "RenameMo2ProfileButton");
         if (activeRename.Command!.CanExecute(activeRename.CommandParameter)) throw new InvalidOperationException("Active profile rename must be disabled");
+        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CREATE_PROFILE") == "1") {
+            async Task Create(string answer) {
+                await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView>().Any(x => x.ViewModel is Mo2CreateProfileCard card && card.Registration.Directory == root), "Native create card missing");
+                var card = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView>().Single(x => x.ViewModel is Mo2CreateProfileCard model && model.Registration.Directory == root);
+                var button = card.FindControl<Button>("CreateNewLoadoutButton")!;
+                File.WriteAllText(Path.Combine(root, "profile-card-test.json"), System.Text.Json.JsonSerializer.Serialize(new { target, operation = "create", answer }));
+                button.Command!.Execute(button.CommandParameter);
+                await WaitFor(() => !File.Exists(Path.Combine(root, "profile-card-test.json")) && !live.Profile.SelectingProfile, "Native profile creation did not finish", seconds: 45);
+                if (live.Profile.ProfilePath != originalProfile) throw new InvalidOperationException("Create changed the active profile");
+            }
+            await Create("Cancel");
+            if (Directory.Exists(destination)) throw new InvalidOperationException("Cancelled Create wrote a profile");
+            await Create("Yes");
+            await WaitFor(() => live.CatalogEntries.Where(x => x.Registration.Directory == root).Any(x => x.Instance!.Profiles.Any(p => p.Name == target)), "Created profile missing from catalog");
+            if (!File.ReadAllLines(Path.Combine(destination, "modlist.txt")).Contains("-The Mod Configuration Menu")) throw new InvalidOperationException("Create did not produce MO2’s fresh disabled-mod state");
+            await ClickCard(target, "DeleteButton", "remove", "Yes");
+            await WaitFor(() => !Directory.Exists(destination), "Disposable profile was not removed");
+            foreach (var (path, bytes) in originals)
+                if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Create changed an existing profile file");
+            Console.WriteLine("PASS: native NMA Create card opens MO2; Cancel creates nothing; confirm creates a fresh profile and card without switching; native deletion cleans it up; existing profile bytes unchanged");
+            return;
+        }
         await ClickCard("Frontend Test", "CreateCopyButton", "copy", "");
         foreach (var file in new[] { "modlist.txt", "plugins.txt", "loadorder.txt" })
             if (!File.ReadAllBytes(Path.Combine(source, file)).SequenceEqual(File.ReadAllBytes(Path.Combine(destination, file))))

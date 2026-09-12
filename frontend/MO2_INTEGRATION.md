@@ -437,3 +437,23 @@ have the updated bridge; no temporary MO2 driver was installed for this test.
 The missing-master path is now verified. Other LOOT message categories,
 multi-selection gestures and the remaining navigation/extension coverage still
 require review. Build and fourteen bridge contract checks pass.
+
+### Native create card mapped to MO2 profiles — 2026-09-12
+
+Each registered instance with profiles now contributes NMA’s original Create
+new loadout card to My Loadouts. Its caption identifies the target instance,
+and the tooltip gives the full instance path. The command starts/connects that
+host, verifies its profile ownership and invokes the original profile manager’s
+Create button. MO2’s ProfileInputDialog owns the name prompt, default-settings
+choice and creation. No new NMA loadout record or profile file writer is used.
+
+The isolated FNV check invoked the actual card button: Cancel created no
+directory; confirmation created a fresh profile with MCM disabled and a live
+profile card; the active profile stayed Frontend Test. Native Delete removed
+the disposable profile. All existing profiles’ checked modlist/plugins/loadorder
+bytes remained unchanged. The narrow dialog-answer driver was removed before
+restarting the production host.
+
+Build and fourteen bridge contract checks pass. The native card layout was
+visually inspected in artifacts/create-profile-cards.png. Creation behavior was
+verified on FNV; the card is also supplied separately for each Skyrim instance.
