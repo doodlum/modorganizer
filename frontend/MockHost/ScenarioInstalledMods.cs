@@ -11,7 +11,15 @@ using NexusMods.MnemonicDB.Abstractions;
 namespace Mo2.Frontend;
 
 internal sealed record ScenarioMod(EntityId Id, string Name, string Plugin, bool Enabled, DateTimeOffset Installed);
-internal sealed class ScenarioInstalledMods : ILoadoutDataProvider
+internal interface IInstalledModsSource : ILoadoutDataProvider
+{
+    R3.BindableReactiveProperty<string> CollectionName { get; }
+    void Toggle(IEnumerable<LoadoutItemId> ids);
+    void Remove(IEnumerable<LoadoutItemId> ids);
+    void Rename(string name);
+}
+
+internal sealed class ScenarioInstalledMods : IInstalledModsSource
 {
     private readonly SourceCache<ScenarioMod, EntityId> _mods = new(x => x.Id);
     public R3.BindableReactiveProperty<string> CollectionName { get; } = new("My Mods");

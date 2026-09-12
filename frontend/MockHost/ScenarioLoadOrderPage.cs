@@ -6,7 +6,7 @@ using NexusMods.UI.Sdk.Icons;
 namespace Mo2.Frontend;
 
 // Reuses the original editor including its row buttons, sort direction and drag/drop handlers.
-internal sealed class ScenarioLoadOrderPage(IServiceProvider services, ScenarioPluginOrder order)
+internal sealed class ScenarioLoadOrderPage(IServiceProvider services, NexusMods.Abstractions.Games.ISortOrderVariety order)
     : LoadOrderViewModel(services, order, default), IPageViewModelInterface
 {
     public IconValue TabIcon => IconValues.Package;

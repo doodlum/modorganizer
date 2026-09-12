@@ -21,12 +21,13 @@ internal sealed class ScenarioRules : AViewModel<ISortingSelectionViewModel>, IS
     public ReadOnlyObservableCollection<IViewModelInterface> RulesViewModels { get; }
     public IReadOnlyBindableReactiveProperty<bool> CanEdit { get; } = new BindableReactiveProperty<bool>(true);
     public R3.ReactiveCommand<NavigationInformation> OpenAllModsLoadoutPageCommand { get; } = new();
-    public ScenarioRules(IServiceProvider services, ScenarioPluginOrder order)
+    public ScenarioRules(IServiceProvider services, NexusMods.Abstractions.Games.ISortOrderVariety order)
         => RulesViewModels = new(new ObservableCollection<IViewModelInterface> { new LoadOrderViewModel(services, order, default) });
 }
 
 internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>, ILoadoutViewModel
 {
+    public bool IsMo2Profile { get; }
     public string EmptyStateTitleText => "No mods installed";
     public LoadoutTreeDataGridAdapter Adapter { get; }
     private readonly BindableReactiveProperty<int> _count = new();
@@ -58,9 +59,10 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandChangeVisibility { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
 
-    public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, ScenarioInstalledMods mods, ScenarioPluginOrder order,
+    public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, IInstalledModsSource mods, NexusMods.Abstractions.Games.ISortOrderVariety order,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false) : base(windows)
     {
+        IsMo2Profile = mods is Mo2LiveProfile;
         CollectionName = mods.CollectionName;
         CommandRenameGroup = new(async (_, token) => {
             var result = await windows.ShowDialog(LoadoutDialogs.RenameCollection(mods.CollectionName.Value), NexusMods.App.UI.Dialog.Enums.DialogWindowType.Modal);
@@ -72,7 +74,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         SelectedSubTab = selected;
         RulesSectionViewModel = new ScenarioRules(services, order);
         var filter = new LoadoutFilter { LoadoutId = default, CollectionGroupId = default };
-        Adapter = new LoadoutTreeDataGridAdapter(services, filter);
+        Adapter = IsMo2Profile ? new Mo2ModsAdapter(services) : new LoadoutTreeDataGridAdapter(services, filter);
         CommandDeselectItems = new(_ => Adapter.ClearSelection());
         CommandRemoveItem = new(_ => {
             mods.Remove(Adapter.SelectedModels.Select(x => NexusMods.Abstractions.Loadouts.LoadoutItemId.From(x.Key)).ToArray());

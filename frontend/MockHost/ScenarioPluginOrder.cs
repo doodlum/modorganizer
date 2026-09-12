@@ -39,8 +39,11 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
         EmptyStateMessageContents = "Install mods containing ESM or ESP plugins to manage their load order.",
         LearnMoreUrl = "https://loot.github.io/docs/help/introduction-to-load-orders/",
     };
-    public ScenarioPluginOrder()
+    public Func<ScenarioPlugin[], CancellationToken, Task>? ApplyOrder { get; set; }
+    public void Replace(IEnumerable<ScenarioPlugin> plugins) => _items.Edit(cache => { cache.Clear(); cache.AddOrUpdate(plugins); });
+    public ScenarioPluginOrder(bool seedFixtures = true)
     {
+        if (!seedFixtures) return;
         _items.AddOrUpdate(new[] {
             new ScenarioPlugin("FalloutNV.esm", "Game files", 0),
             new ScenarioPlugin("DeadMoney.esm", "Dead Money", 1, "FalloutNV.esm"),
@@ -93,6 +96,7 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
         var target = order.FindIndex(item => item.Key.Equals(dropTargetItem));
         if (target < 0) return Task.CompletedTask;
         order.InsertRange(target + (relativePosition == TargetRelativePosition.AfterTarget ? 1 : 0), moving);
+        if (ApplyOrder is not null) return ApplyOrder(order.ToArray(), token);
         var positions = order.Select((item, index) => (item.DisplayName, index)).ToDictionary(x => x.DisplayName, x => x.index);
         if (order.Any(item => item.Masters.Any(master => positions[master] >= positions[item.DisplayName]))) return Task.CompletedTask;
         _items.Edit(cache => {

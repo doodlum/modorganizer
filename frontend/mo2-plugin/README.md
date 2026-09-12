@@ -41,5 +41,29 @@ New Vegas `Frontend Test` profile under Proton: nine DLC mod entries and ten
 plugins. A live plugin activation and restoration also succeeded through the
 host API. These are bridge checks, not evidence of a modded game launch.
 
-The visual frontend still uses its scenario providers. Profile management,
-downloads/installers, launch and real UI bindings remain to be implemented.
+The live visual frontend is available through
+`frontend/run-live.sh /path/to/mo2/plugins/data/frontend-bridge`. It displays
+the host profile's mods and priorities on the left and the original NMA plugin
+order editor on the right. It polls MO2 every two seconds and sends changes to
+MO2, then displays the response. No profile files are written by the frontend.
+The mod table uses MO2 columns, without NMA collection or installation-date
+semantics. Essential content has no activation toggle.
+
+With `MO2_VERIFY_LIVE=1` and `MO2_SCREENSHOT=/path/to/image.png`, the live mode
+checks the isolated `frontend/artifacts/mo2-fnv-host/profiles/Frontend Test`
+profile, executes the native plugin row's move command, independently checks
+MO2's resulting priority, and restores the original order. This check passed;
+the rendered tables contained nine real mod rows and ten real plugin rows.
+It does not install a mod or launch FNV.
+
+On this Steam Deck, MO2/Qt under GE-Proton10-4 crashed on Wine's unimplemented
+`USER32.GetPointerFrameTouchInfo`. Setting `QT_QPA_PLATFORM=windows:nowmpointer`
+inside a Windows `.cmd` launcher before starting MO2 avoided that failure during
+the live checks. Setting it only in the outer Linux launch environment did not
+work in the already-running prefix. Do not pass `-platform` to MO2: its command
+parser treats that as a profile selection.
+
+Profile management, downloads/installers, plugin activation controls, mod
+priority editing and launch remain to be connected. Nexus account access will
+reuse MO2's credential and download workflow; no credential belongs in this
+repository or in the bridge's diagnostic snapshots.

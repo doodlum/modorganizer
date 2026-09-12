@@ -63,6 +63,7 @@ internal sealed class FixtureViewLocator : IViewLocator
 {
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
+        if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
         if (viewModel is not IViewModel vm) return null;
         var viewType = typeof(MyGamesView).Assembly.GetTypes().FirstOrDefault(type =>
             !type.IsAbstract && typeof(IViewFor<>).MakeGenericType(vm.ViewModelInterface).IsAssignableFrom(type)
@@ -84,6 +85,26 @@ public partial class MockApp : Application
         Locator.CurrentMutable.RegisterConstant<IViewLocator>(new FixtureViewLocator());
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            if (Environment.GetEnvironmentVariable("MO2_BRIDGE_DIRECTORY") is { } endpoint) {
+                var live = new Mo2LiveWorkspace(endpoint);
+                var liveWindow = live.CreateWindow();
+                desktop.MainWindow = liveWindow;
+                desktop.Exit += (_, _) => live.Dispose();
+                if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIVE") == "1") await VerifyLive(live, endpoint);
+                        await Task.Delay(500);
+                        foreach (var table in liveWindow.GetVisualDescendants().OfType<TreeDataGrid>())
+                            Console.WriteLine($"TABLE: source={table.Source?.Items.Cast<object>().Count()} rows={table.Rows?.Count} bounds={table.Bounds} visualRows={table.GetVisualDescendants().Count(x => x is Avalonia.Controls.Primitives.TreeDataGridRow)}");
+                        using var bitmap = new RenderTargetBitmap(new PixelSize((int)liveWindow.ClientSize.Width, (int)liveWindow.ClientSize.Height));
+                        bitmap.Render(liveWindow);
+                        bitmap.Save(liveScreenshot);
+                        desktop.Shutdown();
+                    }, TimeSpan.FromSeconds(4));
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"),
                 RowDefinitions = new RowDefinitions("Auto,*,48") };
             var scenario = new ScenarioWorkspace();
@@ -136,6 +157,28 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyLive(Mo2LiveWorkspace live, string endpoint)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test", StringComparison.Ordinal))
+            throw new InvalidOperationException("Live mutation check requires the isolated FNV test profile");
+        var original = live.Profile.Order.Plugins.ToArray();
+        var plugin = original.Single(x => x.DisplayName == "TribalPack.esm");
+        var indexBefore = plugin.SortIndex;
+        try {
+            var row = live.PluginsPage!.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key));
+            row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey).MoveDown.Execute(R3.Unit.Default);
+            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).SortIndex == indexBefore + 1, "Native row command did not update MO2 priority");
+            var snapshot = await new Mo2BridgeClient(endpoint).SendAsync("snapshot");
+            var actual = snapshot.GetProperty("plugins").EnumerateArray().Single(x => x.GetProperty("name").GetString() == plugin.DisplayName);
+            if (actual.GetProperty("priority").GetInt32() != indexBefore + 1) throw new InvalidOperationException("Host disagrees with frontend order");
+        } finally {
+            await live.Profile.Order.ApplyOrder!(original, default);
+        }
+        if (!live.Profile.Order.Plugins.Select(x => x.DisplayName).SequenceEqual(original.Select(x => x.DisplayName)))
+            throw new InvalidOperationException("Live check did not restore original plugin order");
+        Console.WriteLine("PASS: live two-panel tables; native plugin row command changes MO2; independent host read agrees; original order restored");
     }
 
     private static async Task VerifyDialogs(ScenarioWorkspace scenario, IClassicDesktopStyleApplicationLifetime desktop)

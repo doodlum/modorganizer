@@ -5,8 +5,12 @@
 
 # Alternate Nexus frontend (in progress)
 
-Standalone Linux Avalonia host for Mod Organizer. The MO2 C++ application is not required.
-All frontend page data is generated in memory; no MO2 data or game files are read. Optional artwork is read from the local Steam cache.
+Linux Avalonia frontend for Mod Organizer. `run.sh` starts the original fixture
+scenarios. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
+running MO2 host with the [bridge extension](mo2-plugin/README.md) installed.
+Live mode shows the active MO2 profile's mods on the left and plugins on the
+right, and sends mod activation and plugin ordering changes through MO2.
+Profile management, downloads and game launch integration remain unfinished.
 
 ## Run
 

@@ -45,7 +45,7 @@ Use an isolated MO2 FNV instance/profile to avoid altering Skyrim instances.
 
 ## Current evidence and remaining work
 
-The current frontend remains mostly fixture-backed. `Mo2ProfileFiles` now reads
+The default frontend mode remains fixture-backed. `Mo2ProfileFiles` reads
 actual instance/profile files and the downloads folder without writing them:
 
 ```sh
@@ -75,8 +75,13 @@ The first host bridge now loads as an ordinary MO2 Python tool extension under
 Proton. Its C# client read the isolated FNV `Frontend Test` profile (nine DLC mod
 entries, ten plugins). A real plugin activation and restoration through the MO2
 API succeeded. See [bridge setup and protocol](mo2-plugin/README.md). No added mod
-or in-game launch has been verified; the visual frontend remains fixture-backed.
+or in-game launch has been verified. Live mode now binds the active host profile
+to simultaneous left mod and right plugin panels. Its native plugin row command
+changed MO2 priority; an independent host read agreed, and original order was
+restored. The rendered view showed nine mod rows and ten plugin rows. Mod
+activation is wired but has not yet been exercised with a regular installed mod.
 
-Next implementation work is binding real profiles/mods/plugins/downloads to the
-frontend and extending the host operations, then the FNV acceptance run above.
+Next work is profile management across instances, downloads/Nexus/installer
+integration, the remaining activation and ordering controls, and the FNV
+acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.
