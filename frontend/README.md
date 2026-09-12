@@ -21,8 +21,9 @@ profile files change, including changes made in the original interface.
 Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
 FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
-verified; see [in-game evidence](FNV_ACCEPTANCE.md). Remaining MO2 mod-management
-details and diagnostics are still being integrated.
+verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.
+**Details in MO2** opens its original conflict/file dialog. Richer plugin
+diagnostics are still being integrated.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run
@@ -91,22 +92,19 @@ a panel. It is a partial integration check, not proof of full behavioral parity.
 
 ## Remaining scope
 
-This is a foundation, not a completed replica. My Games and My Loadouts now use
-shared Fallout: New Vegas fixtures. Add/remove game, create/clone/delete loadout,
-sidebar navigation and history are interactive and checked. Loadout cards and
-spine entries now open independent installed-mod fixtures; the loadout sidebar,
-dialogs and remaining pages are still incomplete.
+The live frontend uses the native NMA navigation and panels with real MO2
+games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
+acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
-- Extend the shared fake scenarios with mod and collection data.
-- Complete per-loadout spine navigation, all topbar actions, settings, dialogs, overlays and downloads.
-- Implement library, installed mods, collections, load order, file conflicts, diagnostics and installer scenarios using upstream page interfaces.
-- Verify panel resize, drag/drop, history, state restoration and every tab action through UI interaction.
-- Match the release footer and the reference window layout; compare every page and state visually.
-- Publish the branch to the requested GitHub remote.
+- Expose richer native plugin diagnostics and forced-state information.
+- Replace the live profile rename placeholder with MO2’s original operation.
+- Verify panel drag/drop, history and state restoration more broadly.
+- Review remaining page states and visual layout against NMA.
+- Publish the branch to the requested GitHub remote when authentication is available.
 
-The initial source build emits upstream warnings, including an advisory for an
-upstream telemetry dependency. The host does not register telemetry services.
+MO2 remains the owner of installed mods and profiles; the live frontend does
+not maintain an independent NMA Library or deployment store.
 
 ## New Vegas scenarios and reference fork
 

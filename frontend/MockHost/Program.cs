@@ -174,6 +174,18 @@ public partial class MockApp : Application
                             await live.Profile.InstallArchive(installArchive);
                             Console.WriteLine("INSTALL: " + live.Profile.Status);
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_OPEN_MOD_DETAILS") is { } detailName) {
+                            var mod = live.Profile.Mods.Single(x => x.Name == detailName);
+                            await WaitFor(() => live.ModsPage!.Adapter.Source.Value.Items.Any(x => x.Key == mod.Id), "Selected mod row did not refresh");
+                            live.ModsPage!.Adapter.SelectedModels.Clear();
+                            live.ModsPage.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
+                            liveWindow.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Details in MO2"))
+                                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                            await WaitFor(() => live.Profile.ManagingMod, "Details action did not begin");
+                            await WaitFor(() => !live.Profile.ManagingMod, "Close the native mod details dialog to finish verification", seconds: 180);
+                            if (!live.Profile.Status.EndsWith("Connected to MO2")) throw new InvalidOperationException(live.Profile.Status);
+                            Console.WriteLine("PASS: native Details in MO2 button opened and closed the original dialog for " + detailName);
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENABLE_FNV_DLCS") == "1") {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("DLC activation requires the isolated FNV profile");
                             var names = new[] { "TribalPack.esm", "MercenaryPack.esm", "ClassicPack.esm", "CaravanPack.esm", "DeadMoney.esm", "HonestHearts.esm", "OldWorldBlues.esm", "LonesomeRoad.esm", "GunRunnersArsenal.esm" };
@@ -466,6 +478,19 @@ public partial class MockApp : Application
             var mods = snapshot.GetProperty("mods").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32(), x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
             if (!mods.SequenceEqual(live.Profile.Mods.Select(x => ((string?)x.Name, x.State, x.Priority)).OrderBy(x => x.Item1)))
                 throw new InvalidOperationException("Skyrim mod panel disagrees with independent host snapshot");
+            var details = snapshot.GetProperty("mods").EnumerateArray().Select(x => (
+                x.GetProperty("name").GetString(), x.GetProperty("priorityText").GetString(),
+                x.GetProperty("conflicts").GetString(), x.GetProperty("flags").GetString(), x.GetProperty("overwrite").GetBoolean())).OrderBy(x => x.Item1).ToArray();
+            if (!details.SequenceEqual(live.Profile.Mods.Select(x => ((string?)x.Name, (string?)x.PriorityText, (string?)x.Conflicts, (string?)x.Flags, x.IsOverwrite)).OrderBy(x => x.Item1)))
+                throw new InvalidOperationException("Native mod details disagree with MO2");
+            var overwrite = live.Profile.Mods.Single(x => x.IsOverwrite);
+            if ((overwrite.State & 4) == 0 || overwrite.PriorityText.Length != 0) throw new InvalidOperationException("Overwrite lost its native fixed-priority state");
+            foreach (var mod in live.Profile.Mods) {
+                var row = live.ModsPage!.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id);
+                if (row.Get<ValueComponent<string>>(Mo2ModsAdapter.ConflictsKey).Value.Value != mod.Conflicts)
+                    throw new InvalidOperationException("Conflict column disagrees with MO2");
+            }
+            Console.WriteLine("PASS: Overwrite, native priority labels, conflict and status columns match MO2; " + live.Profile.Mods.Count(x => x.Conflicts.Length > 0) + " mods have native conflict messages");
             var plugins = snapshot.GetProperty("plugins").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32() == 2, x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
             if (!plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, x.IsActive, x.SortIndex)).OrderBy(x => x.Item1)))
                 throw new InvalidOperationException("Skyrim plugin panel disagrees with independent host snapshot");

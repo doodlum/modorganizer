@@ -45,7 +45,7 @@ class Bridge:
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
                          'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath()},
-            'mods': [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
+            'mods': self.mod_actions.snapshot() if self.mod_actions is not None else [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
                       'priority': mods.priority(name)} for name in mods.allModsByProfilePriority()],
             'plugins': [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),
                          'loadOrder': plugins.loadOrder(name), 'masters': list(plugins.masters(name)),
@@ -71,6 +71,10 @@ class Bridge:
             if self.executables is None:
                 raise ValueError('MO2 launch integration is unavailable')
             return self.executables.launch(request.get('name'))
+        if action == 'showModDetails':
+            if self.mod_actions is None:
+                raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.details(request.get('name'))
         if action == 'removeMod':
             if self.mod_actions is None:
                 raise ValueError('MO2 mod management is unavailable')

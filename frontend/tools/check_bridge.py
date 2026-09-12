@@ -53,6 +53,18 @@ class ContractTests(unittest.TestCase):
         result = self.bridge.execute(self.request(action='snapshot'))
         self.assertEqual(result['plugins'][0]['masters'], ['FalloutNV.esm'])
         self.assertEqual(result['mods'][0]['state'], 1)
+    def test_native_mod_details_are_forwarded_without_recomputing_conflicts(self):
+        class ModActions:
+            def snapshot(self): return [{'name': 'Overwrite', 'state': 4, 'priority': 1,
+                'priorityText': '', 'overwrite': True, 'conflicts': 'Native archive conflict', 'flags': 'Native status'}]
+            def details(self, name): return {'opened': True, 'modName': name}
+        self.bridge.mod_actions = ModActions()
+        result = self.bridge.execute(self.request(action='snapshot'))
+        self.assertEqual(result['mods'], self.bridge.mod_actions.snapshot())
+        request = self.request(action='showModDetails', name='Overwrite')
+        self.assertEqual(self.bridge.execute(request), {'opened': True, 'modName': 'Overwrite'})
+        self.organizer.current = 'Z:/profiles/Other'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
     def test_mutations_use_host_and_return_actual_state(self):
         result = self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled=True))
         self.assertEqual(self.organizer.mods.calls, 1)

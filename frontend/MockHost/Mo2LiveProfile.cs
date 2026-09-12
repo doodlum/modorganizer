@@ -10,7 +10,7 @@ using NexusMods.MnemonicDB.Abstractions;
 namespace Mo2.Frontend;
 
 internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused);
-internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority);
+internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false);
 
 // Only a view of the running host. No activation/order/profile files are written here.
 internal sealed class Mo2LiveProfile : IInstalledModsSource
@@ -61,7 +61,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var mods = snapshot.GetProperty("mods").EnumerateArray().Select(mod => {
             var name = mod.GetProperty("name").GetString()!;
             if (!_ids.TryGetValue(name, out var id)) _ids[name] = id = EntityId.From((ulong)_ids.Count + 100);
-            return new Mo2LiveMod(id, name, mod.GetProperty("displayName").GetString()!, mod.GetProperty("state").GetInt32(), mod.GetProperty("priority").GetInt32());
+            return new Mo2LiveMod(id, name, mod.GetProperty("displayName").GetString()!, mod.GetProperty("state").GetInt32(), mod.GetProperty("priority").GetInt32(),
+                mod.TryGetProperty("priorityText", out var priorityText) ? priorityText.GetString() ?? "" : mod.GetProperty("priority").GetInt32().ToString(),
+                mod.TryGetProperty("conflicts", out var conflicts) ? conflicts.GetString() ?? "" : "",
+                mod.TryGetProperty("flags", out var flags) ? flags.GetString() ?? "" : "",
+                mod.TryGetProperty("overwrite", out var overwrite) && overwrite.GetBoolean());
         }).ToArray();
         _mods.Edit(cache => { cache.Clear(); cache.AddOrUpdate(mods); });
         Order.Replace(snapshot.GetProperty("plugins").EnumerateArray().Select(plugin => new ScenarioPlugin(
@@ -130,7 +134,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if (!found.HasValue) return;
             var mod = found.Value;
             if ((mod.State & 4) != 0 || mod.Priority < 0) return;
-            var priority = Math.Clamp(mod.Priority + delta, 0, _mods.Count - 1);
+            var priority = Math.Clamp(mod.Priority + delta, 0, _mods.Items.Where(x => !x.IsOverwrite && x.Priority >= 0).Max(x => x.Priority));
             Apply(await Client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
@@ -238,6 +242,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
+    public async Task ShowModDetails(EntityId id)
+    {
+        var profile = ProfilePath;
+        var mod = _mods.Lookup(id);
+        if (!mod.HasValue || !await _commands.WaitAsync(0)) return;
+        try {
+            ManagingMod = true; Status = "Opening mod details in MO2"; Changed?.Invoke();
+            await Client.SendAsync("showModDetails", new() { ["profilePath"] = profile, ["name"] = mod.Value.Name }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public void Remove(IEnumerable<LoadoutItemId> ids)
     {
         var selected = ids.Select(id => _mods.Lookup(id.Value)).Where(x => x.HasValue && (x.Value.State & 4) == 0).Select(x => x.Value.Name).ToArray();
@@ -265,6 +281,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         => _mods.Connect().Transform(mod => {
             var model = new CompositeItemModel<EntityId>(mod.Id);
             model.Add(Mo2ModsAdapter.PriorityKey, new ValueComponent<int>(mod.Priority));
+            model.Add(Mo2ModsAdapter.PriorityTextKey, new ValueComponent<string>(mod.PriorityText));
+            model.Add(Mo2ModsAdapter.ConflictsKey, new ValueComponent<string>(mod.Conflicts));
+            model.Add(Mo2ModsAdapter.FlagsKey, new ValueComponent<string>(mod.Flags));
             model.Add(SharedColumns.Name.NameComponentKey, new NameComponent(mod.DisplayName));
             if ((mod.State & 4) == 0) {
                 model.Add(LoadoutColumns.EnabledState.LoadoutItemIdsComponentKey, new LoadoutComponents.LoadoutItemIds(LoadoutItemId.From(mod.Id)));

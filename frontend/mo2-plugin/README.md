@@ -64,7 +64,7 @@ work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
 Configured host startup is connected and tested with the isolated FNV instance.
-Cross-game startup is now verified with the existing Skyrim instance; FNV gameplay validation and remaining mod-management controls are incomplete. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
+Cross-game startup is verified with the existing Skyrim instance; FNV gameplay and plugin-order acceptance are recorded in [FNV acceptance](../FNV_ACCEPTANCE.md). Richer plugin diagnostics remain incomplete. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation
@@ -240,3 +240,12 @@ original copy or removal control. MO2 owns the name prompt, confirmation,
 profile copy semantics, save handling, and active-profile deletion restriction.
 The manager remains open until the user closes it; then the bridge returns a
 fresh host snapshot. No profile files are written by this adapter.
+
+## Mod metadata and original details
+
+Snapshots include Overwrite and the original mod model’s priority display,
+conflict and status tooltips (converted to plain text). `showModDetails` invokes
+the original mod-list conflict-column double-click handler, including the
+special Overwrite file dialog. It uses the same instance/profile guard as other
+actions and waits for the dialog to close before returning. Original MO2 filters
+must allow the selected row to be visible.

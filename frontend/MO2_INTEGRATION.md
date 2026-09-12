@@ -51,9 +51,10 @@ and agreement between all 14 running-game plugin indices and the MO2 order.
 See [FNV acceptance evidence](FNV_ACCEPTANCE.md). Both game instances and the
 native NMA navigation/panel controls have also been exercised against MO2.
 
-Full integration remains open. The bridge currently exports basic mod and
-plugin state, but overwrite/conflict details and richer plugin diagnostics still
-need implementation and validation against the required mappings above. The
+Full integration remains open. The bridge exports MO2 mod state, Overwrite,
+native priority labels, conflict/status text and plugin state. Details in MO2
+opens the original conflict/file dialog. Richer plugin diagnostics still need
+implementation and validation against the required mappings above. The
 profile rename entry in the live data provider also remains a placeholder;
 MO2’s native profile manager is available for profile operations.
 
@@ -279,3 +280,31 @@ Thirteen bridge contract checks and the frontend build pass (the existing
 upstream OpenTelemetry NU1902 warning remains). This adds real profile actions;
 it does not close the pending in-game MCM menu, disabled-mod comparison, or
 FNV DLC load-order investigation.
+
+### Native mod metadata and details — 2026-09-12
+
+The mod panel includes Overwrite, with MO2’s blank priority label and essential
+state preventing activation, movement or uninstall. Conflict and status text
+comes from the original mod-list model’s tooltips; the bridge converts HTML to
+plain text and does not compute another conflict result. The combined column
+provides full text on hover beside the mod name and activation controls.
+
+Details in MO2 invokes the original mod-list double-click handler on its
+conflict column. Regular mods open the native conflict/file dialog; Overwrite
+opens its original file dialog. Commands retain the instance/profile guard and
+wait for the native dialog to close before refreshing. A filtered-out mod
+requires clearing the filter in MO2.
+
+Live checks compared Skyrim’s 151 rows (including Overwrite) and 150 plugins
+against an independent host snapshot, including eight native conflict messages,
+and restored FNV through native game/profile navigation. The actual Details
+button opened and returned from both FNV Overwrite and Skyrim Starfrost’s
+conflict dialog. The latter showed its winning conflict with StarfrostInjuries.
+Screenshots are in ignored artifacts: mo2-skyrim-native-conflicts-dialog.png,
+mod-details-skyrim-dialog-return.png and mod-details-fnv.png.
+
+An initial dialog check timed out after closing its X11 window externally;
+repeating with Windows WM_CLOSE passed for both dialogs. Fourteen bridge
+contract checks and the frontend build pass (existing OpenTelemetry NU1902
+warning). This check does not establish Skyrim gameplay or complete plugin
+diagnostics. FNV in-game acceptance is recorded separately above.
