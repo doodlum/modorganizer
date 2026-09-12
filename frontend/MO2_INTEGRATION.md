@@ -112,3 +112,13 @@ reached its title screen. Gameplay, MCM's in-game menu and a disabled-mod
 comparison still need verification. Desktop automation has encountered focus
 problems; the isolated test profile now uses windowed 1024×640 preferences
 seeded from the original launcher's output. No Skyrim configuration was changed.
+
+Further startup checks: the prefix initially lacked the game's registry entry,
+Documents/My Games directory and AppData/Local/FalloutNV directory. The original
+launcher initialized the registry-dependent graphics setup; creating the local
+application data directory and restarting MO2 made the test profile's windowed
+INI take effect. That run stalled at a black screen, including with MCM disabled.
+Disabling MCM removed its DLL from the next xNVSE runtime log, confirming that
+mod activation affects the virtual game view. MCM was restored afterward and
+the stalled test game was closed. The startup issue is unresolved; neither
+usable gameplay nor the MCM in-game menu has been verified.

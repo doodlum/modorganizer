@@ -188,3 +188,9 @@ first run reached xNVSE 6.4.8 and its runtime log reported MCM Extensions loaded
 correctly through the virtual filesystem. The game exited before gameplay.
 After original Fallout Launcher setup of the fresh test prefix, the next run
 reached the game title screen. In-game acceptance is still outstanding.
+
+After the missing prefix game directories were initialized and MO2 restarted,
+the profile's windowed settings took effect. A black-screen startup stall
+occurred with MCM both enabled and disabled. The disabled run's xNVSE log omitted
+MCM, and the original profile was restored afterward. This remains incomplete
+gameplay validation; see `MO2_INTEGRATION.md` for the current acceptance status.
