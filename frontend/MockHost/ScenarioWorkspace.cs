@@ -26,6 +26,8 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
     public ReactiveUI.ReactiveCommand<System.Reactive.Unit, bool> BringWindowToFront { get; } = ReactiveUI.ReactiveCommand.Create(() => true);
+    public ScenarioData Data { get; }
+    public ScenarioHomeMenu HomeMenu { get; }
     public ScenarioWorkspace()
     {
         var services = new FixtureServices();
@@ -34,10 +36,17 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         services.Add<ISettingsManager>(new MemorySettings());
         services.Add<ILoggerFactory>(NullLoggerFactory.Instance);
         services.Add<IWorkspaceAttachmentsFactoryManager>(new FixtureAttachments());
+        PageData? loadoutsData = null;
+        Data = new ScenarioData(() => {
+            var controller = WorkspaceController!;
+            var panel = controller.ActiveWorkspace.SelectedPanel;
+            controller.OpenPage(controller.ActiveWorkspaceId, loadoutsData!, new OpenPageBehavior.ReplaceTab(panel.Id, panel.SelectedTab.Id));
+        });
         var games = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30001", "My Games", IconValues.GamepadOutline,
-            () => new MyGamesDesignViewModel { TabTitle = "My Games", TabIcon = IconValues.GamepadOutline });
+            () => new ScenarioGamesPage(windows, Data));
         var loadouts = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30002", "My Loadouts", IconValues.Package,
-            () => new MyLoadoutsDesignViewModel(windows) { TabTitle = "My Loadouts", TabIcon = IconValues.Package });
+            () => new ScenarioLoadoutsPage(windows, Data));
+        loadoutsData = loadouts.Data;
         services.Add(new PageFactoryController([games, loadouts, new NewTabPageFactory(services)]));
         // The controller is internal upstream. Instantiate its public constructor without forking
         // its implementation so panel geometry, tab navigation, drag/drop and history stay original.
@@ -45,6 +54,7 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var workspace = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
+        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, loadouts.Data);
     }
 }
 
@@ -55,11 +65,11 @@ internal sealed class FixtureServices : IServiceProvider
     public object? GetService(Type serviceType) => _services.GetValueOrDefault(serviceType);
 }
 
-internal sealed record FixturePageContext : IPageFactoryContext;
+internal sealed record FixturePageContext(PageFactoryId FactoryId) : IPageFactoryContext;
 internal sealed class FixturePageFactory(string id, string title, IconValue icon, Func<IPageViewModelInterface> create) : IPageFactory
 {
     public PageFactoryId Id { get; } = PageFactoryId.From(Guid.Parse(id));
-    public PageData Data => new() { FactoryId = Id, Context = new FixturePageContext() };
+    public PageData Data => new() { FactoryId = Id, Context = new FixturePageContext(Id) };
     public DynamicData.Kernel.Optional<OpenPageBehaviorType> DefaultOpenPageBehavior => default;
     public Page Create(IPageFactoryContext context)
     {

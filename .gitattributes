@@ -5,3 +5,6 @@
 # to native line endings on checkout.
 *.cpp text eol=crlf
 *.h text eol=crlf
+
+# Unified diff artifacts contain mandatory blank context prefixes and mail signatures.
+frontend/reference/*.patch -whitespace

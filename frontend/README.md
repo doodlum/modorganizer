@@ -1,7 +1,7 @@
 # Alternate Nexus frontend (in progress)
 
 Standalone Linux Avalonia host for Mod Organizer. The MO2 C++ application is not required.
-All instantiated page data is currently generated in memory; no MO2 data or real game installation is read.
+All frontend page data is generated in memory; no MO2 data or game files are read. Optional artwork is read from the local Steam cache.
 
 ## Run
 
@@ -39,12 +39,14 @@ a panel. It is a partial integration check, not proof of full behavioral parity.
 
 ## Remaining scope
 
-This is a foundation, not a completed replica. Upstream design models still
-supply the My Games and My Loadouts data, and many of their commands do nothing.
+This is a foundation, not a completed replica. My Games and My Loadouts now use
+shared Fallout: New Vegas fixtures. Add/remove game, create/clone/delete loadout,
+sidebar navigation and history are interactive and checked. Per-loadout visits,
+dialogs and the remaining pages are still incomplete.
 Remaining work includes:
 
-- Replace designer models with interactive deterministic fake game/mod/loadout scenarios.
-- Wire sidebar and spine navigation, all topbar actions, settings, dialogs, overlays and downloads.
+- Extend the shared fake scenarios with mod and collection data.
+- Complete per-loadout spine navigation, all topbar actions, settings, dialogs, overlays and downloads.
 - Implement library, installed mods, collections, load order, file conflicts, diagnostics and installer scenarios using upstream page interfaces.
 - Verify panel resize, drag/drop, history, state restoration and every tab action through UI interaction.
 - Match the release footer and the reference window layout; compare every page and state visually.
@@ -52,3 +54,15 @@ Remaining work includes:
 
 The initial source build emits upstream warnings, including an advisory for an
 upstream telemetry dependency. The host does not register telemetry services.
+
+## New Vegas scenarios and reference fork
+
+`MO2_VERIFY_SCENARIOS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/fnv-loadouts.png" ./frontend/run.sh`
+checks fake game add/remove, loadout clone/delete, sidebar navigation and history.
+The installation path supplied in this session is shown in the Steam tooltip;
+`MO2_SCENARIO_GAME_PATH` and `MO2_SCENARIO_COVER` override local fixture metadata.
+The fixture currently starts with one detected New Vegas game and no loadouts.
+
+A separate [Nexus app reference fork](reference/README.md) is being developed to
+compare New Vegas screens against the real app, as requested. This does not
+connect the mock frontend to MO2 or to real mod data.

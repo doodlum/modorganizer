@@ -1,0 +1,595 @@
+From 3b0244e7d21ea19afabcc3d81539c9e11ae8d642 Mon Sep 17 00:00:00 2001
+From: Tim <tim.pye@nexusmods.com>
+Date: Sat, 12 Sep 2026 17:31:24 +0100
+Subject: [PATCH] Add New Vegas reference game support and plugin header checks
+
+---
+ .../Abstractions/ICreationEngineGame.cs       |   3 +-
+ .../Abstractions/PluginHeader.cs              |  13 +++
+ .../Emitters/MissingMasterEmitter.cs          |   2 +-
+ .../Fallout4/Fallout4.cs                      |   4 +-
+ .../FalloutNewVegas/FalloutNewVegas.cs        | 105 ++++++++++++++++++
+ .../FalloutNewVegasSynchronizer.cs            |  24 ++++
+ .../FalloutNewVegas/NewVegasArtwork.cs        |  19 ++++
+ .../FalloutNewVegas/NewVegasLoadOrder.cs      |  29 +++++
+ .../FalloutNewVegas/NewVegasPluginHeader.cs   |  33 ++++++
+ .../NexusMods.Games.CreationEngine.csproj     |   1 +
+ .../PluginsFile.cs                            |   4 +-
+ .../Resources/FalloutNewVegas/fallback.png    | Bin 0 -> 2796 bytes
+ .../Services.cs                               |   3 +
+ .../SkyrimSE/SkyrimSE.cs                      |   4 +-
+ .../V1Interop/LocalMappingCache.cs            |  14 ++-
+ tools/FnvSmoke/FnvSmoke.csproj                |   4 +
+ tools/FnvSmoke/Program.cs                     |  71 ++++++++++++
+ 17 files changed, 322 insertions(+), 11 deletions(-)
+ create mode 100644 src/NexusMods.Games.CreationEngine/Abstractions/PluginHeader.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegas.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegasSynchronizer.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasArtwork.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasLoadOrder.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasPluginHeader.cs
+ create mode 100644 src/NexusMods.Games.CreationEngine/Resources/FalloutNewVegas/fallback.png
+ create mode 100644 tools/FnvSmoke/FnvSmoke.csproj
+ create mode 100644 tools/FnvSmoke/Program.cs
+
+diff --git a/src/NexusMods.Games.CreationEngine/Abstractions/ICreationEngineGame.cs b/src/NexusMods.Games.CreationEngine/Abstractions/ICreationEngineGame.cs
+index 086593a..2d225bc 100644
+--- a/src/NexusMods.Games.CreationEngine/Abstractions/ICreationEngineGame.cs
++++ b/src/NexusMods.Games.CreationEngine/Abstractions/ICreationEngineGame.cs
+@@ -14,9 +14,10 @@ namespace NexusMods.Games.CreationEngine.Abstractions;
+ public interface ICreationEngineGame : IGame
+ {
+     public GamePath PluginsFile { get; }
++    public bool PluginsUseStarPrefix => true;
+     /// <summary>
+     /// Parse a plugin file. Currently, this loads only the header of the file, in the future
+     /// we can add flags to load specific groups
+     /// </summary>
+-    public ValueTask<IMod?> ParsePlugin(Hash hash, RelativePath? name = null);
++    public ValueTask<PluginHeader?> ParsePlugin(Hash hash, RelativePath? name = null);
+ }
+diff --git a/src/NexusMods.Games.CreationEngine/Abstractions/PluginHeader.cs b/src/NexusMods.Games.CreationEngine/Abstractions/PluginHeader.cs
+new file mode 100644
+index 0000000..c526600
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/Abstractions/PluginHeader.cs
+@@ -0,0 +1,13 @@
++using Mutagen.Bethesda.Plugins;
++using Mutagen.Bethesda.Plugins.Records;
++
++namespace NexusMods.Games.CreationEngine.Abstractions;
++
++public record PluginMaster(ModKey Master);
++
++// The installer and missing-master diagnostics need only header dependencies.
++public record PluginHeader(ModKey ModKey, IReadOnlyList<PluginMaster> MasterReferences)
++{
++    public static PluginHeader From(IMod mod) => new(mod.ModKey,
++        mod.MasterReferences.Select(master => new PluginMaster(master.Master)).ToArray());
++}
+diff --git a/src/NexusMods.Games.CreationEngine/Emitters/MissingMasterEmitter.cs b/src/NexusMods.Games.CreationEngine/Emitters/MissingMasterEmitter.cs
+index b96f86c..618c43c 100644
+--- a/src/NexusMods.Games.CreationEngine/Emitters/MissingMasterEmitter.cs
++++ b/src/NexusMods.Games.CreationEngine/Emitters/MissingMasterEmitter.cs
+@@ -46,7 +46,7 @@ public async IAsyncEnumerable<Diagnostic> Diagnose(Loadout.ReadOnly loadout, Fro
+         }
+ 
+         // Index the plugins that will be on-disk in the game folder
+-        Dictionary<ModKey, (SyncNode Node, IMod Header)> pluginHeaders = new();
++        Dictionary<ModKey, (SyncNode Node, PluginHeader Header)> pluginHeaders = new();
+         foreach (var (key, node) in plugins)
+         {
+             var header = await _game.ParsePlugin(node.Loadout.Hash, key.Path.FileName);
+diff --git a/src/NexusMods.Games.CreationEngine/Fallout4/Fallout4.cs b/src/NexusMods.Games.CreationEngine/Fallout4/Fallout4.cs
+index c76e9e1..728e446 100644
+--- a/src/NexusMods.Games.CreationEngine/Fallout4/Fallout4.cs
++++ b/src/NexusMods.Games.CreationEngine/Fallout4/Fallout4.cs
+@@ -100,7 +100,7 @@ public ImmutableDictionary<LocationId, AbsolutePath> GetLocations(IFileSystem fi
+     public GamePath GetPrimaryFile(GameInstallation installation) => new(LocationId.Game, "Fallout4.exe");
+ 
+     private static readonly GroupMask EmptyGroupMask = new(false);
+-    public async ValueTask<IMod?> ParsePlugin(Hash hash, RelativePath? name = null)
++    public async ValueTask<PluginHeader?> ParsePlugin(Hash hash, RelativePath? name = null)
+     {
+         var fileName = name?.FileName.ToString() ?? "unknown.esm";
+         var key = ModKey.FromFileName(fileName);
+@@ -108,7 +108,7 @@ public ImmutableDictionary<LocationId, AbsolutePath> GetLocations(IFileSystem fi
+         var meta = ParsingMeta.Factory(BinaryReadParameters.Default, GameRelease.Fallout4, key, stream!);
+         await using var mutagenStream = new MutagenBinaryReadStream(stream!, meta);
+         using var frame = new MutagenFrame(mutagenStream);
+-        return Fallout4Mod.CreateFromBinary(frame, Fallout4Release.Fallout4, EmptyGroupMask);
++        return PluginHeader.From(Fallout4Mod.CreateFromBinary(frame, Fallout4Release.Fallout4, EmptyGroupMask));
+     }
+ 
+     public GamePath PluginsFile => Fallout4KnownPaths.PluginsFile;
+diff --git a/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegas.cs b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegas.cs
+new file mode 100644
+index 0000000..88787f6
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegas.cs
+@@ -0,0 +1,105 @@
++using System.Collections.Immutable;
++using DynamicData.Kernel;
++using Microsoft.Extensions.DependencyInjection;
++using Mutagen.Bethesda;
++using Mutagen.Bethesda.Plugins;
++using Mutagen.Bethesda.Plugins.Binary.Parameters;
++using Mutagen.Bethesda.Plugins.Binary.Streams;
++using Mutagen.Bethesda.Plugins.Records;
++using NexusMods.Abstractions.Diagnostics.Emitters;
++using NexusMods.Abstractions.Games;
++using NexusMods.Abstractions.Library.Installers;
++using NexusMods.Abstractions.Loadouts.Synchronizers;
++using NexusMods.Games.CreationEngine.Abstractions;
++using NexusMods.Games.CreationEngine.Emitters;
++using NexusMods.Games.CreationEngine.Installers;
++using NexusMods.Games.FOMOD;
++using NexusMods.Hashing.xxHash3;
++using NexusMods.Paths;
++using NexusMods.Sdk.FileStore;
++using NexusMods.Sdk.Games;
++using NexusMods.Sdk.IO;
++
++namespace NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++public class FalloutNewVegas : ICreationEngineGame, IGameData<FalloutNewVegas>
++{
++    private readonly IStreamSourceDispatcher _streamSource;
++
++    public static GameId GameId { get; } = GameId.From("CreationEngine.FalloutNewVegas");
++    public static string DisplayName => "Fallout: New Vegas";
++    public static Optional<Sdk.NexusModsApi.NexusModsGameId> NexusModsGameId => Sdk.NexusModsApi.NexusModsGameId.From(130);
++
++    public StoreIdentifiers StoreIdentifiers { get; } = new(GameId)
++    {
++        SteamAppIds = [22380u],
++    };
++
++    public IStreamFactory IconImage { get; } = new NewVegasArtwork("header.jpg");
++    public IStreamFactory TileImage { get; } = new NewVegasArtwork("library_600x900.jpg");
++
++    private readonly Lazy<ILoadoutSynchronizer> _synchronizer;
++    public ILoadoutSynchronizer Synchronizer => _synchronizer.Value;
++    public ILibraryItemInstaller[] LibraryItemInstallers { get; }
++    private readonly Lazy<ISortOrderManager> _sortOrderManager;
++    public ISortOrderManager SortOrderManager => _sortOrderManager.Value;
++    public IDiagnosticEmitter[] DiagnosticEmitters { get; }
++
++    public FalloutNewVegas(IServiceProvider provider)
++    {
++        _streamSource = provider.GetRequiredService<IStreamSourceDispatcher>();
++
++        _synchronizer = new Lazy<ILoadoutSynchronizer>(() => new FalloutNewVegasSynchronizer(provider, this));
++        _sortOrderManager = new Lazy<ISortOrderManager>(() =>
++        {
++            var sortOrderManager = provider.GetRequiredService<SortOrderManager>();
++            sortOrderManager.RegisterSortOrderVarieties([], this);
++            return sortOrderManager;
++        });
++
++        DiagnosticEmitters =
++        [
++            new MissingMasterEmitter(this),
++        ];
++
++        LibraryItemInstallers =
++        [
++            FomodXmlInstaller.Create(provider, new GamePath(LocationId.Game, "Data")),
++            new StopPatternInstaller(provider)
++            {
++                GameId = GameId,
++                GameAliases = ["Fallout New Vegas", "FalloutNV", "New Vegas", "FNV"],
++                TopLevelDirs = KnownPaths.CommonTopLevelFolders,
++                StopPatterns = ["(^|/)nvse(/|$)"],
++                EngineFiles = [
++                    @"nvse_loader\.exe",
++                    @"nvse_.*\.dll",
++                    @"d3d9\.dll",
++                    @"dxgi\.dll",
++                    @"dinput8\.dll",
++                ],
++            }.Build(),
++        ];
++    }
++
++    public ImmutableDictionary<LocationId, AbsolutePath> GetLocations(IFileSystem fileSystem, GameLocatorResult gameLocatorResult)
++    {
++        return new Dictionary<LocationId, AbsolutePath>()
++        {
++            { LocationId.Game, gameLocatorResult.Path },
++            { LocationId.AppData, fileSystem.GetKnownPath(KnownPath.LocalApplicationDataDirectory) / "FalloutNV" },
++            { LocationId.Preferences, fileSystem.GetKnownPath(KnownPath.MyGamesDirectory) / "FalloutNV" },
++        }.ToImmutableDictionary();
++    }
++
++    public GamePath GetPrimaryFile(GameInstallation installation) => new(LocationId.Game, "FalloutNV.exe");
++
++    public async ValueTask<PluginHeader?> ParsePlugin(Hash hash, RelativePath? name = null)
++    {
++        await using var stream = await _streamSource.OpenAsync(hash);
++        return NewVegasPluginHeader.Read(stream ?? throw new FileNotFoundException($"Missing plugin content: {hash}"), name?.FileName.ToString() ?? "unknown.esm");
++    }
++
++    public GamePath PluginsFile => new(LocationId.AppData, "plugins.txt");
++    public bool PluginsUseStarPrefix => false;
++}
+diff --git a/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegasSynchronizer.cs b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegasSynchronizer.cs
+new file mode 100644
+index 0000000..e10cbe9
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/FalloutNewVegasSynchronizer.cs
+@@ -0,0 +1,24 @@
++using NexusMods.Abstractions.Loadouts;
++using NexusMods.Abstractions.Loadouts.Synchronizers;
++using NexusMods.Games.CreationEngine.Abstractions;
++using NexusMods.Sdk.Games;
++using NexusMods.Sdk.Loadouts;
++
++namespace NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++public class FalloutNewVegasSynchronizer(IServiceProvider provider, ICreationEngineGame game)
++    : ACreationEngineSynchronizer(provider, game)
++{
++    public override async Task<Loadout.ReadOnly> Synchronize(Loadout.ReadOnly loadout, SynchronizeLoadoutJob? job = null)
++    {
++        var result = await base.Synchronize(loadout, job);
++        var locations = result.InstallationInstance.Locations;
++        var plugins = locations.ToAbsolutePath(game.PluginsFile).ToString();
++        if (File.Exists(plugins))
++        {
++            var data = locations.ToAbsolutePath(new GamePath(LocationId.Game, "Data")).ToString();
++            NewVegasLoadOrder.Apply(data, await File.ReadAllLinesAsync(plugins));
++        }
++        return result;
++    }
++}
+diff --git a/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasArtwork.cs b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasArtwork.cs
+new file mode 100644
+index 0000000..468f54a
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasArtwork.cs
+@@ -0,0 +1,19 @@
++using NexusMods.Paths;
++using NexusMods.Sdk.IO;
++
++namespace NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++// Resolve artwork from the user's Steam cache instead of redistributing game artwork.
++internal sealed class NewVegasArtwork(string name) : IStreamFactory
++{
++    public RelativePath FileName => name;
++    public ValueTask<Stream> GetStreamAsync()
++    {
++        var root = Environment.GetEnvironmentVariable("NMA_FNV_ARTWORK") ?? Path.Combine(
++            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/Steam/appcache/librarycache/22380");
++        var path = Path.Combine(root, name);
++        if (File.Exists(path)) return ValueTask.FromResult<Stream>(File.OpenRead(path));
++        return new EmbeddedResourceStreamFactory<NewVegasArtwork>(
++            "NexusMods.Games.CreationEngine.Resources.FalloutNewVegas.fallback.png").GetStreamAsync();
++    }
++}
+diff --git a/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasLoadOrder.cs b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasLoadOrder.cs
+new file mode 100644
+index 0000000..002819b
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasLoadOrder.cs
+@@ -0,0 +1,29 @@
++namespace NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++public static class NewVegasLoadOrder
++{
++    // New Vegas reads activation from plugins.txt and ordering from file modification times.
++    public static void Apply(string dataDirectory, IEnumerable<string> activePlugins)
++    {
++        var plugins = activePlugins.Select(line => line.Trim())
++            .Where(line => line.Length != 0 && !line.StartsWith('#'))
++            .ToArray();
++        // Validate the complete list before changing anything on disk.
++        foreach (var plugin in plugins)
++        {
++            if (plugin.Contains('/') || plugin.Contains('\\') || plugin.StartsWith('*') ||
++                !(plugin.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) || plugin.EndsWith(".esp", StringComparison.OrdinalIgnoreCase)))
++                throw new InvalidDataException($"Invalid New Vegas plugin filename: {plugin}");
++        }
++        var paths = plugins.Distinct(StringComparer.OrdinalIgnoreCase)
++            .Select(plugin => Path.Combine(dataDirectory, plugin)).ToArray();
++        foreach (var path in paths)
++            if (!File.Exists(path)) throw new FileNotFoundException("Active plugin is missing", path);
++        var timestamp = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
++        foreach (var path in paths)
++        {
++            File.SetLastWriteTimeUtc(path, timestamp);
++            timestamp = timestamp.AddMinutes(1);
++        }
++    }
++}
+diff --git a/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasPluginHeader.cs b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasPluginHeader.cs
+new file mode 100644
+index 0000000..43c9b1c
+--- /dev/null
++++ b/src/NexusMods.Games.CreationEngine/FalloutNewVegas/NewVegasPluginHeader.cs
+@@ -0,0 +1,33 @@
++using System.Text;
++using Mutagen.Bethesda.Plugins;
++using NexusMods.Games.CreationEngine.Abstractions;
++
++namespace NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++public static class NewVegasPluginHeader
++{
++    public static PluginHeader Read(Stream stream, string filename)
++    {
++        using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
++        if (reader.ReadUInt32() != 0x34534554) throw new InvalidDataException("Expected a TES4 record header");
++        var size = reader.ReadUInt32();
++        if (size > 16 * 1024 * 1024) throw new InvalidDataException("Plugin header exceeds 16 MiB");
++        if (reader.ReadBytes(16).Length != 16) throw new EndOfStreamException();
++        var payload = reader.ReadBytes((int)size);
++        if (payload.Length != size) throw new EndOfStreamException();
++        using var records = new BinaryReader(new MemoryStream(payload));
++        var masters = new List<PluginMaster>();
++        while (records.BaseStream.Position < payload.Length)
++        {
++            var type = records.ReadUInt32();
++            var length = records.ReadUInt16();
++            var data = records.ReadBytes(length);
++            if (data.Length != length) throw new EndOfStreamException();
++            if (type != 0x5453414d) continue; // MAST
++            if (data.Length == 0 || data[^1] != 0) throw new InvalidDataException("Unterminated master name");
++            var master = Encoding.UTF8.GetString(data, 0, data.Length - 1);
++            masters.Add(new PluginMaster(ModKey.FromFileName(master)));
++        }
++        return new PluginHeader(ModKey.FromFileName(filename), masters);
++    }
++}
+diff --git a/src/NexusMods.Games.CreationEngine/NexusMods.Games.CreationEngine.csproj b/src/NexusMods.Games.CreationEngine/NexusMods.Games.CreationEngine.csproj
+index af844dd..eb7bc44 100644
+--- a/src/NexusMods.Games.CreationEngine/NexusMods.Games.CreationEngine.csproj
++++ b/src/NexusMods.Games.CreationEngine/NexusMods.Games.CreationEngine.csproj
+@@ -15,6 +15,7 @@
+       <EmbeddedResource Include="Resources\Fallout4\thumbnail.webp" />
+       <None Remove="Resources\Fallout4\tile.webp" />
+       <EmbeddedResource Include="Resources\Fallout4\tile.webp" />
++      <EmbeddedResource Include="Resources\FalloutNewVegas\fallback.png" />
+     </ItemGroup>
+     <ItemGroup>
+       <PackageReference Include="Mutagen.Bethesda.Fallout4" />
+diff --git a/src/NexusMods.Games.CreationEngine/PluginsFile.cs b/src/NexusMods.Games.CreationEngine/PluginsFile.cs
+index 40ce5f0..f7f28c2 100644
+--- a/src/NexusMods.Games.CreationEngine/PluginsFile.cs
++++ b/src/NexusMods.Games.CreationEngine/PluginsFile.cs
+@@ -23,7 +23,7 @@ public class PluginsFile : IIntrinsicFile
+     private readonly ISorter _sorter;
+     private readonly ILogger<PluginsFile> _logger;
+ 
+-    private record struct Metadata(RelativePath FileName, ModKey ModKey, Hash Hash, IMod Mod);
++    private record struct Metadata(RelativePath FileName, ModKey ModKey, Hash Hash, PluginHeader Mod);
+ 
+     public PluginsFile(ILogger<PluginsFile> logger, ICreationEngineGame game, ISorter sorter)
+     {
+@@ -56,7 +56,7 @@ public async Task Write(Stream stream, Loadout.ReadOnly loadout, Dictionary<Game
+ 
+         foreach (var plugin in sorted)
+         {
+-            await sw.WriteLineAsync($"*{plugin.FileName}");
++            await sw.WriteLineAsync($"{(_game.PluginsUseStarPrefix ? "*" : "")}{plugin.FileName}");
+         }
+ 
+         await sw.FlushAsync();
+diff --git a/src/NexusMods.Games.CreationEngine/Resources/FalloutNewVegas/fallback.png b/src/NexusMods.Games.CreationEngine/Resources/FalloutNewVegas/fallback.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2c3bee7b065fa85d3aa9f052738406d0a703dd5
+GIT binary patch
+literal 2796
+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
+U_2kMb1_lNOPgg&ebxsLQ0D&Mw@c;k-
+
+literal 0
+HcmV?d00001
+
+diff --git a/src/NexusMods.Games.CreationEngine/Services.cs b/src/NexusMods.Games.CreationEngine/Services.cs
+index c6476f9..19ac9f2 100644
+--- a/src/NexusMods.Games.CreationEngine/Services.cs
++++ b/src/NexusMods.Games.CreationEngine/Services.cs
+@@ -14,6 +14,9 @@ public static IServiceCollection AddCreationEngine(this IServiceCollection servi
+         services.AddGame<Fallout4.Fallout4>();
+         services.AddSingleton<ITool>(s => RunGameViaScriptExtenderTool<Fallout4.Fallout4>.Create(s, KnownPaths.F4SELoader));
+ 
++        services.AddGame<FalloutNewVegas.FalloutNewVegas>();
++        services.AddSingleton<ITool>(s => RunGameViaScriptExtenderTool<FalloutNewVegas.FalloutNewVegas>.Create(s, new NexusMods.Sdk.Games.GamePath(NexusMods.Sdk.Games.LocationId.Game, "nvse_loader.exe")));
++
+         return services;
+     }
+ }
+diff --git a/src/NexusMods.Games.CreationEngine/SkyrimSE/SkyrimSE.cs b/src/NexusMods.Games.CreationEngine/SkyrimSE/SkyrimSE.cs
+index 9c48055..b4cc822 100644
+--- a/src/NexusMods.Games.CreationEngine/SkyrimSE/SkyrimSE.cs
++++ b/src/NexusMods.Games.CreationEngine/SkyrimSE/SkyrimSE.cs
+@@ -96,7 +96,7 @@ public ImmutableDictionary<LocationId, AbsolutePath> GetLocations(IFileSystem fi
+     public GamePath GetPrimaryFile(GameInstallation installation) => new(LocationId.Game, "SkyrimSE.exe");
+ 
+     private static readonly GroupMask EmptyGroupMask = new(false);
+-    public async ValueTask<IMod?> ParsePlugin(Hash hash, RelativePath? name = null)
++    public async ValueTask<PluginHeader?> ParsePlugin(Hash hash, RelativePath? name = null)
+     {
+         var fileName = name?.FileName.ToString() ?? "unknown.esm";
+         var key = ModKey.FromFileName(fileName);
+@@ -104,7 +104,7 @@ public ImmutableDictionary<LocationId, AbsolutePath> GetLocations(IFileSystem fi
+         var meta = ParsingMeta.Factory(BinaryReadParameters.Default, GameRelease.SkyrimSE, key, stream!);
+         await using var mutagenStream = new MutagenBinaryReadStream(stream!, meta);
+         using var frame = new MutagenFrame(mutagenStream);
+-        return SkyrimMod.CreateFromBinary(frame, SkyrimRelease.SkyrimSE, EmptyGroupMask);
++        return PluginHeader.From(SkyrimMod.CreateFromBinary(frame, SkyrimRelease.SkyrimSE, EmptyGroupMask));
+     }
+ 
+     public GamePath PluginsFile => new(LocationId.AppData, "Plugins.txt");
+diff --git a/src/NexusMods.Networking.NexusWebApi/V1Interop/LocalMappingCache.cs b/src/NexusMods.Networking.NexusWebApi/V1Interop/LocalMappingCache.cs
+index 22e9b1c..113d821 100644
+--- a/src/NexusMods.Networking.NexusWebApi/V1Interop/LocalMappingCache.cs
++++ b/src/NexusMods.Networking.NexusWebApi/V1Interop/LocalMappingCache.cs
+@@ -69,9 +69,17 @@ internal static bool TryParseJsonFile(
+                 .Select(x => (Id: NexusModsGameId.From(x.Id), Domain: GameDomain.From(x.DomainName)))
+                 .ToArray();
+ 
+-            gameIdToDomain = pairs.DistinctBy(tuple => tuple.Id).ToFrozenDictionary(tuple => tuple.Id, tuple => tuple.Domain);
+-            gameDomainToId = pairs.DistinctBy(tuple => tuple.Domain).ToFrozenDictionary(tuple => tuple.Domain, tuple => tuple.Id);
+-            Debug.Assert(gameIdToDomain.Count == gameDomainToId.Count);
++            // The live metadata feed can contain duplicate domains (for example two
++            // different IDs named "neverwinter"). Let the fallback resolve ambiguous
++            // entries instead of crashing Debug builds or choosing an arbitrary ID.
++            var distinct = pairs.Distinct().ToArray();
++            var duplicateIds = distinct.GroupBy(pair => pair.Id).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
++            var duplicateDomains = distinct.GroupBy(pair => pair.Domain).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
++            var unique = distinct.Where(pair => !duplicateIds.Contains(pair.Id) && !duplicateDomains.Contains(pair.Domain)).ToArray();
++            if (unique.Length != distinct.Length)
++                logger.LogWarning("Excluded {Count} ambiguous game mappings from local cache", distinct.Length - unique.Length);
++            gameIdToDomain = unique.ToFrozenDictionary(tuple => tuple.Id, tuple => tuple.Domain);
++            gameDomainToId = unique.ToFrozenDictionary(tuple => tuple.Domain, tuple => tuple.Id);
+             return true;
+         }
+         catch (Exception e)
+diff --git a/tools/FnvSmoke/FnvSmoke.csproj b/tools/FnvSmoke/FnvSmoke.csproj
+new file mode 100644
+index 0000000..921b4ff
+--- /dev/null
++++ b/tools/FnvSmoke/FnvSmoke.csproj
+@@ -0,0 +1,4 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
++  <ItemGroup><ProjectReference Include="../../src/NexusMods.Games.CreationEngine/NexusMods.Games.CreationEngine.csproj" /></ItemGroup>
++</Project>
+diff --git a/tools/FnvSmoke/Program.cs b/tools/FnvSmoke/Program.cs
+new file mode 100644
+index 0000000..7884a1c
+--- /dev/null
++++ b/tools/FnvSmoke/Program.cs
+@@ -0,0 +1,71 @@
++using System.Text;
++using NexusMods.Games.CreationEngine.FalloutNewVegas;
++
++static MemoryStream Plugin(params string[] masters)
++{
++    using var payload = new MemoryStream();
++    using (var data = new BinaryWriter(payload, Encoding.UTF8, true))
++        foreach (var master in masters)
++        {
++            var bytes = Encoding.UTF8.GetBytes(master + "\0");
++            data.Write(Encoding.ASCII.GetBytes("MAST")); data.Write((ushort)bytes.Length); data.Write(bytes);
++            data.Write(Encoding.ASCII.GetBytes("DATA")); data.Write((ushort)8); data.Write(0L);
++        }
++    var stream = new MemoryStream();
++    using (var writer = new BinaryWriter(stream, Encoding.UTF8, true))
++    {
++        writer.Write(Encoding.ASCII.GetBytes("TES4")); writer.Write((uint)payload.Length); writer.Write(new byte[16]); writer.Write(payload.ToArray());
++    }
++    stream.Position = 0; return stream;
++}
++
++using (var stream = Plugin("FalloutNV.esm", "DeadMoney.esm"))
++{
++    var header = NewVegasPluginHeader.Read(stream, "Example.esp");
++    if (header.ModKey.FileName.String != "Example.esp" || header.MasterReferences.Count != 2 ||
++        header.MasterReferences[1].Master.FileName.String != "DeadMoney.esm") throw new Exception("Master header parse failed");
++}
++using (var stream = Plugin())
++    if (NewVegasPluginHeader.Read(stream, "FalloutNV.esm").MasterReferences.Count != 0) throw new Exception("Base master failed");
++using (var stream = new MemoryStream(new byte[24]))
++{
++    try { NewVegasPluginHeader.Read(stream, "Bad.esp"); throw new Exception("Accepted malformed header"); }
++    catch (InvalidDataException) { }
++}
++using (var stream = Plugin("FalloutNV.esm"))
++{
++    stream.SetLength(stream.Length - 1);
++    try { NewVegasPluginHeader.Read(stream, "Truncated.esp"); throw new Exception("Accepted truncated header"); }
++    catch (EndOfStreamException) { }
++}
++var temporaryData = Path.Combine(Path.GetTempPath(), "nma-fnv-order-" + Guid.NewGuid());
++Directory.CreateDirectory(temporaryData);
++try
++{
++    foreach (var name in new[] { "FalloutNV.esm", "Example.esp" }) File.WriteAllBytes(Path.Combine(temporaryData, name), []);
++    NewVegasLoadOrder.Apply(temporaryData, ["# Fixture", "FalloutNV.esm", "Example.esp"]);
++    var original = File.GetLastWriteTimeUtc(Path.Combine(temporaryData, "FalloutNV.esm"));
++    if (original >= File.GetLastWriteTimeUtc(Path.Combine(temporaryData, "Example.esp"))) throw new Exception("Timestamp order failed");
++    try { NewVegasLoadOrder.Apply(temporaryData, ["../escape.esp"]); throw new Exception("Accepted path traversal"); }
++    catch (InvalidDataException) { }
++    if (original != File.GetLastWriteTimeUtc(Path.Combine(temporaryData, "FalloutNV.esm"))) throw new Exception("Invalid input changed files");
++}
++finally { Directory.Delete(temporaryData, recursive: true); }
++Console.WriteLine("PASS: timestamp load order in temporary fixture directory and invalid path rejection");
++Console.WriteLine("PASS: plugin masters, base master, invalid signature, truncated payload");
++if (args.Length > 0)
++{
++    var count = 0;
++    foreach (var file in Directory.EnumerateFiles(args[0]).Where(file => Path.GetExtension(file).Equals(".esm", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(file).Equals(".esp", StringComparison.OrdinalIgnoreCase)))
++    {
++        using var stream = File.OpenRead(file);
++        var header = NewVegasPluginHeader.Read(stream, Path.GetFileName(file));
++        if (Path.GetFileName(file).Equals("DeadMoney.esm", StringComparison.OrdinalIgnoreCase) &&
++            !header.MasterReferences.Any(master => master.Master.FileName.String.Equals("FalloutNV.esm", StringComparison.OrdinalIgnoreCase)))
++            throw new Exception("DeadMoney.esm must reference FalloutNV.esm");
++        Console.WriteLine($"{header.ModKey}: {string.Join(", ", header.MasterReferences.Select(master => master.Master))}");
++        count++;
++    }
++    if (count == 0) throw new Exception("No installed plugins found");
++    Console.WriteLine($"PASS: read {count} installed plugin headers without writing game files");
++}
+-- 
+2.50.1
+

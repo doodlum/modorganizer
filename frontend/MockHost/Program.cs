@@ -1,3 +1,5 @@
+using System.Reactive.Linq;
+using NexusMods.App.UI.Controls.Navigation;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -63,11 +65,11 @@ public partial class MockApp : Application
         {
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"),
                 RowDefinitions = new RowDefinitions("Auto,*,48") };
-            Add(grid, new Spine { ViewModel = new SpineDesignViewModel() }, 0, 0, rowSpan: 2);
             var scenario = new ScenarioWorkspace();
+            Add(grid, new Spine { ViewModel = new ScenarioSpine(scenario) }, 0, 0, rowSpan: 2);
             var topbar = new ScenarioTopBar(scenario.WorkspaceController);
             Add(grid, new TopBarView { ViewModel = topbar }, 1, 0, columnSpan: 2);
-            Add(grid, new HomeLeftMenuView { ViewModel = new HomeLeftMenuDesignViewModel() }, 1, 1);
+            Add(grid, new HomeLeftMenuView { ViewModel = scenario.HomeMenu }, 1, 1);
             Add(grid, new WorkspaceView { ViewModel = scenario.WorkspaceController.ActiveWorkspace,
                 Margin = new Thickness(0, 0, 12, 12) }, 2, 1);
             var window = new Window { Title = "Mod Organizer — Nexus frontend scenarios", Width = 1440, Height = 900,
@@ -76,6 +78,8 @@ public partial class MockApp : Application
             desktop.MainWindow = window;
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => VerifyWorkspace(scenario), TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_SCENARIOS") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifyScenarios(scenario), TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => {
@@ -86,6 +90,31 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyScenarios(ScenarioWorkspace scenario)
+    {
+        var data = scenario.Data;
+        await data.Game.AddGameCommand.Execute();
+        if (data.Section.Loadouts.Count != 1 || data.Sections.Count != 1) throw new InvalidOperationException("Add game did not create its loadout");
+        var first = data.Section.Loadouts.Single();
+        await first.CloneLoadoutCommand.Execute();
+        if (data.Section.Loadouts.Count != 2 || first.IsLastLoadout) throw new InvalidOperationException("Clone loadout failed");
+        await data.Section.Loadouts.Last().DeleteLoadoutCommand.Execute();
+        if (data.Section.Loadouts.Count != 1 || !first.IsLastLoadout) throw new InvalidOperationException("Delete loadout failed");
+        await data.Game.RemoveAllLoadoutsCommand.Execute();
+        if (data.Sections.Count != 0 || data.Section.Loadouts.Count != 0) throw new InvalidOperationException("Remove game failed");
+        await data.Game.AddGameCommand.Execute();
+        await data.Section.Loadouts.Single().CloneLoadoutCommand.Execute();
+        await scenario.HomeMenu.LeftMenuItemMyLoadouts.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        var workspace = scenario.WorkspaceController.ActiveWorkspace;
+        if (workspace.SelectedTab.Contents.ViewModel is not ScenarioLoadoutsPage page || page.GameSectionViewModels.Count != 1)
+            throw new InvalidOperationException("Sidebar loadout navigation failed");
+        await workspace.SelectedTab.GoBackInHistoryCommand.Execute();
+        if (workspace.SelectedTab.Contents.ViewModel is not ScenarioGamesPage) throw new InvalidOperationException("History back failed");
+        await workspace.SelectedTab.GoForwardInHistoryCommand.Execute();
+        if (workspace.SelectedTab.Contents.ViewModel is not ScenarioLoadoutsPage) throw new InvalidOperationException("History forward failed");
+        Console.WriteLine("PASS: fake game add/remove; loadout create/clone/delete; sidebar navigation; back/forward history");
     }
 
     private static void VerifyWorkspace(ScenarioWorkspace scenario)
