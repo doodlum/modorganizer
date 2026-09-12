@@ -22,7 +22,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             actions.Children.Add(button);
         }
         var details = new TextBlock { Name = "Mo2PluginDiagnostics", TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(12) };
-        var detailScroll = new ScrollViewer { Content = details, MaxHeight = 180, IsVisible = false };
+        var detailScroll = new ScrollViewer { Content = details, Height = 150, IsVisible = false };
         DockPanel.SetDock(detailScroll, Dock.Bottom); layout.Children.Add(detailScroll);
         actions.IsEnabled = false;
         DockPanel.SetDock(actions, Dock.Top); layout.Children.Add(actions);
@@ -39,7 +39,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
                 actions.IsEnabled = selected.Any(x => x.CanToggle);
                 details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
-                detailScroll.IsVisible = selected.Length > 0;
+                if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";
+                detailScroll.IsVisible = profile.ProfilePath.Length > 0;
             }
             void UpdateConnection() {
                 var connected = profile.ProfilePath.Length > 0;

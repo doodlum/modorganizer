@@ -22,15 +22,15 @@ internal sealed class Mo2ModsAdapter(IServiceProvider services) : LoadoutTreeDat
     public static readonly ComponentKey ConflictsKey = ComponentKey.From("MO2.Conflicts");
     public static readonly ComponentKey FlagsKey = ComponentKey.From("MO2.Flags");
     protected override IColumn<CompositeItemModel<EntityId>>[] CreateColumns(bool viewHierarchical) => [
-        new TextColumn<CompositeItemModel<EntityId>, string>("Priority", item => item.Get<ValueComponent<string>>(PriorityTextKey).Value.Value, width: new GridLength(60),
+        new TextColumn<CompositeItemModel<EntityId>, string>("Priority", item => item.Get<ValueComponent<string>>(PriorityTextKey).Value.Value, width: new GridLength(70),
             options: new TextColumnOptions<CompositeItemModel<EntityId>> { CompareAscending = (a, b) => a!.Get<ValueComponent<int>>(PriorityKey).Value.Value.CompareTo(b!.Get<ValueComponent<int>>(PriorityKey).Value.Value) }),
-        viewHierarchical ? ITreeDataGridItemModel<CompositeItemModel<EntityId>, EntityId>.CreateExpanderColumn(ColumnCreator.Create<EntityId, SharedColumns.Name>(width: new GridLength(1, GridUnitType.Star))) : ColumnCreator.Create<EntityId, SharedColumns.Name>(width: new GridLength(1, GridUnitType.Star)),
+        viewHierarchical ? ITreeDataGridItemModel<CompositeItemModel<EntityId>, EntityId>.CreateExpanderColumn(ColumnCreator.Create<EntityId, SharedColumns.Name>(width: new GridLength(180))) : ColumnCreator.Create<EntityId, SharedColumns.Name>(width: new GridLength(180)),
         new TemplateColumn<CompositeItemModel<EntityId>>("Conflicts / status", new FuncDataTemplate<CompositeItemModel<EntityId>>((item, _) => {
             if (item is null) return new TextBlock();
             var text = string.Join("\n", new[] { item.Get<ValueComponent<string>>(ConflictsKey).Value.Value, item.Get<ValueComponent<string>>(FlagsKey).Value.Value }.Where(x => x.Length > 0));
             var label = new TextBlock { Text = text, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
             ToolTip.SetTip(label, text); return label;
-        }), width: new GridLength(145)),
+        }), width: new GridLength(115)),
         ColumnCreator.Create<EntityId, LoadoutColumns.EnabledState>(width: new GridLength(70)),
     ];
 }

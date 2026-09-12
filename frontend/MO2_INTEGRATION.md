@@ -378,3 +378,35 @@ frontend order was submitted. Final host priorities and activation matched the
 initial snapshot. The check invokes the shared MoveItems path directly; it does
 not claim to test pointer gesture recognition or drag visuals. Build passed
 with the existing upstream OpenTelemetry NU1902 warning.
+
+### Pointer drag and stable panel layout — 2026-09-12
+
+Manual navigation from the default My Games page exposed two layout issues
+that the preconnected screenshot checks had missed. The star-sized mod name
+column could collapse after the initially empty table acquired rows. It now
+has a readable initial pixel width; priority, status and action widths fit the
+two-panel Steam Deck view, and columns remain resizable. Opening plugin
+diagnostics on selection also shifted rows during the start of a drag. The
+details area now reserves a stable 150-pixel height while connected and shows
+a selection hint when empty.
+
+The desktop uses Wayland; X11 pointer injection did not reliably reach visible
+controls. Verification used a temporary Linux uinput absolute mouse, including
+real button press, pointer motion and release, through the normal visible NMA
+rows. It navigated My Games → FNV → Frontend Test, dismissed the ordering hint,
+scrolled the plugin list, and dragged MCM from native priority 13 to 12. A fresh
+MO2 snapshot confirmed the change. After the layout fix and normal frontend
+restart/navigation, a drag of the unselected MCM row restored it to priority 13
+without the details area moving the table. The complete plugin snapshot and
+profile identity matched the initial snapshot exactly.
+
+A pointer drag of fixed FalloutNV.esm down the list also left the complete
+native snapshot unchanged. Evidence in ignored artifacts: pointer-drag-before,
+pointer-drag-moved, pointer-drag-restored and pointer-drag-fixed JSON files,
+plus pointer-drag-restored.png and pointer-drag-fixed.png. The virtual input
+device closes after each gesture; no input daemon or test driver remains.
+
+This establishes single-plugin pointer drag and a fixed-plugin rejection on
+FNV. Multi-selection gestures, panel drag arrangements and broader diagnostics
+remain separate verification work. The frontend build passes with the existing
+upstream OpenTelemetry NU1902 warning.

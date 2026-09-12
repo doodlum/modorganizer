@@ -100,7 +100,7 @@ acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
 - Expand verification of native plugin diagnostics, including missing-master and LOOT messages.
-- Verify panel drag/drop, history and state restoration more broadly.
+- Verify multi-selection plugin gestures, panel drag/drop, history and state restoration more broadly. Single-plugin pointer reorder and fixed-plugin rejection have passed against FNV.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.
 
