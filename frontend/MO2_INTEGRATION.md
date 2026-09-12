@@ -182,3 +182,20 @@ Steam metadata (with MO2_STEAM_RUNTIME override for another library). The next
 frontend/MO2/NVSE launch reached the full windowed menu with MCM Extensions loaded,
 accepted New Game, and played the intro. Three isolated launcher tests passed
 for argument preservation with spaces, missing runtime, and explicit override.
+That session subsequently rendered Doc Mitchell's room, processed DLC inventory
+messages, accepted the character name and opened character creation. The game
+detected two XInput controllers while the keyboard/mouse test could not
+operate the remaining controls. The isolated profile's next test sets
+`bDisable360Controller=1` under `[Interface]` in FalloutPrefs.ini; the game binary
+contains that exact setting name, and the retry restored the mouse cursor.
+The game console confirmed that value is 1, and Escape could skip the intro
+and open the pause menu. Character-creation mouse navigation still did not
+respond; the controller setting alone has not resolved that remaining issue.
+Original test INIs are preserved in `artifacts/fnv-before-keyboard-test`.
+MCM's in-game menu and the disabled-mod comparison are still pending.
+With controller input disabled, the in-game console in Doc Mitchell's room
+reported xNVSE 6.4.8 and `GetModIndex "The Mod Configuration Menu.esp"` returned
+`0A`. `artifacts/fnv-mcm-esp-loaded.png` captures the result. This establishes
+actual ESP loading through the frontend/MO2 launch, beyond the DLL log. The
+game also auto-loaded the DLCs, putting MCM after them despite their inactive
+checkboxes in the host; this load-order difference still needs investigation.
