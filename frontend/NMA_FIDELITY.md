@@ -103,3 +103,35 @@ startup splash/console suppression. The current shared profile workspace also
 needs an audit of profile-specific tabs and historical diagnostic details;
 passing the live list switch check does not prove every tab has the right
 profile lifetime.
+
+## Native mods page
+
+The live mod panel now embeds NMA's original `LoadoutView`: its page header,
+Mods/Rules tabs, search control, selection toolbar, table and row menus. The
+MO2 adapter supplies priority, name, conflicts/status and activation columns.
+Its default root ordering follows numeric MO2 priority after data updates.
+The Rules tab uses the same MO2-backed plugin order as the right-hand panel.
+
+View files routes to MO2's existing mod details dialog; the empty-state Downloads
+button routes to the MO2 download folder page. Publishing and collection controls
+are not enabled. Priority actions use native toolbar buttons. Overwrite retains
+file access but cannot be activated, removed or moved.
+
+`MO2_VERIFY_NATIVE_MODS=1` and `MO2_VERIFY_CONTROLS=1` passed against the isolated
+FNV profile: native search/clear, row selection/deselection, activation/restoration,
+Overwrite restrictions, Rules tab data, plugin activation independence and mod
+priority movement/restoration. Original state was restored. Evidence:
+`artifacts/native-mods-verified.png` and `/tmp/mo2-native-mods-check.log`.
+The launch/header rows and startup-window suppression remain separate work.
+
+The native View files toolbar control opened MO2's actual Overwrite dialog and
+returned successfully after it was closed (`/tmp/mo2-native-mods-files.log`,
+`artifacts/native-mods-files-return.png`). The screenshot attempt while the
+dialog was open produced no file; the return screenshot and runtime action
+check are the available evidence.
+
+Cross-game verification also passed with the native mods view: Skyrim's 151
+mod rows and 150 plugins matched an independent MO2 snapshot, including eight
+mods with native conflict messages. The default row order remained numeric
+MO2 priority on Skyrim and after returning to FNV. Evidence:
+`/tmp/mo2-native-mods-cross-game.log` and `artifacts/native-mods-cross-game.png`.

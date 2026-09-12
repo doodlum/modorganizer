@@ -9,14 +9,20 @@ using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages;
 using NexusMods.App.UI.Pages.LoadoutPage;
 using NexusMods.MnemonicDB.Abstractions;
+using NexusMods.UI.Sdk.Icons;
 using R3;
 using ReactiveUI;
 
 namespace Mo2.Frontend;
 
 // Reuses the upstream table and activation messages with MO2-specific columns.
-internal sealed class Mo2ModsAdapter(IServiceProvider services) : LoadoutTreeDataGridAdapter(services, new LoadoutFilter { LoadoutId = default, CollectionGroupId = default })
+internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
 {
+    public Mo2ModsAdapter(IServiceProvider services) : base(services, new LoadoutFilter { LoadoutId = default, CollectionGroupId = default })
+    {
+        CustomSortComparer.Value = Comparer<CompositeItemModel<EntityId>>.Create((a, b) =>
+            a.Get<ValueComponent<int>>(PriorityKey).Value.Value.CompareTo(b.Get<ValueComponent<int>>(PriorityKey).Value.Value));
+    }
     public static readonly ComponentKey PriorityKey = ComponentKey.From("MO2.Priority");
     public static readonly ComponentKey PriorityTextKey = ComponentKey.From("MO2.PriorityText");
     public static readonly ComponentKey ConflictsKey = ComponentKey.From("MO2.Conflicts");
@@ -37,41 +43,45 @@ internal sealed class Mo2ModsAdapter(IServiceProvider services) : LoadoutTreeDat
 
 internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
 {
-    private TreeDataGrid Table { get; } = new();
+    public LoadoutView NativeView { get; } = new();
     public Mo2ModsView()
     {
-        var table = Table;
-        table.ShowColumnHeaders = true; table.CanUserResizeColumns = true; table.CanUserSortColumns = true; table.Margin = new Thickness(12);
-        table.Classes.Add("MainListsStyling");
-        var layout = new DockPanel();
-        var title = new TextBlock { Text = "Mods", FontSize = 22, Margin = new Thickness(16) };
-        var header = new StackPanel { Spacing = 4 };
-        header.Children.Add(title);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Margin = new Thickness(12, 0), Spacing = 8 };
-        foreach (var (label, delta) in new[] { ("Move earlier", -1), ("Move later", 1) }) {
-            var button = new Button { Content = label };
+        var native = NativeView;
+        Content = native;
+        var header = native.FindControl<NexusMods.App.UI.Controls.PageHeader.PageHeader>("AllPageHeader")!;
+        header.Title = "My Mods";
+        header.Description = "Installed mods in the selected MO2 profile.";
+        var empty = native.FindControl<EmptyState>("EmptyState")!;
+        if (empty.Subtitle is StackPanel subtitle)
+            subtitle.Children.OfType<TextBlock>().First().Text = "Install mods from your MO2 downloads folder.";
+        native.FindControl<StandardButton>("ViewLibraryButton")!.Text = "Downloads";
+        ToolTip.SetTip(native.FindControl<StandardButton>("ViewFilesButton")!, "View this mod’s files and conflicts in MO2");
+        var group = native.FindControl<ItemsControl>("ContextControlGroup")!;
+        var moves = new List<StandardButton>();
+        foreach (var delta in new[] { -1, 1 }) {
+            var button = new StandardButton { ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
+                LeftIcon = delta < 0 ? IconValues.ArrowUp : IconValues.ArrowDown, Size = StandardButton.Sizes.Toolbar,
+                Fill = StandardButton.Fills.None, Type = StandardButton.Types.Tertiary,
+                Name = delta < 0 ? "MoveModEarlierButton" : "MoveModLaterButton" };
+            var description = delta < 0 ? "Move earlier in MO2 priority" : "Move later in MO2 priority";
+            ToolTip.SetTip(button, description);
+            Avalonia.Automation.AutomationProperties.SetName(button, description);
             button.Click += async (_, _) => {
                 if (ViewModel is { LiveProfile: { } profile } model && model.Adapter.SelectedModels.Count == 1)
                     await profile.MoveMod(model.Adapter.SelectedModels.Single().Key, delta);
             };
-            ToolTip.SetTip(button, "Change the selected mod’s MO2 priority");
-            actions.Children.Add(button);
+            group.Items.Add(button); moves.Add(button);
         }
-        var details = new Button { Content = "Details in MO2" };
-        ToolTip.SetTip(details, "Open MO2’s conflict and file details for the selected mod");
-        details.Click += async (_, _) => {
-            if (ViewModel is { LiveProfile: { } profile } model && model.Adapter.SelectedModels.Count == 1)
-                await profile.ShowModDetails(model.Adapter.SelectedModels.Single().Key);
-        };
-        actions.Children.Add(details);
-        actions.IsEnabled = false;
-        header.Children.Add(actions);
-        DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header); layout.Children.Add(table); Content = layout;
-        TreeDataGridViewHelper.SetupTreeDataGridAdapter<Mo2ModsView, ScenarioInstalledPage, CompositeItemModel<EntityId>, EntityId>(this, table, vm => vm.Adapter);
         this.WhenActivated(disposables => {
+            this.OneWayBind(ViewModel, vm => vm, view => view.NativeView.ViewModel).AddTo(disposables);
             ViewModel!.Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true)
-                .Subscribe(count => actions.IsEnabled = count == 1).AddTo(disposables);
-            this.OneWayBind(ViewModel, vm => vm.Adapter.Source.Value, view => view.Table.Source).AddTo(disposables);
+                .Subscribe(count => {
+                    var selected = ViewModel.Adapter.SelectedModels.Select(x => x.Key).ToHashSet();
+                    var mods = ViewModel.LiveProfile!.Mods.Where(x => selected.Contains(x.Id)).ToArray();
+                    foreach (var button in moves) button.IsEnabled = count == 1 && mods.Length == 1 && (mods[0].State & 4) == 0;
+                    native.FindControl<StandardButton>("ViewFilesButton")!.IsEnabled = count == 1;
+                    native.FindControl<StandardButton>("DeleteButton")!.IsEnabled = mods.Any(x => (x.State & 4) == 0);
+                }).AddTo(disposables);
         });
     }
 }

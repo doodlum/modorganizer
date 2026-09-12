@@ -319,8 +319,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             model.Add(Mo2ModsAdapter.ConflictsKey, new ValueComponent<string>(mod.Conflicts));
             model.Add(Mo2ModsAdapter.FlagsKey, new ValueComponent<string>(mod.Flags));
             model.Add(SharedColumns.Name.NameComponentKey, new NameComponent(mod.DisplayName));
+            model.Add(LoadoutColumns.EnabledState.LoadoutItemIdsComponentKey, new LoadoutComponents.LoadoutItemIds(LoadoutItemId.From(mod.Id)));
+            model.Add(LoadoutColumns.EnabledState.ViewModFilesComponentKey, new SharedComponents.ViewModFilesAction(isEnabled: true));
             if ((mod.State & 4) == 0) {
-                model.Add(LoadoutColumns.EnabledState.LoadoutItemIdsComponentKey, new LoadoutComponents.LoadoutItemIds(LoadoutItemId.From(mod.Id)));
                 model.Add(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey, new LoadoutComponents.EnabledStateToggle(new ValueComponent<bool?>((mod.State & 2) != 0)));
             }
             model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: (mod.State & 4) == 0));

@@ -61,7 +61,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
 
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, IInstalledModsSource mods, NexusMods.Abstractions.Games.ISortOrderVariety order,
-        LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false) : base(windows)
+        LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false, Action? openDownloads = null) : base(windows)
     {
         LiveProfile = mods as Mo2LiveProfile;
         IsMo2Profile = LiveProfile is not null;
@@ -78,6 +78,12 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         RulesSectionViewModel = new ScenarioRules(services, order);
         var filter = new LoadoutFilter { LoadoutId = default, CollectionGroupId = default };
         Adapter = IsMo2Profile ? new Mo2ModsAdapter(services) : new LoadoutTreeDataGridAdapter(services, filter);
+        if (LiveProfile is { } profile) {
+            CommandOpenLibraryPage = new(_ => openDownloads?.Invoke());
+            CommandOpenFilesPage = new(info => {
+                if (Adapter.SelectedModels.Count == 1) _ = profile.ShowModDetails(Adapter.SelectedModels.Single().Key);
+            });
+        }
         CommandDeselectItems = new(_ => Adapter.ClearSelection());
         CommandRemoveItem = new(_ => {
             mods.Remove(Adapter.SelectedModels.Select(x => NexusMods.Abstractions.Loadouts.LoadoutItemId.From(x.Key)).ToArray());
@@ -92,7 +98,10 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
                 toggle => mods.Toggle(toggle.Ids),
                 collection => new WindowNotificationService().ShowToast("Collection: My Mods"),
                 mod => new WindowNotificationService().ShowToast("Mod page scenario"),
-                files => new WindowNotificationService().ShowToast("Mod files scenario"),
+                files => {
+                    if (LiveProfile is { } profile && files.Ids.Length == 1) _ = profile.ShowModDetails(files.Ids[0].Value);
+                    else if (!IsMo2Profile) new WindowNotificationService().ShowToast("Mod files scenario");
+                },
                 remove => mods.Remove(remove.Ids))).AddTo(disposables);
         });
     }

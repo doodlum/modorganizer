@@ -167,6 +167,7 @@ public partial class MockApp : Application
                             await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + entry.Registration.Directory + ")").Click.Execute();
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH") == "1") await VerifyHealth(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_MODS") == "1") await VerifyNativeMods(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEXUS_ACCOUNT") == "1") {
@@ -199,7 +200,7 @@ public partial class MockApp : Application
                             await live.Profile.Launch(executable);
                             Console.WriteLine("LAUNCH RESULT: " + live.Profile.Status);
                         }
-                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTROLS") == "1") await VerifyControls(live, endpoint, desktop.MainWindow!);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTROLS") == "1") await VerifyControls(live, live.Profile.Endpoint, desktop.MainWindow!);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIVE") == "1") await VerifyLive(live, endpoint);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILES") == "1") await VerifyProfiles(live);
                         if (Environment.GetEnvironmentVariable("MO2_SHOW_PROFILES") == "1") live.OpenProfiles();
@@ -225,12 +226,12 @@ public partial class MockApp : Application
                             await WaitFor(() => live.ModsPage!.Adapter.Source.Value.Items.Any(x => x.Key == mod.Id), "Selected mod row did not refresh");
                             live.ModsPage!.Adapter.SelectedModels.Clear();
                             live.ModsPage.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
-                            liveWindow.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Details in MO2"))
-                                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                            var detailsButton = liveWindow.GetVisualDescendants().OfType<Mo2ModsView>().Single().NativeView.FindControl<NavigationControl>("ViewFilesButton")!;
+                            detailsButton.Command!.Execute(NavigationInformation.From(NavigationInput.Default));
                             await WaitFor(() => live.Profile.ManagingMod, "Details action did not begin");
                             await WaitFor(() => !live.Profile.ManagingMod, "Close the native mod details dialog to finish verification", seconds: 180);
                             if (!live.Profile.Status.EndsWith("Connected to MO2")) throw new InvalidOperationException(live.Profile.Status);
-                            Console.WriteLine("PASS: native Details in MO2 button opened and closed the original dialog for " + detailName);
+                            Console.WriteLine("PASS: native View files button opened and closed the original dialog for " + detailName);
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENABLE_FNV_DLCS") == "1") {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("DLC activation requires the isolated FNV profile");
@@ -515,6 +516,63 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyNativeMods(Mo2LiveWorkspace live, Window window)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Native mods test requires the isolated FNV profile");
+        var wrapper = window.GetVisualDescendants().OfType<Mo2ModsView>().Single();
+        var native = wrapper.NativeView;
+        var table = native.FindControl<TreeDataGrid>("TreeDataGrid")!;
+        var search = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!;
+        var searchBox = search.FindControl<TextBox>("SearchTextBox")!;
+        var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
+        var modsBefore = live.Profile.Mods.OrderBy(x => x.Name).Select(x => (x.Name, x.Priority, x.State)).ToArray();
+        var pluginsBefore = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        search.FindControl<Button>("SearchButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        searchBox.Text = mod.DisplayName;
+        await WaitFor(() => table.Rows!.Count == 1, "Native mod search did not filter to the selected mod");
+        table.RowSelection!.Select(new IndexPath(0));
+        await WaitFor(() => native.FindControl<ItemsControl>("ContextControlGroup")!.IsVisible, "Native selection toolbar did not appear");
+        native.FindControl<Button>("DeselectItemsButton")!.Command!.Execute(R3.Unit.Default);
+        await WaitFor(() => live.ModsPage!.SelectionCount.Value == 0, "Native deselect command failed");
+        try {
+            var toggle = native.GetVisualDescendants().OfType<ToggleSwitch>().Single();
+            toggle.Command!.Execute(toggle.CommandParameter);
+            await WaitFor(() => (live.Profile.Mods.Single(x => x.Id == mod.Id).State & 2) != (mod.State & 2), "Native mod toggle did not update MO2");
+            toggle = native.GetVisualDescendants().OfType<ToggleSwitch>().Single();
+            toggle.Command!.Execute(toggle.CommandParameter);
+            await WaitFor(() => live.Profile.Mods.Single(x => x.Id == mod.Id).State == mod.State, "Native mod toggle did not restore MO2");
+        } finally {
+            if (live.Profile.Mods.Single(x => x.Id == mod.Id).State != mod.State) {
+                live.Profile.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
+                await WaitFor(() => live.Profile.Mods.Single(x => x.Id == mod.Id).State == mod.State, "Could not restore native mod toggle test");
+            }
+        }
+        searchBox.Text = live.Profile.Mods.Single(x => x.IsOverwrite).DisplayName;
+        await WaitFor(() => table.Rows!.Count == 1 && native.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "Overwrite"), "Overwrite search did not render");
+        table.RowSelection!.Select(new IndexPath(0));
+        await WaitFor(() => live.ModsPage!.SelectionCount.Value == 1, "Overwrite selection failed");
+        if (native.FindControl<Button>("DeleteButton")!.IsEnabled || native.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "MoveModEarlierButton").IsEnabled ||
+            !native.FindControl<Button>("ViewFilesButton")!.IsEnabled)
+            throw new InvalidOperationException("Native toolbar does not respect Overwrite restrictions");
+        search.FindControl<Button>("SearchClearButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        await WaitFor(() => table.Rows!.Count == live.Profile.Mods.Count, "Native clear search did not restore all mods");
+        var tabs = native.FindControl<TabControl>("RulesTabControl")!;
+        tabs.SelectedItem = native.FindControl<TabItem>("RulesTabItem");
+        await WaitFor(() => native.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Any(), "Native Rules tab did not render");
+        var rules = native.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Single().ViewModel!;
+        await WaitFor(() => rules.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Native Rules tab did not load MO2 plugins");
+        tabs.SelectedItem = native.FindControl<TabItem>("ModsTabItem");
+        live.ModsPage!.CommandDeselectItems.Execute(R3.Unit.Default);
+        await live.Profile.Refresh();
+        if (!modsBefore.SequenceEqual(live.Profile.Mods.OrderBy(x => x.Name).Select(x => (x.Name, x.Priority, x.State))) ||
+            !pluginsBefore.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))))
+            throw new InvalidOperationException("Native mods UI test did not restore MO2 state");
+        var priorities = live.ModsPage.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
+        if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Default mod rows do not follow MO2 priority");
+        Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite restrictions and Rules tab use MO2 state; original state restored");
+    }
+
     private static async Task VerifyHealth(Mo2LiveWorkspace live, Window window)
     {
         if (live.Profile.ProfilePath.Length == 0) {
@@ -779,6 +837,9 @@ public partial class MockApp : Application
             visit.Command!.Execute(visit.CommandParameter);
             await WaitFor(() => !live.Profile.SelectingProfile && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(profile.Directory)
                 && live.WorkspaceController.ActiveWorkspace.Context is Mo2WorkspaceContext, "Game card did not switch both panels: " + live.Profile.Status, seconds: 110);
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Native mod rows did not refresh after game switch");
+            var priorities = live.ModsPage!.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
+            if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Mod rows lost MO2 priority order after switching games");
         }
         try {
             await VisitGameProfile(skyrim, selected);
@@ -850,7 +911,7 @@ public partial class MockApp : Application
             if ((live.Profile.Mods.Single(x => x.Id == mod.Id).State & 2) == 0) throw new InvalidOperationException("Plugin disable also disabled its mod");
             await AssertHost(false, mod.Priority);
             live.ModsPage!.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
-            window.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Move earlier"))
+            window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "MoveModEarlierButton")
                 .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
             await WaitFor(() => live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority - 1, "Mod priority button failed: " + live.Profile.Status);
             await AssertHost(false, mod.Priority - 1);
