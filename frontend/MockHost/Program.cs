@@ -39,6 +39,20 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--mo2-import-nexus-key") {
+            try {
+                if (args.Length != 3) throw new ArgumentException("Expected MO2 bridge directory and key file path");
+                var path = Path.GetFullPath(args[2]);
+                if (!File.Exists(path)) throw new FileNotFoundException("Nexus key file not found");
+                var hostPath = OperatingSystem.IsWindows() ? path : "Z:" + path;
+                var result = new Mo2BridgeClient(args[1]).SendAsync("importNexusKey", new() { ["path"] = hostPath }).GetAwaiter().GetResult();
+                Console.WriteLine(result.GetRawText());
+            } catch (Exception error) {
+                Console.Error.WriteLine(error.Message);
+                Environment.ExitCode = 1;
+            }
+            return;
+        }
         if (args.FirstOrDefault() == "--mo2-bridge-snapshot") {
             try {
                 if (args.Length != 2) throw new ArgumentException("Expected MO2 bridge directory");

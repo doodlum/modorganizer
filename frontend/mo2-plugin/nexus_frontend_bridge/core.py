@@ -10,7 +10,8 @@ def number(value):
 
 
 class Bridge:
-    def __init__(self, organizer, directory, plugin_states):
+    def __init__(self, organizer, directory, plugin_states, credentials=None):
+        self.credentials = credentials
         self.organizer = organizer
         self.directory = Path(directory)
         self.states = plugin_states
@@ -44,6 +45,11 @@ class Bridge:
         if request.get('protocol') != 1 or request.get('session') != self.session:
             raise ValueError('Bridge session changed; reconnect before issuing commands')
         action = request.get('action')
+        if action == 'importNexusKey':
+            filename = request.get('path')
+            if self.credentials is None or not isinstance(filename, str):
+                raise ValueError('Nexus credential import is unavailable or missing a file path')
+            return self.credentials.import_file(filename)
         if action == 'snapshot':
             return self.snapshot()
         if request.get('profilePath') != self.organizer.profilePath():

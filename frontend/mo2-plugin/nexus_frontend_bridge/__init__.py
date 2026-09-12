@@ -5,6 +5,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMessageBox
 from .core import Bridge
+from .credentials import NexusCredentials
 
 
 class NexusFrontendBridge(mobase.IPluginTool):
@@ -22,7 +23,7 @@ class NexusFrontendBridge(mobase.IPluginTool):
             active = states.active
         if inactive is None:
             inactive = states.inactive
-        self.bridge = Bridge(organizer, Path(organizer.pluginDataPath()) / 'frontend-bridge', {True: active, False: inactive})
+        self.bridge = Bridge(organizer, Path(organizer.pluginDataPath()) / 'frontend-bridge', {True: active, False: inactive}, NexusCredentials())
         self.timer = QTimer()
         self.timer.timeout.connect(self.bridge.poll)
         # Profile and plugin APIs are only safe once the host has finished setup.

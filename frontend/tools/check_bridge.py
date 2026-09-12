@@ -80,6 +80,21 @@ class ContractTests(unittest.TestCase):
     def test_invalid_value_rejected(self):
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setModActive', name='Test Mod', enabled='false'))
         with self.assertRaises(ValueError): self.bridge.execute(self.request(action='setPluginPriority', name='Test.esp', priority=-1))
+    def test_credential_import_passes_only_path_and_checks_session(self):
+        class Credentials:
+            calls = []
+            def import_file(self, path):
+                self.calls.append(path)
+                return {'stored': True, 'restartRequired': True}
+        credentials = Credentials()
+        self.bridge.credentials = credentials
+        request = self.request(action='importNexusKey', path='Z:/private/key.txt')
+        result = self.bridge.execute(request)
+        self.assertEqual(credentials.calls, ['Z:/private/key.txt'])
+        self.assertEqual(result, {'stored': True, 'restartRequired': True})
+        request['session'] = str(uuid.uuid4())
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(len(credentials.calls), 1)
     def test_mailbox_replay_does_not_repeat_mutation(self):
         identifier = str(uuid.uuid4())
         path = Path(self.temp.name) / 'requests' / (identifier + '.json')
