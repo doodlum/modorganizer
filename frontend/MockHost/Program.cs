@@ -39,6 +39,19 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--register-mo2") {
+            try {
+                if (args.Length is < 2 or > 3) throw new ArgumentException("Expected MO2 instance directory and optional launcher path");
+                var directory = Path.GetFullPath(args[1]);
+                var launcher = args.Length == 3 ? Path.GetFullPath(args[2]) : null;
+                if (launcher is not null && !File.Exists(launcher)) throw new FileNotFoundException("MO2 launcher not found");
+                var catalog = new Mo2InstanceCatalog("");
+                catalog.Add(directory);
+                if (launcher is not null) catalog.SetLauncher(catalog.Read().Single(x => x.Registration.Directory == directory).Registration, launcher);
+                Console.WriteLine("Registered MO2 instance: " + directory);
+            } catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+            return;
+        }
         if (args.FirstOrDefault() == "--mo2-import-nexus-key") {
             try {
                 if (args.Length != 3) throw new ArgumentException("Expected MO2 bridge directory and key file path");
@@ -122,7 +135,7 @@ public partial class MockApp : Application
                             var button = liveWindow.GetVisualDescendants().OfType<Button>().Single(x => x.Content is StackPanel panel && panel.Children.OfType<TextBlock>().Any(text => text.Text == original.Name));
                             button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                             await WaitFor(() => live.Profile.ProfilePath.Length > 0 && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(original.Directory)
-                                && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Catalog selection did not connect both live panels");
+                                && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Catalog selection did not connect both live panels", seconds: 110);
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
@@ -344,9 +357,9 @@ public partial class MockApp : Application
         Console.WriteLine("PASS: native modal rename; cancel preserves state; accept updates open page, sidebar and Library target");
     }
 
-    private static async Task WaitFor(Func<bool> ready, string failure)
+    private static async Task WaitFor(Func<bool> ready, string failure, int seconds = 10)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
         while (!ready()) {
             if (DateTime.UtcNow >= deadline) throw new InvalidOperationException(failure);
             await Task.Delay(50);

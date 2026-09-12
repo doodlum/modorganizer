@@ -63,7 +63,8 @@ the live checks. Setting it only in the outer Linux launch environment did not
 work in the already-running prefix. Do not pass `-platform` to MO2: its command
 parser treats that as a profile selection.
 
-Automatic host startup and advanced download controls remain to be connected. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
+Configured host startup is connected and tested with the isolated FNV instance.
+Cross-game startup and advanced download controls still need work. Nexus account access reuses MO2's credential and download workflow; no credential belongs in this
 repository or in the bridge's diagnostic snapshots.
 
 ## Downloads and installation

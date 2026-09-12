@@ -14,8 +14,8 @@ The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
 My Loadouts discovers real profiles across registered MO2 instances. Selection
 uses each running host, and profile management opens MO2's original dialog.
-Configured executables launch through MO2. Automatic host startup, advanced
-download controls and successful in-game FNV validation remain unfinished.
+Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
+Advanced download controls and successful in-game FNV validation remain unfinished.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run
@@ -28,6 +28,31 @@ git submodule update --init frontend/upstream
 ```
 
 The launcher also recognizes a repository-local SDK at `.tools/dotnet`.
+
+## Instance startup
+
+Use **Choose MO2 launcher…** beside an instance in My Loadouts to select the
+script or executable that starts that instance. Selecting a profile then starts
+it if needed and waits for the MO2 bridge. Setup and extension dialogs remain in
+MO2. An already-running host is reused, including when its bridge responds slowly.
+The bridge extension must be installed in that instance first.
+
+`start-mo2-proton.sh INSTANCE PREFIX PROTON STEAM_ROOT STEAM_APP_ID` starts an
+existing Windows MO2 installation with the Qt input workaround used on this
+Steam Deck. Use a separate Proton prefix for each instance. Put that invocation
+in an executable script and choose it as the instance launcher. A prefix lock
+prevents concurrent invocations during startup; the script does not copy mods,
+create profiles or replace MO2 configuration.
+
+Connections can also be registered without opening the UI:
+
+```sh
+./frontend/run.sh --register-mo2 /path/to/mo2-instance /path/to/launch-mo2.sh
+```
+
+Only instance, bridge and launcher paths are stored in
+`$XDG_CONFIG_HOME/mo2-nexus-frontend/instances.json` (normally under `~/.config`).
+All mod, profile and download state remains in MO2.
 
 ## Reference and source reuse
 

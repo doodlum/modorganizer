@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Mo2.Frontend;
 
-internal sealed record Mo2Registration(string Directory, string Endpoint);
+internal sealed record Mo2Registration(string Directory, string Endpoint, string? Launcher = null);
 internal sealed record Mo2CatalogEntry(Mo2Registration Registration, Mo2InstanceSnapshot? Instance, string? Error);
 
 // Only frontend connection preferences live here. All profile content stays in MO2.
@@ -37,6 +37,21 @@ internal sealed class Mo2InstanceCatalog
     {
         if (!File.Exists(Path.Combine(directory, "ModOrganizer.ini"))) throw new ArgumentException("Choose the MO2 instance folder containing ModOrganizer.ini");
         Discover(directory);
+        Save();
+    }
+    public void SetLauncher(Mo2Registration registration, string launcher)
+    {
+        launcher = Path.GetFullPath(launcher);
+        if (!File.Exists(launcher)) throw new FileNotFoundException("MO2 launcher not found");
+        var index = _registrations.FindIndex(x => x.Directory == registration.Directory);
+        if (index < 0) throw new InvalidOperationException("MO2 instance no longer registered");
+        var previous = _registrations[index];
+        _registrations[index] = previous with { Launcher = launcher };
+        try { Save(); } catch { _registrations[index] = previous; throw; }
+    }
+    private void Save()
+    {
+        if (LoadError is not null) throw new InvalidOperationException(LoadError);
         Directory.CreateDirectory(Path.GetDirectoryName(_config)!);
         File.WriteAllText(_config + ".tmp", JsonSerializer.Serialize(_registrations, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_config + ".tmp", _config, true);

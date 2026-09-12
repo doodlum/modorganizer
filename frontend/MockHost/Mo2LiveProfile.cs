@@ -140,9 +140,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             SelectingProfile = true;
             Status = "Connecting to " + selected.Name; Changed?.Invoke();
-            if (!File.Exists(Path.Combine(registration.Endpoint, "endpoint.json"))) throw new InvalidOperationException("Start MO2 with the frontend bridge enabled for this instance");
+            var snapshot = await Mo2HostStartup.Connect(registration, message => { if (Status != message) { Status = message; Changed?.Invoke(); } });
             var client = new Mo2BridgeClient(registration.Endpoint);
-            var snapshot = await client.SendAsync("snapshot");
             if (!snapshot.GetProperty("profiles").EnumerateArray().Any(x =>
                 Mo2InstanceCatalog.LocalPath(x.GetProperty("path").GetString()!) == Path.GetFullPath(selected.Directory)))
                 throw new InvalidOperationException("The MO2 host does not own the selected profile");

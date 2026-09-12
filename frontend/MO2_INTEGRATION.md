@@ -100,7 +100,7 @@ Mod priority and plugin activation toolbar controls now call MO2 directly. A
 live check disabled MCM’s ESP independently of its enabled mod, changed mod
 priority, verified both against the host, and restored the original state.
 
-Next work is host startup and cross-game connection, advanced download controls,
+Next work is cross-game connection, advanced download controls,
 and the FNV acceptance run above.
 Do not claim integration complete based on the reader, mock UI or screenshots.
 
@@ -131,3 +131,12 @@ check started without `MO2_BRIDGE_DIRECTORY`, selected the FNV profile using its
 catalog button, and verified that both live panels populated from the host.
 Skyrim profiles remained discoverable. Legacy workspace fixtures still pass via
 the explicit `run-fixtures.sh` / `MO2_FIXTURES=1` mode.
+
+Profile selection now starts a configured instance launcher when no running
+host or launcher is found, then waits for bridge readiness. A snapshot timeout
+never triggers another launch. The isolated FNV test passed from a stopped
+host, with a new bridge session and exactly one launcher invocation. A separate
+frontend process then reconnected to the same live host without invoking the
+launcher again. A second deliberately stopped-host run also passed. The bundled
+Proton launcher holds a per-prefix lock during startup and uses the established
+Qt input workaround. Cross-game startup and connection remain unverified.
