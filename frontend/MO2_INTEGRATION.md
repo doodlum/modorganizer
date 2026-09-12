@@ -45,7 +45,9 @@ Use an isolated MO2 FNV instance/profile to avoid altering Skyrim instances.
 
 ## Current evidence and remaining work
 
-The default frontend mode remains fixture-backed. `Mo2ProfileFiles` reads
+The default frontend opens the real My Loadouts catalog without assuming an
+active profile. Fixture mode requires `MO2_FIXTURES=1` or `run-fixtures.sh`.
+`Mo2ProfileFiles` reads
 actual instance/profile files and the downloads folder without writing them:
 
 ```sh
@@ -122,3 +124,10 @@ Disabling MCM removed its DLL from the next xNVSE runtime log, confirming that
 mod activation affects the virtual game view. MCM was restored afterward and
 the stalled test game was closed. The startup issue is unresolved; neither
 usable gameplay nor the MCM in-game menu has been verified.
+
+Default startup now opens My Loadouts from real instance/profile files, with no
+fixture mods or assumed active profile. An isolated connection-registration
+check started without `MO2_BRIDGE_DIRECTORY`, selected the FNV profile using its
+catalog button, and verified that both live panels populated from the host.
+Skyrim profiles remained discoverable. Legacy workspace fixtures still pass via
+the explicit `run-fixtures.sh` / `MO2_FIXTURES=1` mode.

@@ -5,8 +5,8 @@
 
 # Alternate Nexus frontend (in progress)
 
-Linux Avalonia frontend for Mod Organizer. `run.sh` starts the original fixture
-scenarios. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
+Linux Avalonia frontend for Mod Organizer. `run.sh` opens My Loadouts with real
+MO2 profiles; it starts disconnected until you select a profile. `run-live.sh /path/to/mo2/plugins/data/frontend-bridge` connects to a
 running MO2 host with the [bridge extension](mo2-plugin/README.md) installed.
 Live mode shows the active MO2 profile's mods on the left and plugins on the
 right, and sends mod activation, mod priority, plugin activation and plugin ordering changes through MO2.
@@ -14,7 +14,9 @@ The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
 My Loadouts discovers real profiles across registered MO2 instances. Selection
 uses each running host, and profile management opens MO2's original dialog.
-Automatic host startup, advanced download controls and game launch remain unfinished.
+Configured executables launch through MO2. Automatic host startup, advanced
+download controls and successful in-game FNV validation remain unfinished.
+Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run
 
@@ -43,7 +45,7 @@ The host files are distributed under this repository's GPL-3.0 license.
 Build and run a small workspace integration check, saving a native screenshot:
 
 ```sh
-MO2_VERIFY_WORKSPACE=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/four-panels.png" ./frontend/run.sh
+MO2_VERIFY_WORKSPACE=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/four-panels.png" ./frontend/run-fixtures.sh
 ```
 
 Create `frontend/artifacts` first. The window closes after capturing. The check
@@ -71,7 +73,7 @@ upstream telemetry dependency. The host does not register telemetry services.
 
 ## New Vegas scenarios and reference fork
 
-`MO2_VERIFY_SCENARIOS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/fnv-loadouts.png" ./frontend/run.sh`
+`MO2_VERIFY_SCENARIOS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/fnv-loadouts.png" ./frontend/run-fixtures.sh`
 checks fake game add/remove, loadout clone/delete, sidebar navigation and history.
 The installation path supplied in this session is shown in the Steam tooltip;
 `MO2_SCENARIO_GAME_PATH` and `MO2_SCENARIO_COVER` override local fixture metadata.
@@ -88,8 +90,8 @@ settings support in-memory drafts, discard, save and reopening in another tab.
 No setting writes to MO2 or the installed reference app.
 
 ```sh
-MO2_VERIFY_SETTINGS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/settings.png" ./frontend/run.sh
-MO2_VERIFY_ORDER=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/plugin-order.png" ./frontend/run.sh
+MO2_VERIFY_SETTINGS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/settings.png" ./frontend/run-fixtures.sh
+MO2_VERIFY_ORDER=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/plugin-order.png" ./frontend/run-fixtures.sh
 ```
 
 The new-tab page includes a standalone **Plugin load order** scenario using the
@@ -109,8 +111,8 @@ The native table supports enable/disable, selection, uninstall and its empty
 state. Disabled or removed mods mark their associated plugin inactive.
 
 ```sh
-MO2_VERIFY_INSTALLED=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-rules.png" ./frontend/run.sh
-MO2_VERIFY_INSTALLED=1 MO2_INSTALLED_CAPTURE_MODS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-mods.png" ./frontend/run.sh
+MO2_VERIFY_INSTALLED=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-rules.png" ./frontend/run-fixtures.sh
+MO2_VERIFY_INSTALLED=1 MO2_INSTALLED_CAPTURE_MODS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/installed-mods.png" ./frontend/run-fixtures.sh
 ```
 
 This check exercises the original tab control, enabled toggle, multi-selection,
@@ -131,7 +133,7 @@ provides All and My Mods for the current loadout. Deleting a loadout unregisters
 its workspace and returns Home if needed.
 
 ```sh
-MO2_VERIFY_CONTEXTS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/loadout-workspace.png" ./frontend/run.sh
+MO2_VERIFY_CONTEXTS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/loadout-workspace.png" ./frontend/run-fixtures.sh
 ```
 
 The check verifies workspace independence, panel/tab identity on returning,
@@ -151,7 +153,7 @@ The Add file picker imports names as fake metadata only; it does not unpack or
 install real archive contents. The two initial archive sizes are fixture values.
 
 ```sh
-MO2_VERIFY_LIBRARY=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/library-panels.png" ./frontend/run.sh
+MO2_VERIFY_LIBRARY=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/library-panels.png" ./frontend/run-fixtures.sh
 ```
 
 This check opens Library in a second original panel, invokes row/batch installs,
@@ -172,7 +174,7 @@ labels, and Library installation target all observe the same name. Clone copies
 that name into the new loadout.
 
 ```sh
-MO2_VERIFY_DIALOGS=1 MO2_DIALOG_SCREENSHOT="$PWD/frontend/artifacts/rename-dialog.png" MO2_SCREENSHOT="$PWD/frontend/artifacts/renamed-collection.png" ./frontend/run.sh
+MO2_VERIFY_DIALOGS=1 MO2_DIALOG_SCREENSHOT="$PWD/frontend/artifacts/rename-dialog.png" MO2_SCREENSHOT="$PWD/frontend/artifacts/renamed-collection.png" ./frontend/run-fixtures.sh
 ```
 
 This check opens the actual modal twice, exercises Cancel and Accept, and checks

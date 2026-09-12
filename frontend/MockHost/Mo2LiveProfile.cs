@@ -15,7 +15,8 @@ internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, 
 // Only a view of the running host. No activation/order/profile files are written here.
 internal sealed class Mo2LiveProfile : IInstalledModsSource
 {
-    private Mo2BridgeClient _client;
+    private Mo2BridgeClient? _client;
+    private Mo2BridgeClient Client => _client ?? throw new InvalidOperationException("Select an MO2 profile before editing");
     private readonly SemaphoreSlim _commands = new(1);
     private readonly SourceCache<Mo2LiveMod, EntityId> _mods = new(x => x.Id);
     private readonly Dictionary<string, EntityId> _ids = new(StringComparer.OrdinalIgnoreCase);
@@ -35,7 +36,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public Mo2LiveProfile(string endpoint)
     {
         Endpoint = endpoint;
-        _client = new(endpoint);
+        if (endpoint.Length > 0) _client = new(endpoint);
+        else {
+            CollectionName.Value = "MO2 profiles";
+            Status = "Select a profile in My Loadouts to connect to its MO2 instance";
+        }
         Order.ApplyOrder = Reorder;
     }
     private string? _lastSnapshot;
@@ -68,8 +73,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task Refresh()
     {
-        if (!await _commands.WaitAsync(0)) return;
-        try { Apply(await _client.SendAsync("snapshot")); }
+        if (_client is null || !await _commands.WaitAsync(0)) return;
+        try { Apply(await Client.SendAsync("snapshot")); }
         catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
@@ -85,7 +90,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             foreach (var mod in selected) {
                 if ((mod.State & 4) != 0) continue; // MO2 essential content cannot be disabled.
-                Apply(await _client.SendAsync("setModActive", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["enabled"] = (mod.State & 2) == 0 }));
+                Apply(await Client.SendAsync("setModActive", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["enabled"] = (mod.State & 2) == 0 }));
             }
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
@@ -98,7 +103,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             for (var index = 0; index < desired.Length; index++) {
                 var current = Order.Plugins.FirstOrDefault(x => x.DisplayName == desired[index].DisplayName);
                 if (current?.SortIndex == index) continue;
-                Apply(await _client.SendAsync("setPluginPriority", new() { ["profilePath"] = profile, ["name"] = desired[index].DisplayName, ["priority"] = index }, token));
+                Apply(await Client.SendAsync("setPluginPriority", new() { ["profilePath"] = profile, ["name"] = desired[index].DisplayName, ["priority"] = index }, token));
             }
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
@@ -110,7 +115,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             foreach (var name in selected)
-                Apply(await _client.SendAsync("setPluginActive", new() { ["profilePath"] = profile, ["name"] = name, ["enabled"] = enabled }));
+                Apply(await Client.SendAsync("setPluginActive", new() { ["profilePath"] = profile, ["name"] = name, ["enabled"] = enabled }));
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
@@ -125,7 +130,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             var mod = found.Value;
             if ((mod.State & 4) != 0 || mod.Priority < 0) return;
             var priority = Math.Clamp(mod.Priority + delta, 0, _mods.Count - 1);
-            Apply(await _client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
+            Apply(await Client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
@@ -158,8 +163,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         if (!await _commands.WaitAsync(0)) return;
         try {
             Launching = true; Status = "Launching " + executable + " through MO2; close the application to return"; Changed?.Invoke();
-            var result = await _client.SendAsync("launch", new() { ["profilePath"] = profile, ["name"] = executable }, timeout: TimeSpan.FromHours(12));
-            _lastSnapshot = null; Apply(await _client.SendAsync("snapshot"));
+            var result = await Client.SendAsync("launch", new() { ["profilePath"] = profile, ["name"] = executable }, timeout: TimeSpan.FromHours(12));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             Status = result.GetProperty("completed").GetBoolean() ? executable + " exited (code " + result.GetProperty("exitCode").GetInt32() + ")" : "MO2 stopped waiting for the application; check the host";
         } catch (Exception error) { Report(error); }
         finally { Launching = false; Changed?.Invoke(); _commands.Release(); }
@@ -170,7 +175,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             SelectingProfile = true; Status = "Manage profiles in MO2"; Changed?.Invoke();
-            var snapshot = await _client.SendAsync("manageProfiles", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
+            var snapshot = await Client.SendAsync("manageProfiles", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null; Apply(snapshot);
         } catch (Exception error) { Report(error); }
         finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
@@ -182,9 +187,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             Installing = true; Status = "Complete installation in MO2"; Changed?.Invoke();
             var hostPath = path.StartsWith('/') ? "Z:" + path : path;
-            var result = await _client.SendAsync("installArchive", new() { ["profilePath"] = profile, ["path"] = hostPath }, timeout: TimeSpan.FromMinutes(30));
+            var result = await Client.SendAsync("installArchive", new() { ["profilePath"] = profile, ["path"] = hostPath }, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null;
-            Apply(await _client.SendAsync("snapshot"));
+            Apply(await Client.SendAsync("snapshot"));
             Status = result.GetProperty("installed").GetBoolean() ? "Installed " + result.GetProperty("modName").GetString() : "MO2 did not install the archive (cancelled or failed)";
         } catch (Exception error) { Report(error); }
         finally { Installing = false; Changed?.Invoke(); _commands.Release(); }
@@ -197,7 +202,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             var file = Mo2NexusLink.Parse(link);
             if (!string.Equals(file.Game, game, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Choose a Nexus file for the current game");
-            await _client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
+            await Client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
             Status = "Download requested through MO2"; Changed?.Invoke();
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }

@@ -18,8 +18,10 @@ internal sealed class Mo2InstanceCatalog
         try {
             if (File.Exists(_config)) _registrations.AddRange(JsonSerializer.Deserialize<Mo2Registration[]>(File.ReadAllText(_config)) ?? []);
         } catch (Exception error) { LoadError = "Unable to read saved instance connections: " + error.Message; }
-        var activeRoot = Path.GetFullPath(Path.Combine(activeEndpoint, "..", "..", ".."));
-        Discover(activeRoot, activeEndpoint);
+        if (activeEndpoint.Length > 0) {
+            var activeRoot = Path.GetFullPath(Path.Combine(activeEndpoint, "..", "..", ".."));
+            Discover(activeRoot, activeEndpoint);
+        }
         Discover(Path.Combine(home, "ModOrganizer2"));
         var games = Path.Combine(home, "Games");
         if (Directory.Exists(games))

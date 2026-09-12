@@ -102,14 +102,30 @@ public partial class MockApp : Application
         Locator.CurrentMutable.RegisterConstant<IViewLocator>(new FixtureViewLocator());
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            if (Environment.GetEnvironmentVariable("MO2_BRIDGE_DIRECTORY") is { } endpoint) {
+            if (Environment.GetEnvironmentVariable("MO2_FIXTURES") != "1") {
+                var endpoint = Environment.GetEnvironmentVariable("MO2_BRIDGE_DIRECTORY") ?? "";
                 var live = new Mo2LiveWorkspace(endpoint);
                 var liveWindow = live.CreateWindow();
                 desktop.MainWindow = liveWindow;
+                if (endpoint.Length == 0) live.OpenProfiles();
                 desktop.Exit += (_, _) => live.Dispose();
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
-                        await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATALOG") == "1") {
+                            if (endpoint.Length != 0 || live.Profile.Mods.Count != 0 || live.Profile.Order.Plugins.Count != 0)
+                                throw new InvalidOperationException("Default startup must have no fixture or assumed active profile data");
+                            if (!liveWindow.GetVisualDescendants().OfType<Mo2ProfilesView>().Any())
+                                throw new InvalidOperationException("Default startup did not show My Loadouts");
+                            var entry = live.Catalog.Read().Single(x => x.Registration.Directory.EndsWith("/frontend/artifacts/mo2-fnv-host"));
+                            var original = entry.Instance!.Profiles.Single(x => x.Name == "Frontend Test");
+                            var button = liveWindow.GetVisualDescendants().OfType<Button>().Single(x => x.Content is StackPanel panel && panel.Children.OfType<TextBlock>().Any(text => text.Text == original.Name));
+                            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                            await WaitFor(() => live.Profile.ProfilePath.Length > 0 && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(original.Directory)
+                                && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Catalog selection did not connect both live panels");
+                            if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
+                            Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
                             await live.Profile.Launch(executable);
