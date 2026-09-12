@@ -49,6 +49,43 @@ class ModActions:
             })
         return result
 
+    def plugin_snapshot(self):
+        from PyQt6.QtCore import QAbstractProxyModel, Qt
+        from PyQt6.QtGui import QTextDocument
+        from PyQt6.QtWidgets import QTreeView
+        view = self.window.findChild(QTreeView, 'espList')
+        if view is None:
+            raise ValueError('MO2 plugin list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel):
+            model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'PluginList':
+            raise ValueError('Unsupported MO2 plugin list model')
+        plugins = self.organizer.pluginList()
+        expected = set(plugins.pluginNames())
+        document = QTextDocument()
+        result = []
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            name = index.data(Qt.ItemDataRole.DisplayRole)
+            if name not in expected:
+                raise ValueError('MO2 plugin row changed; refresh before reading details')
+            document.setHtml(str(index.data(Qt.ItemDataRole.ToolTipRole) or ''))
+            flags = model.flags(index)
+            state = plugins.state(name)
+            result.append({
+                'name': name, 'state': int(getattr(state, 'value', state)),
+                'priority': plugins.priority(name), 'loadOrder': plugins.loadOrder(name),
+                'masters': list(plugins.masters(name)), 'origin': plugins.origin(name),
+                'diagnostics': document.toPlainText(),
+                'modIndex': str(model.index(row, 3).data(Qt.ItemDataRole.DisplayRole) or ''),
+                'canToggle': bool(flags & Qt.ItemFlag.ItemIsUserCheckable),
+                'canMove': bool(flags & Qt.ItemFlag.ItemIsDragEnabled),
+            })
+        if len(result) != len(expected):
+            raise ValueError('MO2 plugin list changed; refresh before reading details')
+        return result
+
     def details(self, name):
         from PyQt6.QtCore import QAbstractProxyModel, QEventLoop, QTimer, Qt
         from PyQt6.QtWidgets import QApplication, QDialog, QTreeView

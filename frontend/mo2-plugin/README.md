@@ -254,3 +254,11 @@ must allow the selected row to be visible.
 requested row in the original profile manager and clicks its native rename
 button, leaving name validation and the prompt to MO2. Rename and removal of
 the active profile are rejected before opening the manager.
+
+## Plugin diagnostics
+
+The native `espList` source model supplies diagnostic tooltip text (HTML
+converted to plain text), displayed mod indices, and checkable/draggable flags.
+These accompany the existing plugin API fields. This preserves MO2’s current
+messages and restrictions without adding a second plugin analyzer. Diagnostic
+text may include LOOT results already available in the original host.

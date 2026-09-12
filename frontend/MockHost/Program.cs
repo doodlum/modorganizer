@@ -151,6 +151,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_CARDS") == "1") await VerifyProfileCards(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
@@ -441,6 +442,29 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyPluginDetails(Mo2LiveWorkspace live, Window window)
+    {
+        var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");
+        var expected = snapshot.GetProperty("plugins").EnumerateArray().Select(x => (
+            x.GetProperty("name").GetString(), x.GetProperty("diagnostics").GetString(), x.GetProperty("modIndex").GetString(),
+            x.GetProperty("canToggle").GetBoolean(), x.GetProperty("canMove").GetBoolean())).OrderBy(x => x.Item1).ToArray();
+        if (!expected.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, (string?)x.Diagnostics, (string?)x.ModIndex, x.CanToggle, x.CanMove)).OrderBy(x => x.Item1)))
+            throw new InvalidOperationException("Native plugin diagnostics disagree with MO2");
+        var plugin = live.Profile.Order.Plugins.First(x => !x.CanToggle && !x.CanMove);
+        await WaitFor(() => live.PluginsPage!.Adapter.Source.Value.Items.Any(x => x.Key.Equals(plugin.Key)), "Plugin rows did not refresh");
+        live.PluginsPage!.Adapter.SelectedModels.Clear();
+        live.PluginsPage.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
+        await WaitFor(() => window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "Mo2PluginDiagnostics" && x.Text!.Contains(plugin.Diagnostics)), "Native plugin diagnostics were not rendered");
+        var row = live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key));
+        var index = row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
+        if (index.MoveUp.CanExecute() || index.MoveDown.CanExecute())
+            throw new InvalidOperationException("Forced plugin movement controls are enabled");
+        var view = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
+        if (view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Disable selected") && x.IsEffectivelyEnabled))
+            throw new InvalidOperationException("Forced plugin activation controls are enabled");
+        Console.WriteLine("PASS: " + expected.Length + " native plugin diagnostics, mod indices and restrictions match MO2; forced plugin controls disabled for " + plugin.DisplayName);
+    }
+
     private static async Task VerifyNativePanels(Mo2LiveWorkspace live, Window window)
     {
         live.OpenGames();
@@ -519,6 +543,7 @@ public partial class MockApp : Application
             var plugins = snapshot.GetProperty("plugins").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32() == 2, x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
             if (!plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, x.IsActive, x.SortIndex)).OrderBy(x => x.Item1)))
                 throw new InvalidOperationException("Skyrim plugin panel disagrees with independent host snapshot");
+            await VerifyPluginDetails(live, window);
             var archives = snapshot.GetProperty("downloads").EnumerateArray().Where(x => !x.GetProperty("hidden").GetBoolean()).Select(x => x.GetProperty("path").GetString()).Order().ToArray();
             if (!archives.SequenceEqual(live.Profile.Downloads.Select(x => (string?)x.Path).Order()))
                 throw new InvalidOperationException("Download folder context disagrees with the Skyrim host");

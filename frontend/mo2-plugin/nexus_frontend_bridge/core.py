@@ -47,7 +47,7 @@ class Bridge:
                          'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath()},
             'mods': self.mod_actions.snapshot() if self.mod_actions is not None else [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
                       'priority': mods.priority(name)} for name in mods.allModsByProfilePriority()],
-            'plugins': [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),
+            'plugins': self.mod_actions.plugin_snapshot() if self.mod_actions is not None else [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),
                          'loadOrder': plugins.loadOrder(name), 'masters': list(plugins.masters(name)),
                          'origin': plugins.origin(name)} for name in plugins.pluginNames()],
         }

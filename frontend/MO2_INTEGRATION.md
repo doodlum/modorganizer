@@ -53,9 +53,11 @@ native NMA navigation/panel controls have also been exercised against MO2.
 
 Full integration remains open. The bridge exports MO2 mod state, Overwrite,
 native priority labels, conflict/status text and plugin state. Details in MO2
-opens the original conflict/file dialog. Richer plugin diagnostics still need
-implementation and validation against the required mappings above. MO2’s native profile manager handles profile operations, including the
-My Loadouts card’s rename action.
+opens the original conflict/file dialog. Plugin selection shows native diagnostic
+text and mod indices; activation and row movement controls reflect native model
+restrictions. MO2’s native profile manager handles profile operations, including
+the My Loadouts card’s rename action. Broader diagnostic scenarios and the
+remaining navigation/extension coverage still need validation.
 
 ## Implementation history
 
@@ -333,3 +335,25 @@ The final card layout uses NMA’s standard icon button with a Rename profile
 accessibility label and tooltip, preserving space for Create Copy. The active
 card’s rename command was checked as disabled. Fourteen bridge contract checks
 and the frontend build pass; richer plugin diagnostics remain open.
+
+### Native plugin diagnostics and restrictions — 2026-09-12
+
+The bridge reads the original plugin model beneath its proxies, mapping rows
+by plugin name. Snapshots preserve the existing API state/order/masters/origin
+and add native tooltip text, the displayed hexadecimal mod index, checkable
+state and draggable state. HTML is converted to plain text. This includes
+plugin descriptions, archive/type information and any additional/LOOT messages
+MO2 already holds; the bridge does not run a separate analyzer or LOOT process.
+
+Selecting plugins in the right panel reveals their native diagnostics and mod
+indices. Activation operates only on checkable selected plugins and is disabled
+when none are checkable. Native NMA up/down row commands also respect MO2’s
+draggable flag. Game-specific priority constraints still belong to MO2.
+
+Live checks compare every exported diagnostic, index and restriction against
+fresh host snapshots for 14 FNV plugins and 150 Skyrim plugins. They select
+FalloutNV.esm and Skyrim.esm, verify rendered native text, and assert disabled
+activation and movement controls. Cross-game selection restores FNV.
+The Skyrim screenshot is artifacts/plugin-details-skyrim.png (ignored).
+These checks exercise real forced-plugin and archive/type messages, but do not
+establish coverage of every missing-master, dirty-plugin or LOOT message type.

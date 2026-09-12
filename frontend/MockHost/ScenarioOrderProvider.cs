@@ -23,11 +23,12 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
             model.Add(LoadOrderColumns.IsActiveComponentKey, new ValueComponent<bool>(item.IsActive));
             var index = item.WhenAnyValue(x => x.SortIndex).ToObservable();
             var count = variety.GetSortOrderItems(id).Count;
+            var canMove = item is not ScenarioPlugin plugin || plugin.CanMove;
             model.Add(LoadOrderColumns.IndexColumn.IndexComponentKey, new SharedComponents.IndexComponent(
                 new ValueComponent<int>(item.SortIndex, index, subscribeWhenCreated: true),
                 new ValueComponent<string>((item.SortIndex + 1).Ordinalize(), index.Select(x => (x + 1).Ordinalize()), subscribeWhenCreated: true),
-                R3.Observable.CombineLatest(index, direction, (i, d) => d == ListSortDirection.Ascending ? i > 0 : i < count - 1),
-                R3.Observable.CombineLatest(index, direction, (i, d) => d == ListSortDirection.Ascending ? i < count - 1 : i > 0)));
+                R3.Observable.CombineLatest(index, direction, (i, d) => canMove && (d == ListSortDirection.Ascending ? i > 0 : i < count - 1)),
+                R3.Observable.CombineLatest(index, direction, (i, d) => canMove && (d == ListSortDirection.Ascending ? i < count - 1 : i > 0))));
             return model;
         });
     }

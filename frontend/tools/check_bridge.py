@@ -57,10 +57,12 @@ class ContractTests(unittest.TestCase):
         class ModActions:
             def snapshot(self): return [{'name': 'Overwrite', 'state': 4, 'priority': 1,
                 'priorityText': '', 'overwrite': True, 'conflicts': 'Native archive conflict', 'flags': 'Native status'}]
+            def plugin_snapshot(self): return [{'name': 'Base.esm', 'canToggle': False, 'canMove': False, 'modIndex': '00', 'diagnostics': 'Native missing master warning'}]
             def details(self, name): return {'opened': True, 'modName': name}
         self.bridge.mod_actions = ModActions()
         result = self.bridge.execute(self.request(action='snapshot'))
         self.assertEqual(result['mods'], self.bridge.mod_actions.snapshot())
+        self.assertEqual(result['plugins'], self.bridge.mod_actions.plugin_snapshot())
         request = self.request(action='showModDetails', name='Overwrite')
         self.assertEqual(self.bridge.execute(request), {'opened': True, 'modName': 'Overwrite'})
         self.organizer.current = 'Z:/profiles/Other'

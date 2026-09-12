@@ -22,8 +22,9 @@ Configured executables launch through MO2. Profile selection starts a configured
 Pause, resume and cancel route through MO2’s existing download controls.
 FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
 verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.
-**Details in MO2** opens its original conflict/file dialog. Richer plugin
-diagnostics are still being integrated.
+**Details in MO2** opens its original conflict/file dialog. Selecting plugins
+shows MO2’s diagnostics and hexadecimal mod indices. Activation and row movement
+controls reflect MO2’s restrictions.
 Fixture scenarios are available only with `run-fixtures.sh` (or `MO2_FIXTURES=1`).
 
 ## Run
@@ -97,7 +98,7 @@ games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
 acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
-- Expose richer native plugin diagnostics and forced-state information.
+- Expand verification of native plugin diagnostics, including missing-master and LOOT messages.
 - Verify panel drag/drop, history and state restoration more broadly.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.

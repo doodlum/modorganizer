@@ -20,6 +20,10 @@ internal sealed class ScenarioPlugin : ReactiveObject, IReactiveSortItem
     public string ModName { get; set; }
     public Optional<LoadoutItemGroupId> ModGroupId { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool CanToggle { get; init; } = true;
+    public bool CanMove { get; init; } = true;
+    public string Diagnostics { get; init; } = "";
+    public string ModIndex { get; init; } = "";
     public ISortItemLoadoutData? LoadoutData { get; set; }
     public ScenarioPlugin(string name, string mod, int index, params string[] masters)
     { Key = new SortItemKey<string>(name); DisplayName = name; ModName = mod; _index = index; Masters = masters; }
