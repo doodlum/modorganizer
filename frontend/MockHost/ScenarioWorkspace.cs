@@ -26,6 +26,10 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
     public ReactiveUI.ReactiveCommand<System.Reactive.Unit, bool> BringWindowToFront { get; } = ReactiveUI.ReactiveCommand.Create(() => true);
+    public MemorySettings Settings { get; }
+    public PageData SettingsPage { get; }
+    public PageData PluginOrderPage { get; }
+    public ScenarioPluginOrder PluginOrder { get; } = new();
     public ScenarioData Data { get; }
     public ScenarioHomeMenu HomeMenu { get; }
     public ScenarioWorkspace()
@@ -33,7 +37,8 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         services.Add<IWindowManager>(windows);
-        services.Add<ISettingsManager>(new MemorySettings());
+        Settings = new MemorySettings(services);
+        services.Add<ISettingsManager>(Settings);
         services.Add<ILoggerFactory>(NullLoggerFactory.Instance);
         services.Add<IWorkspaceAttachmentsFactoryManager>(new FixtureAttachments());
         PageData? loadoutsData = null;
@@ -47,7 +52,14 @@ internal sealed class ScenarioWorkspace : IWorkspaceWindow
         var loadouts = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30002", "My Loadouts", IconValues.Package,
             () => new ScenarioLoadoutsPage(windows, Data));
         loadoutsData = loadouts.Data;
-        services.Add(new PageFactoryController([games, loadouts, new NewTabPageFactory(services)]));
+        var settingsPage = ScenarioSettings.Register(services, Settings, windows);
+        SettingsPage = settingsPage.Data;
+        services.Add<NexusMods.Sdk.IOSInterop>(new ScenarioOSInterop());
+        services.Add<IEnumerable<NexusMods.App.UI.Pages.Sorting.ILoadOrderDataProvider>>([new ScenarioOrderProvider()]);
+        var orderPage = new FixturePageFactory("5f4a4e38-3b08-40d9-9ab3-d3a2a5f30004", "Plugin load order", IconValues.Package,
+            () => new ScenarioLoadOrderPage(services, PluginOrder));
+        PluginOrderPage = orderPage.Data;
+        services.Add(new PageFactoryController([games, loadouts, settingsPage, orderPage, new NewTabPageFactory(services)]));
         // The controller is internal upstream. Instantiate its public constructor without forking
         // its implementation so panel geometry, tab navigation, drag/drop and history stay original.
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", throwOnError: true)!;
@@ -62,7 +74,9 @@ internal sealed class FixtureServices : IServiceProvider
 {
     private readonly Dictionary<Type, object> _services = new();
     public void Add<T>(T service) where T : notnull => _services[typeof(T)] = service;
-    public object? GetService(Type serviceType) => _services.GetValueOrDefault(serviceType);
+    private readonly Dictionary<Type, Func<object>> _factories = new();
+    public void AddFactory<T>(Func<T> factory) where T : notnull => _factories[typeof(T)] = () => factory();
+    public object? GetService(Type serviceType) => _factories.TryGetValue(serviceType, out var factory) ? factory() : _services.GetValueOrDefault(serviceType);
 }
 
 internal sealed record FixturePageContext(PageFactoryId FactoryId) : IPageFactoryContext;
@@ -102,12 +116,19 @@ internal sealed class FixtureWindows : IWindowManager
     public Task<StandardDialogResult> ShowDialog(IDialog dialog, DialogWindowType windowType) => throw new NotSupportedException("Scenario dialogs are not wired yet.");
 }
 
-internal sealed class MemorySettings : ISettingsManager
+internal sealed class MemorySettings(IServiceProvider services) : ISettingsManager
 {
     private readonly Dictionary<(Type, string?), object> _values = new();
     private readonly Dictionary<(Type, string?), object> _changes = new();
-    public FrozenDictionary<Type, SettingsConfig> Configs { get; } = FrozenDictionary<Type, SettingsConfig>.Empty;
-    public T GetDefault<T>() where T : class, ISettings, new() => new();
+    public FrozenDictionary<Type, SettingsConfig> Configs { get; private set; } = FrozenDictionary<Type, SettingsConfig>.Empty;
+    public void Register<T>() where T : class, ISettings, new()
+    {
+        var builder = new NexusMods.Backend.SettingsBuilder();
+        T.Configure(builder);
+        var config = builder.ToConfig(new SettingsRegistration(typeof(T), new T(), T.Configure));
+        Configs = Configs.Values.Append(config).ToFrozenDictionary(x => x.Type);
+    }
+    public T GetDefault<T>() where T : class, ISettings, new() => Configs.TryGetValue(typeof(T), out var config) ? (T)config.DefaultValueFactory(services) : new();
     public T Get<T>(string? key = null) where T : class, ISettings, new() => TryGet<T>(out var value, key) ? value : GetDefault<T>();
     public bool TryGet<T>([NotNullWhen(true)] out T? value, string? key = null) where T : class, ISettings, new()
     { value = _values.GetValueOrDefault((typeof(T), key)) as T; return value is not null; }

@@ -66,3 +66,23 @@ The fixture currently starts with one detected New Vegas game and no loadouts.
 A separate [Nexus app reference fork](reference/README.md) is being developed to
 compare New Vegas screens against the real app, as requested. This does not
 connect the mock frontend to MO2 or to real mod data.
+
+## Settings and plugin-order fixtures
+
+The toolbar Settings button opens the original settings page. Nine upstream
+settings support in-memory drafts, discard, save and reopening in another tab.
+No setting writes to MO2 or the installed reference app.
+
+```sh
+MO2_VERIFY_SETTINGS=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/settings.png" ./frontend/run.sh
+MO2_VERIFY_ORDER=1 MO2_SCREENSHOT="$PWD/frontend/artifacts/plugin-order.png" ./frontend/run.sh
+```
+
+The new-tab page includes a standalone **Plugin load order** scenario using the
+original load-order view, adapter and commands with six fake ESM/ESP entries.
+The order check invokes the native row command, checks the updated index and
+row position, rejects moving a master after its dependent, and toggles display
+direction. Updates are published as a batch after all indices settle.
+The page was rendered and visually inspected. This is not yet the normal
+loadout **Rules** container, and per-loadout orders, drag/drop verification,
+file conflicts and complete reference comparisons remain unfinished.

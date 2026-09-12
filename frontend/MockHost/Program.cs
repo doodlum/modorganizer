@@ -1,4 +1,9 @@
+using NexusMods.App.UI.Controls;
+using NexusMods.App.UI.Pages.Sorting;
 using System.Reactive.Linq;
+using NexusMods.App.UI.Controls.Settings.SettingEntries;
+using NexusMods.App.UI.Pages.Settings;
+using NexusMods.App.UI.Settings;
 using NexusMods.App.UI.Controls.Navigation;
 using Avalonia;
 using Avalonia.Controls;
@@ -67,7 +72,7 @@ public partial class MockApp : Application
                 RowDefinitions = new RowDefinitions("Auto,*,48") };
             var scenario = new ScenarioWorkspace();
             Add(grid, new Spine { ViewModel = new ScenarioSpine(scenario) }, 0, 0, rowSpan: 2);
-            var topbar = new ScenarioTopBar(scenario.WorkspaceController);
+            var topbar = new ScenarioTopBar(scenario);
             Add(grid, new TopBarView { ViewModel = topbar }, 1, 0, columnSpan: 2);
             Add(grid, new HomeLeftMenuView { ViewModel = scenario.HomeMenu }, 1, 1);
             Add(grid, new WorkspaceView { ViewModel = scenario.WorkspaceController.ActiveWorkspace,
@@ -80,6 +85,10 @@ public partial class MockApp : Application
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => VerifyWorkspace(scenario), TimeSpan.FromSeconds(1));
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SCENARIOS") == "1")
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifyScenarios(scenario), TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_SETTINGS") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifySettings(scenario, topbar), TimeSpan.FromSeconds(1));
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORDER") == "1")
+                window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => await VerifyOrder(scenario), TimeSpan.FromSeconds(1));
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(() => {
@@ -90,6 +99,64 @@ public partial class MockApp : Application
                 }, TimeSpan.FromSeconds(3));
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task VerifyOrder(ScenarioWorkspace scenario)
+    {
+        var controller = scenario.WorkspaceController;
+        var panel = controller.ActiveWorkspace.SelectedPanel;
+        controller.OpenPage(controller.ActiveWorkspaceId, scenario.PluginOrderPage,
+            new OpenPageBehavior.ReplaceTab(panel.Id, panel.SelectedTab.Id));
+        await Task.Delay(200);
+        var page = (ScenarioLoadOrderPage)controller.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        var order = scenario.PluginOrder;
+        var lighting = order.Plugins.Single(x => x.DisplayName == "Desert Lighting.esp");
+        var row = page.Adapter.Source.Value.Items.Single(x => x.Key.Equals(lighting.Key));
+        var index = row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
+        index.MoveDown.Execute(R3.Unit.Default);
+        await Task.Delay(150);
+        row = page.Adapter.Source.Value.Items.Single(x => x.Key.Equals(lighting.Key));
+        index = row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
+        if (index.SortIndex.Value != 4) throw new InvalidOperationException("Displayed plugin index did not update");
+        if (!page.Adapter.Source.Value.Items.Select(x => x).ToArray()[4].Key.Equals(lighting.Key))
+            throw new InvalidOperationException("Displayed rows did not reorder");
+        if (lighting.SortIndex != 4) throw new InvalidOperationException("Plugin move failed");
+        index.MoveDown.Execute(R3.Unit.Default);
+        await Task.Delay(100);
+        if (lighting.SortIndex != 4) throw new InvalidOperationException("Dependent plugin moved ahead of master");
+        await page.SwitchSortDirectionCommand.Execute();
+        if (page.IsAscending) throw new InvalidOperationException("Sort direction failed");
+        await page.SwitchSortDirectionCommand.Execute();
+        if (!page.IsAscending) throw new InvalidOperationException("Ascending restoration failed");
+        Console.WriteLine("PASS: original load-order page activation; native row command; displayed row/index updates; master constraint; sort direction toggle");
+    }
+
+    private static async Task VerifySettings(ScenarioWorkspace scenario, ScenarioTopBar topbar)
+    {
+        await topbar.OpenSettingsCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await Task.Delay(150); // allow the actual settings view and nested controls to activate
+        var workspace = scenario.WorkspaceController.ActiveWorkspace;
+        if (workspace.SelectedTab.Contents.ViewModel is not SettingsPageViewModel settings)
+            throw new InvalidOperationException("Settings navigation failed");
+        var entry = settings.SettingEntries.Single(entry => entry.Config.Options.DisplayName == "Bring app window to front");
+        var toggle = (SettingToggleViewModel)entry.InteractionControlViewModel;
+        var original = scenario.Settings.Get<BehaviorSettings>().BringWindowToFront;
+        toggle.BooleanContainer.CurrentValue = !original;
+        if (!settings.HasAnyValueChanged.Value || scenario.Settings.Get<BehaviorSettings>().BringWindowToFront != original)
+            throw new InvalidOperationException("Settings draft leaked into saved state");
+        settings.CancelCommand.Execute(R3.Unit.Default);
+        if (toggle.BooleanContainer.CurrentValue != original || settings.HasAnyValueChanged.Value)
+            throw new InvalidOperationException("Discard failed");
+        toggle.BooleanContainer.CurrentValue = !original;
+        settings.SaveCommand.Execute(R3.Unit.Default);
+        if (scenario.Settings.Get<BehaviorSettings>().BringWindowToFront == original || settings.HasAnyValueChanged.Value)
+            throw new InvalidOperationException("Settings save failed");
+        await topbar.OpenSettingsCommand.Execute(NavigationInformation.From(OpenPageBehaviorType.NewTab));
+        await Task.Delay(100);
+        var second = (SettingsPageViewModel)workspace.SelectedTab.Contents.ViewModel;
+        var secondToggle = (SettingToggleViewModel)second.SettingEntries.Single(entry => entry.Config.Options.DisplayName == "Bring app window to front").InteractionControlViewModel;
+        if (secondToggle.BooleanContainer.CurrentValue == original) throw new InvalidOperationException("Reopened settings lost saved values");
+        Console.WriteLine($"PASS: Settings toolbar navigation; {settings.SettingEntries.Count} upstream settings; edit/discard/save; values survive reopening in another tab");
     }
 
     private static async Task VerifyScenarios(ScenarioWorkspace scenario)
