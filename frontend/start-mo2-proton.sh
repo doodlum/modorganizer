@@ -39,7 +39,7 @@ flock --nonblock "$mo2_launch_lock" || { echo 'MO2 launcher is already active fo
 command_file="$prefix_root/mo2-frontend-launch.cmd"
 windows_instance="Z:${instance_root//\//\\}"
 windows_instance="${windows_instance//%/%%}"
-printf '@echo off\r\nset QT_QPA_PLATFORM=windows:nowmpointer\r\ncd /d "%s"\r\n"%s\\ModOrganizer.exe"\r\n' "$windows_instance" "$windows_instance" > "$command_file.tmp"
+printf '@echo off\r\nset QT_QPA_PLATFORM=windows:nowmpointer\r\nset MO2_FRONTEND_HOST=1\r\ncd /d "%s"\r\n"%s\\ModOrganizer.exe"\r\n' "$windows_instance" "$windows_instance" > "$command_file.tmp"
 mv -- "$command_file.tmp" "$command_file"
 export STEAM_COMPAT_DATA_PATH="$prefix_root"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root"

@@ -159,6 +159,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEXUS_ACCOUNT") == "1") {
@@ -180,6 +181,7 @@ public partial class MockApp : Application
                             await Task.Delay(2000);
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_CARDS") == "1") await VerifyProfileCards(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HISTORY") == "1") await VerifyLiveHistory(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_PANELS") == "1") await VerifyNativePanels(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CROSS_GAME") is { } skyrimInstance)
                             await VerifyCrossGame(live, liveWindow, skyrimInstance);
@@ -506,6 +508,37 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyProfileNavigation(Mo2LiveWorkspace live, Window window)
+    {
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        var expected = live.CatalogEntries.Sum(x => x.Instance?.Profiles.Length ?? 0);
+        if (spine.LoadoutSpineItems.Count != expected) throw new InvalidOperationException("Spine must show one entry per MO2 profile");
+        foreach (var item in spine.LoadoutSpineItems)
+            if (item.Image.Size.Width != item.Image.Size.Height) throw new InvalidOperationException("Profile spine artwork must be square");
+        foreach (var directory in new[] { "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" }) {
+            var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+            var target = entry.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
+            var item = spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + directory + ")");
+            await item.Click.Execute();
+            await WaitFor(() => Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == target.Directory && item.IsActive,
+                "Spine did not connect and select the requested profile", seconds: 110);
+            if (!window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView>().Any() ||
+                window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView>().Any())
+                throw new InvalidOperationException("Profile workspace did not replace the Home sidebar");
+            if (!window.GetVisualDescendants().OfType<Mo2ModsView>().Any() || !window.GetVisualDescendants().OfType<Mo2PluginsView>().Any())
+                throw new InvalidOperationException("Profile spine did not open both live panels");
+        }
+        await spine.Home.Click.Execute();
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView>().Any() && window.GetVisualDescendants().OfType<MyGamesView>().Any(), "Home sidebar and game page were not restored");
+        live.OpenProfiles();
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyLoadoutsView>().Any(), "My Loadouts did not render");
+        var page = (Mo2LoadoutsPage)live.WorkspaceController.ActiveWorkspace.SelectedTab.Contents.ViewModel;
+        foreach (var section in page.GameSectionViewModels)
+            if (section.CardViewModels.First() is not Mo2CreateProfileCard) throw new InvalidOperationException("Create card must come first");
+        live.ShowProfile();
+        Console.WriteLine("PASS: square per-profile spine entries connect Skyrim and FNV directly, replace Home sidebar, restore Home navigation and show Create first");
+    }
+
     private static async Task VerifyReorderGuards(Mo2LiveWorkspace live)
     {
         if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
@@ -563,6 +596,50 @@ public partial class MockApp : Application
         if (view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Disable selected") && x.IsEffectivelyEnabled))
             throw new InvalidOperationException("Forced plugin activation controls are enabled");
         Console.WriteLine("PASS: " + expected.Length + " native plugin diagnostics, mod indices and restrictions match MO2; forced plugin controls disabled for " + plugin.DisplayName);
+    }
+
+    private static async Task VerifyLiveHistory(Mo2LiveWorkspace live, Window window)
+    {
+        var endpoint = live.Profile.Endpoint;
+        var path = live.Profile.ProfilePath;
+        var originalMods = live.Profile.Mods.Select(x => (x.Name, x.Priority, x.State)).OrderBy(x => x.Name).ToArray();
+        var originalPlugins = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        var games = live.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
+        var fnv = games.Single(x => x.Contains("Vegas"));
+        var skyrim = games.Single(x => x.Contains("Skyrim"));
+        live.OpenLoadouts(fnv);
+        var home = live.WorkspaceController.ActiveWorkspace;
+        var panel = home.SelectedPanel;
+        var tab = panel.SelectedTab;
+        async Task AssertPage(string game) {
+            await WaitFor(() => tab.Contents.PageData.Context is Mo2GamePageContext context && context.Game == game &&
+                tab.Contents.ViewModel is Mo2LoadoutsPage page && page.GameSectionViewModels.Count > 0 &&
+                page.GameSectionViewModels.All(x => x.HeadingText == game + " Loadouts") &&
+                window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.MyLoadouts.MyLoadoutsView>().Any(x => ReferenceEquals(x.ViewModel, page)), "History restored an incorrect game page");
+            if (live.Profile.Endpoint != endpoint || live.Profile.ProfilePath != path) throw new InvalidOperationException("Browsing game history changed the connected profile");
+        }
+        await AssertPage(fnv);
+        live.OpenLoadouts(skyrim);
+        if (panel.SelectedTab.Id != tab.Id) throw new InvalidOperationException("Game filter navigation did not reuse its tab");
+        await AssertPage(skyrim);
+        async Task ClickHistory(string name, string game) {
+            var button = window.GetVisualDescendants().OfType<TopBarView>().Single().FindControl<NexusMods.App.UI.Controls.StandardButton>(name)!;
+            await WaitFor(() => button.Command?.CanExecute(button.CommandParameter) == true, "Native history control is disabled");
+            button.Command!.Execute(button.CommandParameter);
+            await AssertPage(game);
+        }
+        await ClickHistory("GoBackInHistory", fnv);
+        await ClickHistory("GoForwardInHistory", skyrim);
+        live.OpenGames();
+        panel.SelectTab(tab.Id);
+        await AssertPage(skyrim);
+        await ClickHistory("GoBackInHistory", fnv);
+        live.ShowProfile();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any() && window.GetVisualDescendants().OfType<Mo2PluginsView>().Any(), "Live panels were not restored after history navigation");
+        await live.Profile.Refresh();
+        if (!originalMods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.Priority, x.State)).OrderBy(x => x.Name)) ||
+            !originalPlugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)))) throw new InvalidOperationException("History navigation changed live mod/plugin state");
+        Console.WriteLine("PASS: native Back/Forward restores FNV and Skyrim loadout filters, survives another tab, preserves MO2 connection and mod/plugin state, and restores both live panels");
     }
 
     private static async Task VerifyNativePanels(Mo2LiveWorkspace live, Window window)

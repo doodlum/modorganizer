@@ -60,6 +60,19 @@ internal sealed class Mo2GameCard : AViewModel<IGameWidgetViewModel>, IGameWidge
 }
 internal static class Mo2GameArt
 {
+    public static Bitmap Icon(string game)
+    {
+        var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830"
+            : game.Contains("Vegas", StringComparison.OrdinalIgnoreCase) ? "22380" : null;
+        if (id is not null) {
+            var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+            foreach (var size in new[] { 256, 128, 96, 64, 48, 32 }) {
+                var path = Path.Combine(root, "icons", "hicolor", $"{size}x{size}", "apps", $"steam_icon_{id}.png");
+                if (File.Exists(path)) return new Bitmap(path);
+            }
+        }
+        return new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusMods.App.UI/Assets/mod-thumbnail-fallback.png")));
+    }
     public static Bitmap Cover(string game)
     {
         var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830" : "22380";
@@ -95,9 +108,9 @@ internal sealed class Mo2LoadoutsSection : AViewModel<IGameLoadoutsSectionEntryV
     public Mo2LoadoutsSection(Mo2LiveWorkspace shell, string game, IEnumerable<Mo2CatalogEntry> entries)
     {
         HeadingText = game + " Loadouts";
-        CardViewModels = new(new ObservableCollection<IViewModelInterface>(entries.SelectMany(entry => entry.Instance!.Profiles.Select((profile, index) =>
-            new Mo2LoadoutCard(shell, entry, profile, index + 1)).Cast<IViewModelInterface>()
-                .Concat(entry.Instance.Profiles.Length > 0 ? [new Mo2CreateProfileCard(shell, entry)] : []))));
+        CardViewModels = new(new ObservableCollection<IViewModelInterface>(entries.SelectMany(entry =>
+            (entry.Instance!.Profiles.Length > 0 ? new IViewModelInterface[] { new Mo2CreateProfileCard(shell, entry) } : [])
+                .Concat(entry.Instance.Profiles.Select((profile, index) => new Mo2LoadoutCard(shell, entry, profile, index + 1))))));
     }
 }
 internal sealed class Mo2CreateProfileCard : AViewModel<ICreateNewLoadoutCardViewModel>, ICreateNewLoadoutCardViewModel
@@ -141,7 +154,7 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
         CloneLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "copy"));
         DeleteLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "remove"),
             Observable.Return(!IsLastLoadout && entry.Instance.SelectedProfile != profile.Name));
-        LoadoutImage = Mo2GameArt.Cover(entry.Instance!.Game);
+        LoadoutImage = Mo2GameArt.Icon(entry.Instance!.Game);
         LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = number.ToString() };
         VisitLoadoutCommand = ReactiveCommand.CreateFromTask(async () => {
             if (await shell.Profile.SelectProfile(Registration, profile)) shell.ShowProfile();

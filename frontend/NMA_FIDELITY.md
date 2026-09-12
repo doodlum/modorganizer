@@ -40,3 +40,26 @@ My Loadouts. Screenshots in ignored local artifacts:
 No Apply, game launch, installation or profile mutation was performed in the
 reference app during this comparison. These observations establish remaining
 work; they do not establish frontend parity.
+
+## First corrections verified
+
+The live spine now contains one entry per actual MO2 profile. Entries use local
+square Steam application icons, and loadout cards use the same icon source.
+My Games retains portrait tiles. Create cards precede the profiles belonging
+to each instance.
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_PROFILE_NAVIGATION=1` passed with the actual
+Skyrim and isolated FNV hosts. Profile icon commands connected to both games,
+updated selection and both live panels, and replaced Home navigation with
+the native loadout sidebar. Home restored My Games/My Loadouts. Evidence:
+`artifacts/profile-navigation.png` and `/tmp/mo2-profile-navigation.log`.
+
+The loadout sidebar currently maps Downloads, My Mods and Plugins. Health Check
+is still absent; deployment/collection controls are omitted. The custom mods
+page and launch/header rows still need replacement. This is not full parity.
+
+Frontend-host startup now sets `MO2_FRONTEND_HOST=1`. The bridge suppresses
+the main window only in that mode using Qt's `WA_DontShowOnScreen`. Both hosts
+still connected during the navigation test. The splash and command window
+were visibly present during startup: background UI suppression is incomplete.
+Explicit native dialogs and hidden-host lifetime still need separate checks.

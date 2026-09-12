@@ -1,7 +1,8 @@
 """Normal MO2 Python tool extension hosting the alternate frontend bridge."""
 from pathlib import Path
+import os
 import mobase
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMessageBox
 from .core import Bridge
@@ -34,6 +35,11 @@ class NexusFrontendBridge(mobase.IPluginTool):
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
         def ready(window):
+            if os.environ.get('MO2_FRONTEND_HOST') == '1':
+                # Keep the original models and extension APIs alive without a
+                # second main UI. Explicit installer/tool dialogs remain windows.
+                window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                window.hide()
             self.bridge.mod_actions = ModActions(organizer, window)
             self.bridge.downloads.window = window
             self.bridge.profiles = Profiles(organizer, window)

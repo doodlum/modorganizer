@@ -42,6 +42,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly WorkspaceId _homeWorkspace;
     private readonly WorkspaceId _profileWorkspace;
     public ScenarioHomeMenu HomeMenu { get; }
+    public Mo2LoadoutMenu ProfileMenu { get; }
     public Mo2InstanceCatalog Catalog { get; }
     public IReadOnlyList<Mo2CatalogEntry> CatalogEntries { get; private set; } = [];
     private string? _catalogSnapshot;
@@ -111,6 +112,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data);
         var workspace = WorkspaceController.CreateWorkspace(new Mo2WorkspaceContext(), mods.Data);
         _profileWorkspace = workspace.Id;
+        ProfileMenu = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, mods.Data, plugins.Data, downloads.Data);
         WorkspaceController.ChangeActiveWorkspace(workspace.Id);
         WorkspaceController.OpenPage(workspace.Id, plugins.Data, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true, new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)), new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
     }
@@ -186,9 +188,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Grid.SetRow(view, 2); Grid.SetColumn(view, 2); grid.Children.Add(view);
         var spine = new Spine { ViewModel = new Mo2Spine(this) };
         Grid.SetRowSpan(spine, 3); grid.Children.Add(spine);
-        var sidebar = new ViewModelViewHost { ViewModel = HomeMenu };
+        var profileSidebar = new NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView { ViewModel = ProfileMenu };
+        // MO2 has no separate collection/deployment authority. Health Check is wired separately.
+        foreach (var name in new[] { "NewCollection", "HealthCheckItem", "ApplyControlViewHost" })
+            profileSidebar.FindControl<Control>(name)!.IsVisible = false;
+        var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
+        var sidebar = new ContentControl { Content = homeSidebar };
         Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); Grid.SetRowSpan(sidebar, 2); grid.Children.Add(sidebar);
-        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; top.IsVisible = workspace.Id == _profileWorkspace; });
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; top.IsVisible = workspace.Id == _profileWorkspace; sidebar.Content = workspace.Id == _profileWorkspace ? profileSidebar : homeSidebar; });
         Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod; header.IsEnabled = !Profile.Launching && !Profile.ManagingMod; };
         Grid.SetRow(status, 3); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,

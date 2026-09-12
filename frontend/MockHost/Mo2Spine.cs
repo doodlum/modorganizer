@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reactive.Linq;
 using NexusMods.App.UI.WorkspaceSystem;
 using NexusMods.App.UI.Controls.Spine;
+using NexusMods.App.UI.Controls.LoadoutBadge;
 using NexusMods.App.UI.Controls.Spine.Buttons.Download;
 using NexusMods.App.UI.Controls.Spine.Buttons.Icon;
 using NexusMods.App.UI.Controls.Spine.Buttons.Image;
@@ -27,12 +28,28 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         Downloads = new SpineDownloadButtonDesignerViewModel { Number = 0, Units = "", Click = ReactiveCommand.Create(shell.OpenDownloads) };
         var games = new ObservableCollection<IImageButtonViewModel>();
         LoadoutSpineItems = new(games);
+        var targets = new Dictionary<ImageButtonViewModel, (Mo2Registration Registration, Mo2ProfileSnapshot Profile)>();
+        string? fingerprint = null;
         void RefreshGames() {
-            var names = shell.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
-            if (names.SequenceEqual(games.Select(x => x.Name))) return;
-            games.Clear();
-            foreach (var name in names) games.Add(new ImageButtonViewModel {
-                Name = name, Image = Mo2GameArt.Cover(name), Click = ReactiveCommand.Create(() => shell.OpenLoadouts(name)) });
+            var entries = shell.CatalogEntries.Where(x => x.Instance is not null).ToArray();
+            var next = System.Text.Json.JsonSerializer.Serialize(entries.Select(x => new {
+                x.Registration, x.Instance!.Game, Profiles = x.Instance.Profiles.Select(p => new { p.Name, p.Directory })
+            }));
+            if (next == fingerprint) return;
+            fingerprint = next;
+            games.Clear(); targets.Clear();
+            foreach (var entry in entries)
+                foreach (var (profile, index) in entry.Instance!.Profiles.Select((profile, index) => (profile, index))) {
+                    var item = new ImageButtonViewModel {
+                        Name = entry.Instance.Game + " — " + profile.Name + " (" + entry.Registration.Directory + ")",
+                        Image = Mo2GameArt.Icon(entry.Instance.Game),
+                        LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = (index + 1).ToString() },
+                        Click = ReactiveCommand.CreateFromTask(async () => {
+                            if (await shell.Profile.SelectProfile(entry.Registration, profile)) shell.ShowProfile();
+                        })
+                    };
+                    targets.Add(item, (entry.Registration, profile)); games.Add(item);
+                }
             RefreshSelection();
         }
         RefreshGames();
@@ -40,7 +57,9 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         void RefreshSelection() {
             var home = shell.WorkspaceController.ActiveWorkspace.Context is HomeContext;
             ((IconButtonViewModel)Home).IsActive = home;
-            foreach (var item in LoadoutSpineItems.Cast<ImageButtonViewModel>()) item.IsActive = !home && (item.Name == shell.GameName || (item.Name == "New Vegas" && shell.Profile.NexusGame == "newvegas"));
+            foreach (var (item, target) in targets)
+                item.IsActive = !home && shell.Profile.Endpoint == target.Registration.Endpoint &&
+                    Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath) == target.Profile.Directory;
         }
         shell.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => RefreshSelection());
         shell.Profile.Changed += RefreshSelection;
