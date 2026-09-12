@@ -17,3 +17,9 @@ edit
 
 /src/version.aps
 .idea/
+
+# Alternate frontend local SDK and build output
+.tools/
+**/bin/
+**/obj/
+frontend/artifacts/
