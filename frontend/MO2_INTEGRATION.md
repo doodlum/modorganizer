@@ -125,6 +125,32 @@ exit. Evidence: `/tmp/mo2-dialog-queue-native.log` and
 `artifacts/dialog-queue-native-return.png`. Build passed with the existing NU1902
 warning. The queue check is in `MockHost/Mo2DialogQueueCheck.cs`.
 
+## PLAY and profile-card requests during refresh
+
+PLAY and profile-card actions now wait for an in-progress bridge refresh and
+mark the UI busy before waiting, preventing duplicate queued clicks. PLAY keeps
+its original endpoint/profile and rejects a changed or unavailable target.
+Profile-card actions keep their explicit registration/profile instead of using
+whichever profile is selected later. They reconnect to that host, obtain a fresh
+profile list and require the card's profile to still belong to it before acting.
+
+The controlled transport suite (`MO2_VERIFY_DIALOG_QUEUE=1`) now has thirteen
+cases, including launch, profile-card operations, duplicate suppression, changed
+profiles, failed refreshes and missing card targets. A profile-card action can
+recover from a failed active snapshot through its own fresh host connection;
+a launch or current-profile dialog cannot cross that boundary. No game or native
+dialog runs in these controlled cases. Log: `/tmp/mo2-action-queue.log`.
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_ACTION_GUARDS=1` additionally passed against the
+isolated FNV host. An unconfigured executable reached the host's validation and
+was rejected before startApplication. Renaming the active profile reached the
+bridge's native-profile restriction and was rejected without opening a prompt.
+This matches MO2 2.5.2's ProfilesDialog rule requiring a different active profile
+before rename. The full snapshot remained unchanged and refresh recovered both
+connections. No profile was renamed and no game was launched by this check.
+Log: `/tmp/mo2-action-guards.log`; returned panels: `artifacts/action-guards.png`.
+Build passed with the existing NU1902 warning.
+
 ## Implementation history
 
 ### Download action profile boundaries

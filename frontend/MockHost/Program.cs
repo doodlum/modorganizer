@@ -165,6 +165,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ACTION_GUARDS") == "1") await VerifyActionGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PREVIEW") == "1") await VerifyPreview(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_PROFILE") == "1") await VerifyExternalProfile(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORIGINAL_UI") == "1") await VerifyOriginalUi(live, liveWindow);
@@ -535,6 +536,29 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyActionGuards(Mo2LiveWorkspace live)
+    {
+        const string executable = "frontend-nonexistent-executable";
+        var profile = live.Profile;
+        if (!profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || profile.Executables.Contains(executable))
+            throw new InvalidOperationException("Action guard check requires isolated FNV and an unconfigured executable name");
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        var before = (await client.SendAsync("snapshot")).GetRawText();
+        await profile.Launch(executable);
+        if (profile.Launching || !profile.Status.Contains("Choose an executable configured in MO2"))
+            throw new InvalidOperationException("Launch did not reach native executable validation");
+        await profile.Refresh();
+        var entry = live.CatalogEntries.Single(x => x.Registration.Endpoint == profile.Endpoint);
+        var target = entry.Instance!.Profiles.Single(x => x.Name == "Frontend Test");
+        await profile.ManageProfile(entry.Registration, target, "rename");
+        if (profile.SelectingProfile || !profile.Status.Contains("Select a different profile in MO2"))
+            throw new InvalidOperationException("Profile-card action did not reach native active-profile validation");
+        await profile.Refresh();
+        if (!profile.IsConnected || (await client.SendAsync("snapshot")).GetRawText() != before)
+            throw new InvalidOperationException("Native rejection changed MO2 state or prevented reconnect");
+        Console.WriteLine("PASS: queued-action implementation reaches real MO2 launch/profile validation; unconfigured executable and active-profile rename are rejected before side effects; snapshot unchanged and connection recovers");
     }
 
     private static async Task VerifyPreview(Mo2LiveWorkspace live)

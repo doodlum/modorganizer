@@ -205,10 +205,15 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task Launch(string executable)
     {
-        var profile = ProfilePath;
-        if (!await _commands.WaitAsync(0)) return;
+        if (!CanStartHostAction) return;
+        var target = CurrentTarget;
+        var profile = target.ProfilePath;
+        Launching = true; Changed?.Invoke();
+        await _commands.WaitAsync();
         try {
-            Launching = true; Status = "Launching " + executable + " through MO2; close the application to return"; Changed?.Invoke();
+            if (!IsConnected) return;
+            if (target != CurrentTarget) { Status = "The MO2 profile changed. Launch again."; return; }
+            Status = "Launching " + executable + " through MO2; close the application to return"; Changed?.Invoke();
             var result = await Client.SendAsync("launch", new() { ["profilePath"] = profile, ["name"] = executable }, timeout: TimeSpan.FromHours(12));
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             Status = result.GetProperty("completed").GetBoolean() ? executable + " exited (code " + result.GetProperty("exitCode").GetInt32() + ")" : "MO2 stopped waiting for the application; check the host";
@@ -217,9 +222,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task ManageProfile(Mo2Registration registration, Mo2ProfileSnapshot target, string operation)
     {
-        if (!await _commands.WaitAsync(0)) return;
+        if (Installing || SelectingProfile || Launching || ManagingMod) return;
+        SelectingProfile = true; Changed?.Invoke();
+        await _commands.WaitAsync();
         try {
-            SelectingProfile = true; Status = "Manage " + target.Name + " in MO2"; Changed?.Invoke();
+            Status = "Manage " + target.Name + " in MO2"; Changed?.Invoke();
             var snapshot = await Mo2HostStartup.Connect(registration, message => { Status = message; Changed?.Invoke(); });
             if (!snapshot.GetProperty("profiles").EnumerateArray().Any(x =>
                 Mo2InstanceCatalog.LocalPath(x.GetProperty("path").GetString()!) == Path.GetFullPath(target.Directory)))
