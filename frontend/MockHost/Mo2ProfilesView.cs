@@ -33,6 +33,8 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
         var add = new Button { Content = "Add MO2 instance…", Margin = new Thickness(0, 0, 8, 8) };
         var refresh = new Button { Content = "Refresh", Margin = new Thickness(0, 0, 8, 8) };
         var manage = new Button { Content = "Manage current instance’s profiles…", Margin = new Thickness(0, 0, 8, 8) };
+        var originalUi = new Button { Name = "OriginalMo2Ui", Content = "Show original MO2", Margin = new Thickness(0, 0, 8, 8) };
+        actions.Children.Add(originalUi);
         actions.Children.Add(add); actions.Children.Add(refresh); actions.Children.Add(manage); header.Children.Add(actions);
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap }; header.Children.Add(error);
         DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
@@ -43,6 +45,8 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
             if (ViewModel is not { } model) return;
             error.Text = model.Catalog.LoadError ?? "";
             manage.IsEnabled = !model.Profile.SelectingProfile && !model.Profile.Installing && model.Profile.ProfilePath.Length > 0;
+            originalUi.IsEnabled = model.Profile.CanChangeOriginalUi;
+            originalUi.Content = model.Profile.OriginalUiVisible == true ? "Hide original MO2" : "Show original MO2";
             entries.Children.Clear();
             foreach (var entry in model.Catalog.Read()) {
                 var section = new StackPanel { Spacing = 8 };
@@ -74,6 +78,7 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
                 entries.Children.Add(section);
             }
         }
+        originalUi.Click += async (_, _) => { if (ViewModel is { } model) await model.Profile.SetOriginalUiVisible(model.Profile.OriginalUiVisible != true); };
         refresh.Click += (_, _) => Render();
         manage.Click += async (_, _) => { if (ViewModel is not null) { await ViewModel.Profile.ManageProfiles(); Render(); } };
         add.Click += async (_, _) => {

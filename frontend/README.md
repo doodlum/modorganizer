@@ -96,6 +96,10 @@ It starts the GUI executable directly, avoiding a command window, and sets
 and informational notification toasts before they appear. Explicit installer,
 tool and actionable error dialogs remain available. Launching MO2 normally
 without that variable retains its original UI.
+With a profile connected, **MO2 instances → Show original MO2** reveals that
+same running host. **Hide original MO2** hides it again. Both interfaces use
+the same selected profile and MO2 models; opening another executable is not
+necessary. Closing the original MO2 window exits the host normally.
 The launcher reads Proton's `require_tool_appid` and uses that installed Steam
 runtime's `run` script. This supplies the matching multimedia libraries needed
 by games even when MO2 itself starts without them. If the runtime is installed

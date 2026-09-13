@@ -164,6 +164,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORIGINAL_UI") == "1") await VerifyOriginalUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1") await VerifyDownloadContext(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DRAG") == "1") await VerifyPluginDrag(live, liveWindow);
@@ -531,6 +532,34 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyOriginalUi(Mo2LiveWorkspace live, Window window)
+    {
+        var profile = live.Profile;
+        if (!profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || profile.OriginalUiVisible != false)
+            throw new InvalidOperationException("Original UI check requires the isolated FNV host starting hidden");
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        async Task<string> State() {
+            var snapshot = await client.SendAsync("snapshot");
+            return snapshot.GetProperty("profile").GetRawText() + snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
+        }
+        var before = await State();
+        live.OpenConnections();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ProfilesView>().Any(), "MO2 instances did not render");
+        var button = window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "OriginalMo2Ui");
+        try {
+            if (!button.IsEnabled || !Equals(button.Content, "Show original MO2")) throw new InvalidOperationException("Original UI action is unavailable");
+            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => profile.OriginalUiVisible == true && !profile.ManagingMod && Equals(button.Content, "Hide original MO2"), "Original MO2 did not become visible");
+            Console.WriteLine("ORIGINAL_UI_VISIBLE");
+            await Task.Delay(15000);
+            if (before != await State()) throw new InvalidOperationException("Showing original MO2 changed the profile state");
+            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => profile.OriginalUiVisible == false && !profile.ManagingMod && Equals(button.Content, "Show original MO2"), "Original MO2 did not hide");
+            if (before != await State()) throw new InvalidOperationException("Hiding original MO2 changed the profile state");
+            Console.WriteLine("PASS: original MO2 starts hidden; rendered instance-page button shows and hides the same host; profile, mods and plugins unchanged");
+        } finally { if (profile.OriginalUiVisible == true) await profile.SetOriginalUiVisible(false); }
     }
 
     private static async Task VerifyDownloadContext(Mo2LiveWorkspace live, Window window)

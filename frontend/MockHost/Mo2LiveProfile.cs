@@ -27,6 +27,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
     public string Endpoint { get; private set; }
     public bool SelectingProfile { get; private set; }
+    public bool? OriginalUiVisible { get; private set; }
+    public bool CanChangeOriginalUi => IsConnected && OriginalUiVisible.HasValue && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
     public string? LogsDirectory { get; private set; }
     public string NexusGame { get; private set; } = "";
     public string GameName => NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
@@ -66,6 +68,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         _lastSnapshot = raw;
         Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
         LogsDirectory = snapshot.GetProperty("instance").TryGetProperty("logsPath", out var logs) && logs.GetString() is { } logsPath ? Mo2InstanceCatalog.LocalPath(logsPath) : null;
+        OriginalUiVisible = snapshot.GetProperty("instance").TryGetProperty("uiVisible", out var visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null;
         NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
         Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
             .Where(x => !x.GetProperty("hidden").GetBoolean())
@@ -240,6 +243,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             var result = await Client.SendAsync("manageNexusAccount", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
             if (!result.GetProperty("opened").GetBoolean() || result.GetProperty("tab").GetString() != "nexusTab") throw new InvalidOperationException("MO2 did not open Nexus settings");
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    public async Task SetOriginalUiVisible(bool visible)
+    {
+        if (!CanChangeOriginalUi) return;
+        var target = CurrentTarget;
+        await _commands.WaitAsync();
+        try {
+            if (target != CurrentTarget || !CanChangeOriginalUi) return;
+            ManagingMod = true; Changed?.Invoke();
+            Apply(await Client.SendAsync("setUiVisible", new() { ["profilePath"] = ProfilePath, ["visible"] = visible }));
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }

@@ -57,6 +57,25 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(self.bridge.execute(self.request(action='snapshot'))['instance']['logsPath'])
         self.bridge.logs_path = 'Z:/custom MO2 data/logs'
         self.assertEqual(self.bridge.execute(self.request(action='snapshot'))['instance']['logsPath'], 'Z:/custom MO2 data/logs')
+    def test_original_ui_requires_ready_host_boolean_and_current_profile(self):
+        with self.assertRaises(ValueError):
+            self.bridge.execute(self.request(action='setUiVisible', visible=True))
+        class Interface:
+            visible = False
+            def is_visible(self): return self.visible
+            def set_visible(self, value): self.visible = value
+        self.bridge.interface = Interface()
+        for invalid in (1, 'true', None):
+            with self.assertRaises(ValueError):
+                self.bridge.execute(self.request(action='setUiVisible', visible=invalid))
+        request = self.request(action='setUiVisible', visible=True)
+        request['profilePath'] = 'another profile'
+        with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertFalse(self.bridge.interface.visible)
+        for visible in (True, False):
+            result = self.bridge.execute(self.request(action='setUiVisible', visible=visible))
+            self.assertEqual(result['instance']['uiVisible'], visible)
+        self.assertEqual(self.organizer.mods.calls + self.organizer.plugins.calls, 0)
     def test_native_mod_details_are_forwarded_without_recomputing_conflicts(self):
         class ModActions:
             def snapshot(self): return [{'name': 'Overwrite', 'state': 4, 'priority': 1,

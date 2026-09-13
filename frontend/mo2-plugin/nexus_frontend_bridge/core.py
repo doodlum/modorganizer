@@ -13,6 +13,7 @@ class Bridge:
     def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None, mod_actions=None):
         self.mod_actions = mod_actions
         self.logs_path = None
+        self.interface = None
         self.executables = executables
         self.profiles = profiles
         self.downloads = downloads
@@ -45,7 +46,8 @@ class Bridge:
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
-                         'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath(), 'logsPath': self.logs_path},
+                         'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath(), 'logsPath': self.logs_path,
+                         'uiVisible': self.interface.is_visible() if self.interface is not None else None},
             'mods': self.mod_actions.snapshot() if self.mod_actions is not None else [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
                       'priority': mods.priority(name)} for name in mods.allModsByProfilePriority()],
             'plugins': self.mod_actions.plugin_snapshot() if self.mod_actions is not None else [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),
@@ -68,6 +70,11 @@ class Bridge:
             raise ValueError('Active MO2 profile changed; refresh before editing')
         if self.profiles is not None and self.profiles.refreshing:
             raise ValueError('MO2 is refreshing the selected profile')
+        if action == 'setUiVisible':
+            if self.interface is None or type(request.get('visible')) is not bool:
+                raise ValueError('MO2 interface is unavailable or visibility is not a boolean')
+            self.interface.set_visible(request['visible'])
+            return self.snapshot()
         if action == 'healthCheck':
             if self.mod_actions is None:
                 raise ValueError('MO2 health checks are unavailable')

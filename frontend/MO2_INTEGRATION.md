@@ -531,3 +531,28 @@ nexusTab and returned successfully after Windows WM_CLOSE. The selected tab
 is checked inside the bridge without reading its contents. Screenshots only
 capture the returned frontend, not the account dialog. Fourteen bridge
 contract checks and the frontend build pass with the existing NU1902 warning.
+
+
+### Explicit original-interface switching — 2026-09-13
+
+The MO2 instances page now offers Show original MO2 / Hide original MO2 for
+its connected host. This reveals the existing main window without launching
+another executable or replacing the backend. The normal hidden-host startup
+still suppresses unsolicited main windows, splash screens and notification
+toasts. Explicitly showing MO2 permits its normal UI until hidden again.
+
+The bridge reports current window visibility as optional instance metadata;
+older or unavailable bridges disable the action. Visibility commands require
+the current bridge session and MO2 profile. The frontend waits for a pending
+refresh and rechecks its instance/profile before sending, avoiding a dropped
+click when periodic polling holds the command lock.
+
+MO2_VERIFY_CATALOG=1 MO2_VERIFY_ORIGINAL_UI=1 with MO2_SCREENSHOT exercises the
+rendered settings-page button against the isolated FNV Frontend Test profile.
+The original host starts hidden, becomes visible, and hides again; the full
+profile/mod/plugin snapshots stay unchanged. X11 independently confirms the
+original New Vegas window appears and disappears. The captured original window
+(artifacts/original-mo2-visible.png) shows Frontend Test, both enabled MCM mods
+and fourteen active plugins. Two runs pass after the refresh-lock fix. The
+returned instances-page render is artifacts/original-ui.png. Seventeen bridge contract checks pass;
+the incremental build passes with the existing OpenTelemetry NU1902 warning.

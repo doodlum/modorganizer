@@ -14,8 +14,26 @@ from .mod_actions import ModActions
 
 
 class FrontendVisibility(QObject):
+    def __init__(self, hidden):
+        super().__init__()
+        self.hidden = hidden
+        self.window = None
+
+    def is_visible(self):
+        return self.window is not None and self.window.isVisible() and not self.hidden
+
+    def set_visible(self, visible):
+        self.hidden = not visible
+        self.window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, not visible)
+        if visible:
+            self.window.showNormal()
+            self.window.raise_()
+            self.window.activateWindow()
+        else:
+            self.window.hide()
+
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.Polish and (
+        if self.hidden and event.type() == QEvent.Type.Polish and (
                 isinstance(watched, QSplashScreen) or watched.metaObject().className() in ('MainWindow', 'MessageDialog')):
             watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         return False
@@ -29,12 +47,9 @@ class NexusFrontendBridge(mobase.IPluginTool):
         self.bridge = None
 
     def init(self, organizer):
-        if os.environ.get('MO2_FRONTEND_HOST') == '1':
-            # MO2 loads extensions before constructing its splash and main window.
-            # Suppress main-window notification toasts too; explicitly requested
-            # installer/tool dialogs and actionable error dialogs remain visible.
-            self.visibility = FrontendVisibility()
-            QApplication.instance().installEventFilter(self.visibility)
+        # Suppress unsolicited host windows until the user explicitly opens MO2.
+        self.visibility = FrontendVisibility(os.environ.get('MO2_FRONTEND_HOST') == '1')
+        QApplication.instance().installEventFilter(self.visibility)
         states = mobase.PluginState
         active = getattr(states, 'ACTIVE', None)
         inactive = getattr(states, 'INACTIVE', None)
@@ -49,6 +64,8 @@ class NexusFrontendBridge(mobase.IPluginTool):
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
         def ready(window):
+            self.visibility.window = window
+            self.bridge.interface = self.visibility
             if os.environ.get('MO2_FRONTEND_HOST') == '1':
                 # Keep the original models and extension APIs alive without a
                 # second main UI. Explicit installer/tool dialogs remain windows.
