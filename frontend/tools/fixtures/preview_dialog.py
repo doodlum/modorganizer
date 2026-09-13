@@ -1,10 +1,11 @@
 """Temporary original DDS preview verification in the isolated FNV host."""
 import json
+import uuid
 from pathlib import Path
 import mobase
 from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import QApplication, QDialog, QTabWidget, QWidget, QTreeView
+from PyQt6.QtWidgets import QApplication, QDialog, QTabWidget, QWidget, QTreeView, QComboBox
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 
 
@@ -12,6 +13,8 @@ class PreviewCheck(mobase.IPluginTool):
     def init(self, organizer):
         self.root = Path(__file__).parent.parent
         if self.root.name != 'mo2-fnv-host': return False
+        self.organizer = organizer
+        self.run_id = str(uuid.uuid4())
         self.report = self.root / 'frontend-preview-result.json'
         organizer.onUserInterfaceInitialized(self.ready)
         return True
@@ -57,9 +60,46 @@ class PreviewCheck(mobase.IPluginTool):
                       'mainSuppressed': self.window.testAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen),
                       'glWidgets': [w.metaObject().className() for w in widgets],
                       'glValid': [w.isValid() for w in widgets]}
+            settings = self.root.parent / 'preview-settings-state.json'
+            if settings.exists():
+                state = json.loads(settings.read_text())
+                phase = state['phase']
+                if phase not in ('write', 'read', 'verify') or state.get('lastRun') == self.run_id:
+                    raise ValueError('Settings phase requires a fresh host initialization')
+                combo = dialog.findChildren(QComboBox)
+                if len(combo) != 1 or combo[0].count() < 2:
+                    raise ValueError('Original DDS channel selector is unavailable')
+                combo = combo[0]
+                value = lambda: self.organizer.pluginSetting('DDS Preview Plugin', 'channels')
+                if phase == 'write':
+                    state.update(originalIndex=combo.currentIndex(), originalValue=value(), changedIndex=(combo.currentIndex() + 1) % combo.count())
+                    # Preserve the original value before invoking the native setting callback.
+                    settings.write_text(json.dumps(state))
+                    combo.setCurrentIndex(state['changedIndex'])
+                    state['changedValue'] = value()
+                    if state['changedValue'] == state['originalValue']:
+                        raise ValueError('DDS channel selection did not update MO2 plugin settings')
+                    state['phase'] = 'read'
+                elif phase == 'read':
+                    if value() != state['changedValue'] or combo.currentIndex() != state['changedIndex']:
+                        raise ValueError('DDS setting did not survive host restart')
+                    combo.setCurrentIndex(state['originalIndex'])
+                    if value() != state['originalValue']:
+                        raise ValueError('Native DDS selector did not restore the original setting')
+                    state['phase'] = 'verify'
+                else:
+                    if value() != state['originalValue'] or combo.currentIndex() != state['originalIndex']:
+                        raise ValueError('Original DDS setting did not remain restored after restart')
+                    state['phase'] = 'done'
+                state['lastRun'] = self.run_id
+                settings.write_text(json.dumps(state))
+                result['settingsPhase'] = phase
+                result['settingsValue'] = value()
             # This is only the known mod texture preview, never an account/editor window.
             result['captured'] = dialog.grab().save(str(self.root.parent / 'native-dds-preview.png'))
             self.report.write_text(json.dumps(result))
+        except Exception as error:
+            self.report.write_text(json.dumps({"error": str(error)}))
         finally:
             dialog.reject()
 

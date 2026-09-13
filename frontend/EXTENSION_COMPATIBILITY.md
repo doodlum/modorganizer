@@ -160,3 +160,38 @@ The tracked fixture source remains; the installed copy was removed after this
 successful check. Build passed with the existing NU1902 warning. The frontend
 verifier exited successfully (`/tmp/mo2-preview.log`). This checks a loose DDS
 preview, not archive preview or every supported file type.
+
+
+### Original extension settings across host restarts
+
+The unchanged DDS Preview plugin's native colour-channel selector now has a
+three-host persistence check. In the first host, the verifier selected RGB in
+place of the original RGBA. The original selector's callback wrote the value
+through `IOrganizer.setPluginSetting`. The second fresh host opened the same
+preview with RGB selected and confirmed the value through `pluginSetting`, then
+restored RGBA using the same native selector. A third fresh host confirmed both
+the restored setting and the restored selector value.
+
+All three native previews remained visible with valid DDS OpenGL widgets while
+the main window stayed suppressed. Each frontend exited successfully, and the
+host was closed normally and confirmed stopped before the next launch. This
+uses MO2's plugin settings, without reading or editing ModOrganizer.ini. The only
+setting read was DDS Preview Plugin / channels. The extension source was not
+modified. The original value remains restored after the final shutdown.
+
+To enable the optional settings phases in the existing preview verifier, create
+`artifacts/preview-settings-state.json` containing `{"phase":"write"}` before
+the first host launch. Use the preview-check command above three times, with a
+fresh host and removal of its previous `frontend-preview-result.json` between
+runs. The marker advances through read, verify and done, retaining the original
+value for restoration. Preserve the reports and remove the phase marker and
+installed verifier when done. Each phase requires a new plugin initialization.
+The normal preview check does not change channel settings when this marker is
+absent.
+
+Evidence: `artifacts/preview-settings-{write,read,verify}-result.json`,
+`artifacts/preview-settings-result.json` and the three
+`/tmp/mo2-preview-settings-{write,read,verify}.log` files. All mod/profile file
+hashes remained unchanged across the full check. The temporary verifier was
+removed after the final host exit. This verifies the original DDS setting's UI,
+MO2 persistence and reload, not every third-party extension setting.
