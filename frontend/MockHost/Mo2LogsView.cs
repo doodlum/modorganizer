@@ -35,7 +35,7 @@ internal sealed class Mo2LogsView : ReactiveUserControl<Mo2LogsPage>
     public Mo2LogsView()
     {
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(16) };
-        root.Children.Add(new PageHeader { Title = "Logs", Description = "Live log output from MO2 and its extensions.", Icon = Mo2LogsPage.LogsIcon });
+        root.Children.Add(new PageHeader { Title = "Logs", Description = "Live log output from MO2 and its extensions.", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/logs.svg") });
         var bar = new WrapPanel { Margin = new Thickness(0,12,0,8) };
         bar.Children.Add(_files); bar.Children.Add(_level); bar.Children.Add(_filter);
         var refresh = new Button { Content = "Refresh" }; bar.Children.Add(refresh);

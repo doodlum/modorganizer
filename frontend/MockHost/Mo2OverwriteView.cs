@@ -32,7 +32,7 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
     public Mo2OverwriteView()
     {
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*"), Margin = new Thickness(24) };
-        root.Children.Add(new PageHeader { Title = "Overwrite", Icon = IconValues.Folder,
+        root.Children.Add(new PageHeader { Title = "Overwrite", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/overwrite.svg"),
             Description = "Generated files that take priority over installed mods." });
         var text = new TextBlock { Text = "Move these files into a mod to organise them. Actions below apply to the entire Overwrite folder.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,12), Opacity = .75 };
         Grid.SetRow(text,1); root.Children.Add(text);

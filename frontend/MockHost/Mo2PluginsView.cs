@@ -37,6 +37,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 if (thumbnail.Width != 46) thumbnail.Width = 46;
                 if (thumbnail.Height != 26) thumbnail.Height = 26;
             }
+            foreach (var image in editor.GetVisualDescendants().OfType<Image>().Where(x => x.Name == "ImageThumbnail"))
+                if (image.Stretch != Avalonia.Media.Stretch.Uniform) image.Stretch = Avalonia.Media.Stretch.Uniform;
             // Keep the native column header and a complete plugin row visible
             // before allocating space to the optional selection details.
             var available = Bounds.Height - actions.DesiredSize.Height - alert.Bounds.Height - 112;

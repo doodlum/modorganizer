@@ -543,3 +543,13 @@ Evidence: `/tmp/mo2-workspace-input-check.log`,
 `/tmp/mo2-overwrite-*-check.log` prompt checks. Build passed; 19 bridge contracts,
 3 download contracts and the profile reader check passed. The pinned upstream
 source remains unchanged.
+
+
+The subsequent thumbnail correction uses Skia to bake the background blur into
+pixels; the unattached Avalonia effect path did not reliably render blur.
+Foreground rendering preserves the source aspect ratio inside a square, and the
+Plugins image uses Uniform rather than the original crop-to-fill style. Both lists
+use the same 46×26 bitmap. Logs and Overwrite header SVGs use NMA's orange and
+white/lavender palette; the original gradient Vortex Tools pictogram is retained.
+The full pointer check passed again in `/tmp/mo2-blur-icons-check.log`; the visible
+blur and the Logs/Overwrite header pictograms were inspected in the running app.

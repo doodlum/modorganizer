@@ -64,16 +64,25 @@ internal static class Mo2GameArt
     public static Bitmap Thumbnail(string game) {
         if (Thumbnails.TryGetValue(game,out var ready)) return ready;
         using var icon = Icon(game);
-        // Match NMA's 46×26 thumbnail rectangle. Only the blurred background
-        // fills/crops; the foreground always retains the complete square icon.
-        var grid = new Avalonia.Controls.Grid { Width = 184, Height = 104, ClipToBounds = true,
-            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#38383A")) };
-        grid.Children.Add(new Avalonia.Controls.Image { Source = icon, Stretch = Avalonia.Media.Stretch.UniformToFill,
-            Effect = new Avalonia.Media.BlurEffect { Radius = 16 } });
-        grid.Children.Add(new Avalonia.Controls.Image { Source = icon, Stretch = Avalonia.Media.Stretch.Uniform });
-        grid.Measure(new Avalonia.Size(184,104)); grid.Arrange(new Avalonia.Rect(0,0,184,104));
-        var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new Avalonia.PixelSize(184,104)); bitmap.Render(grid);
-        return Thumbnails[game] = bitmap;
+        using var png = new MemoryStream(); icon.Save(png); png.Position = 0;
+        using var source = SkiaSharp.SKBitmap.Decode(png);
+        using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(184,104));
+        var canvas = surface.Canvas;
+        canvas.Clear(SkiaSharp.SKColor.Parse("#38383A"));
+        // Render the blur into pixels: unattached Avalonia effect controls do not
+        // reliably render their effect into a RenderTargetBitmap.
+        using var blur = SkiaSharp.SKImageFilter.CreateBlur(16,16);
+        using var background = new SkiaSharp.SKPaint { IsAntialias = true, ImageFilter = blur };
+        var scale = Math.Max(184f / source.Width,104f / source.Height) * 1.35f;
+        var width = source.Width * scale; var height = source.Height * scale;
+        canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),background);
+        using var foreground = new SkiaSharp.SKPaint { IsAntialias = true };
+        var fit = Math.Min(104f / source.Width,104f / source.Height);
+        width = source.Width * fit; height = source.Height * fit;
+        canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),foreground);
+        using var composed = surface.Snapshot(); using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png,100);
+        using var bytes = encoded.AsStream();
+        return Thumbnails[game] = new Bitmap(bytes);
     }
     public static Bitmap Icon(string game)
     {

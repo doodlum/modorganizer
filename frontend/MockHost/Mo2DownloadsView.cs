@@ -25,7 +25,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
     public Mo2DownloadsView()
     {
         var native = new NexusMods.App.UI.Pages.Downloads.DownloadsPageView();
-        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
         var actions = new WrapPanel { Margin = new Thickness(24,12,24,0) };
         var import = new Button { Content = "Install archive…", Name = "InstallArchiveButton", Margin = new Thickness(0,0,8,4) };
         var install = new Button { Content = "Install selected", Name = "InstallSelectedDownload", Margin = new Thickness(0,0,8,4) };
@@ -35,8 +35,8 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         var flyoutContent = new StackPanel(); flyoutContent.Children.Add(link); flyoutContent.Children.Add(download);
         nexus.Flyout = new Flyout { Content = flyoutContent };
         actions.Children.Add(import); actions.Children.Add(install); actions.Children.Add(nexus);
-        layout.Children.Add(actions); Grid.SetRow(native,1); layout.Children.Add(native);
-        var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,160,24,0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        layout.Children.Add(actions); Grid.SetRow(native,2); layout.Children.Add(native);
+        var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,8,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
         Grid.SetRow(unavailable,1); layout.Children.Add(unavailable);
         // Retained as a context marker for stale-picker checks; visible context is the native page header.
         var context = new TextBlock { Name = "DownloadProfileContext", IsVisible = false };
