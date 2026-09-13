@@ -91,9 +91,9 @@ not evidence that extensions work.
   it without changing their state. Background host UI remains suppressed.
 
 This establishes specific integrations, not universal third-party plugin
-compatibility. The inventory above is still only an inventory. Broader archive-preview,
-file-mapper, plugin settings/lifecycle and requirement-rule acceptance remains
-unverified until exercised against original extensions.
+compatibility. The inventory above is still only an inventory. The sections below
+record subsequent file-mapper, settings, callback and requirement-rule checks;
+broader archive-preview coverage remains unverified.
 
 
 ### Original INI Editor: hidden host versus normal launch
@@ -266,3 +266,34 @@ passed. The launcher changed two profile INIs; both were restored from the
 pre-test backup after host exit, and every backed-up profile file matched again.
 The installed fixture and its cache were removed. This checks the configured
 native Run path; it does not repair MO2's separate public start/wait API pair.
+
+### Original FNIS game requirements and master rules — 2026-09-13
+
+The unmodified installed FNIS Integration Tool requires Skyrim, Skyrim Special
+Edition or Skyrim VR. FNIS Integration Tool Reset and FNIS Patches Tool declare
+it as their master. A temporary ordinary Python tool opened MO2's native Settings
+and selected only these rows in the Plugins tab. It did not read account settings,
+run FNIS, change plugin-specific settings or save editor content.
+
+In the FNV host, the master and both children were disabled, the master's enable
+checkbox was unavailable, and the child checkboxes were hidden. In the Skyrim
+host, the requirement allowed the master. Clicking MO2's own enable checkbox
+made the master and both children disabled, then restored all three to their
+original enabled state. The child rows remained grouped beneath the master and
+could not be toggled independently. Both original main windows remained
+suppressed. This exercises the native PluginContainer behavior through its own
+Settings handler, without adding a frontend extension rules engine.
+
+Evidence: `artifacts/extension-rules-fnv-result.json` and
+`artifacts/extension-rules-skyrim-result.json`, including source SHA256 hashes
+and before/after enabled states. All profile file hashes matched before and
+after both hosts exited. The verifier, its cache and request/result files were
+removed from both hosts; the retained fixture source is
+[extension_rules.py](tools/fixtures/extension_rules.py). To repeat, install it as
+`plugins/frontend_extension_rules.py` in a stopped test host and create
+`frontend-extension-rules-request.json` containing a `game` of
+`Fallout: New Vegas` or `Skyrim Special Edition`. Read only its structured result,
+then stop the host and remove the installed fixture and marker files.
+
+This verifies one real game dependency and two real master-child relationships.
+It does not claim every third-party requirement expression has been tested.

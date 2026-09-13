@@ -11,7 +11,49 @@ Rebuilt `src/NexusMods.App/NexusMods.App.csproj` successfully with the local
 The earlier executable was stale. The rebuilt window identifies commit
 `3b0244e` and shows both FNV and Skyrim in My Games.
 
-## Observed differences requiring correction
+## Final page comparison — 2026-09-13
+
+The actual fork was reopened at commit `3b0244e` in its isolated XDG profile.
+Pointer navigation captured My Games, My Loadouts, the FNV mods workspace,
+Health Check and Library at approximately 1280 × 720. No reference Apply,
+installation or game launch was requested. Current live pages were then captured
+at the same size while visiting FNV → Skyrim → FNV through the actual spine.
+
+| Reference presentation | MO2 mapping and final observation |
+| --- | --- |
+| My Games portrait tiles and Home navigation | Native MyGamesView shows registered MO2 games with portrait Steam art and View actions. Its description now identifies registered MO2 instances. The empty independent “Other supported games” section is hidden. |
+| My Loadouts sections, Create card and profile cards | Native MyLoadoutsView shows every profile from every registered instance, including both Skyrim instances and both FNV profiles. Create/Copy/Rename/Delete map to original MO2 profile operations. The description now says MO2 profiles and contains no Apply instruction. |
+| Game spine and contextual sidebar | Square Steam icons select an MO2 profile directly. Home's My Games/My Loadouts leave the game workspace. The game menu contains Downloads, My Mods, Health Check and Plugins. |
+| Mods header, tabs, search, toolbar and table | Native LoadoutView supplies these controls. Its rows and actions use MO2 priorities, activation, conflicts and Overwrite. Both games render with mods on the left and plugins on the right. |
+| Health Check list and details | Native diagnostic presentation uses refreshed original MO2 reports. Both current games render the zero-report state; populated, unavailable and detail lifetimes retain their earlier runtime evidence below. |
+| Library, collection membership, Preview/Apply | MO2's downloads folder replaces Library membership. Installation and transfer controls call MO2. Collections and deployment controls have no independent authority. The Downloads view retains MO2-specific archive/transfer controls inside the native panel system. |
+| Panel and tab lifetime | Each profile retains its own native workspace and tabs. The shared Open Downloads action now stays in that profile workspace, matching its game-sidebar counterpart. An unselected startup has no MO2 downloads target. |
+
+`MO2_VERIFY_FINAL_PAGES=1` passed: all registered profiles rendered, both games
+connected, paired mod/plugin lists rendered, both native health pages obtained
+reports and both download folders rendered without switching to Home. FNV
+returned with 12 mod rows and 14 plugins; Skyrim showed 151 mod rows and 150
+plugins. Visual inspection confirmed the captures, not just the verifier output.
+
+Evidence: `artifacts/reference/final-{my-games,my-loadouts,fnv-mods,fnv-health,library}.png`,
+`artifacts/final-{my-games,my-loadouts}.png`,
+`artifacts/final-{fnv,skyrim}{mods,health,downloads}.png`,
+`artifacts/final-fnv-returnmods.png`, `artifacts/final-pages-return.png` and
+`/tmp/mo2-final-pages-fixed.log`. The game images are original local Steam assets.
+Native mods/health/panel/divider/workspace sources match the fork byte-for-byte;
+the two Home AXAML files differ only in unused XML namespace declarations, and
+their code-behind files match. No pinned upstream source was modified.
+
+The updated download-context verifier also passed after the navigation change: the
+old picker retains its original target while the new profile owns a different
+downloads page. Unavailable rows are hidden and both profile snapshots restore
+unchanged (`/tmp/mo2-final-download-context-fixed.log`).
+
+The sections below preserve the sequence of earlier findings and corrections.
+Statements such as “missing” or “remaining” there describe that historical stage;
+the final mappings above and the acceptance audit describe the current build.
+
+## Original comparison findings (subsequently corrected)
 
 | Area | FNV fork | Current MO2 frontend / required correction |
 | --- | --- | --- |

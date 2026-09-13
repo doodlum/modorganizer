@@ -45,6 +45,8 @@ profile sidebar. Launch is disabled while MO2 is busy, disconnected, or no valid
 executable is selected. The native top bar shows the active profile name.
 Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
+Downloads opened for a selected profile stays in that profile’s workspace; Home
+pages describe MO2 registrations and profiles rather than NMA deployment.
 FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
 verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.
 **View files** opens its original conflict/file dialog. The mod panel uses NMA's
@@ -139,16 +141,16 @@ Create `frontend/artifacts` first. The window closes after capturing. The check
 exercises add/select/close tabs, adding panels up to four, and closing/restoring
 a panel. It is a partial integration check, not proof of full behavioral parity.
 
-## Remaining scope
+## Verification and limits
 
 The live frontend uses the native NMA navigation and panels with real MO2
 games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
 acceptance and switching between the registered FNV and Skyrim hosts pass.
 The [current acceptance audit](ACCEPTANCE_AUDIT.md) maps the requirements to
-implementation and runtime evidence. Its concrete remaining checks are
-extension enable/requirement rules and the final page-state
-comparison against the FNV-enabled reference fork. It also distinguishes broader
-coverage items and unverified remote publication from completed workflows.
+implementation and runtime evidence. Original extension enable/requirement rules
+and the final page comparison against the FNV-enabled reference fork also pass.
+The audit distinguishes broader coverage limits and unverified remote publication
+from the completed local integration.
 
 MO2 remains the owner of installed mods and profiles; the live frontend does
 not maintain an independent NMA Library or deployment store.

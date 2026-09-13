@@ -1,9 +1,10 @@
 # Integration acceptance audit — 2026-09-13
 
-The objective remains an MO2-owned frontend with NMA navigation/panels, usable
-interchangeably with original MO2. This audit separates implemented workflows
-with runtime evidence from gaps that still prevent a full completion claim.
-It does not claim universal third-party extension compatibility.
+The requested local integration is verified: an MO2-owned frontend with NMA
+navigation/panels, usable interchangeably with original MO2 for the registered
+FNV and Skyrim instances. The requirement evidence below includes functional
+checks, original extension behavior and the final fork comparison. It does not
+claim universal third-party extension compatibility or a native Linux MO2 port.
 
 ## Requirement evidence
 
@@ -15,9 +16,9 @@ It does not claim universal third-party extension compatibility.
 | Original MO2 and the frontend share state | Independent native profile-selector, mod-priority and plugin-state requests are detected by ordinary polling. Workspace, spine, caption and both lists follow MO2; both profiles restore unchanged. Explicit original-UI show/hide reveals the same host and profile. | Verified by the external-profile and original-UI checks. |
 | MO2 owns archives, transfers and installation | `Downloads` reads the MO2 directory/metadata and calls its downloader, transfer slots and `installMod`. Original MCM downloads/FOMOD installation and transfer-control evidence remain available. Current download-context checks reject stale picker/row targets and hide stale rows on unavailable snapshots. The three download contract checks pass. | Implemented; runtime evidence covers install, transfers and profile boundaries. |
 | No independent NMA Library or deployment authority | Live pages use MO2 adapters. Library-style membership is the MO2 downloads folder. Collection/Apply controls are hidden or disabled; the native UI's database service is in-memory presentation infrastructure. Persistent frontend files contain registrations and workspace presentation only. | Source review supports the ownership boundary. |
-| Sidebar, game icons and panel behavior match the reference | Live Home and profile sidebars use native views; Home items leave the game workspace. Spine/loadout art uses square game icons and My Games uses covers. Native divider dragging, tab/panel actions, history and per-profile layout restoration have runtime evidence. | Main requested paths verified; final page-state comparison remains below. |
+| Sidebar, game icons and panel behavior match the reference | Live Home and profile sidebars use native views; Home items leave the game workspace. Spine/loadout art uses square game icons and My Games uses covers. Native divider dragging, tab/panel actions, history and per-profile layout restoration have runtime evidence. | Final fork/page comparison passed, including Home, profile navigation, paired lists, Health Check and downloads; intentional MO2 mappings are recorded in NMA_FIDELITY.md. |
 | Health Check reports MO2 diagnostics | Native Notifications refreshes enabled diagnostic extensions; list/details show the host's reports. Unavailable, zero-report, populated, resolved/recurring, cross-game and restored-detail states have passed. `health-restart-read.png` remains available. | Implemented and exercised, including a real original-API diagnostic extension. |
-| Preserve original extensions with minimal changes | The original MO2/Qt/Python host remains intact under Proton. Existing game, installer, tool and DDS-preview extensions work; original DDS settings survive restart and restore through MO2. `preview-settings-result.json` is `done`, with original RGBA restored. | INI mapping now has effective hooked-process evidence; native Run callback identity and Unlock now pass; enable/requirement-rule coverage remains incomplete. |
+| Preserve original extensions with minimal changes | The original MO2/Qt/Python host remains intact under Proton. Existing game, installer, tool and DDS-preview extensions work; original DDS settings survive restart and restore through MO2. `preview-settings-result.json` is `done`, with original RGBA restored. | INI mapping, native Run callback identity and Unlock passed. Original FNIS game requirements and master/child enable rules also passed in FNV and Skyrim, with original states restored. |
 | Keep unsolicited MO2 UI hidden | Hidden-host startup suppresses main/splash/toast windows. Explicit original UI and native tool/preview dialogs remain usable. Hidden-versus-normal INI Editor reports agree on dialog structure. | Implemented with runtime evidence; temporary verifier plugins are removed after checks. |
 | Successfully load FNV with mods | `FNV_ACCEPTANCE.md` records actual gameplay, MCM menus, enabled/disabled launches and all 14 in-game plugin indices. Current-sidebar PLAY evidence includes loaded gameplay, movement, pause menu and normal return to PLAY. The corresponding artifacts remain present. | Gameplay acceptance has passed; the updated original Run path also loaded the save with xNVSE/MCM, accepted movement and exited normally with code 0. |
 | Do not lose actions during polling or cross profile boundaries | Thirteen controlled transport cases cover dialogs, PLAY and profile-card requests, duplicate suppression, stale/unavailable targets and missing card profiles. Real-host validation and native preview checks also passed. | Current command changes verified at transport and native integration boundaries. |
@@ -28,17 +29,28 @@ and [FNV acceptance](FNV_ACCEPTANCE.md). The historical sections of those files
 record intermediate states; their earlier “not implemented” statements are not
 the current status of workflows subsequently verified there.
 
-## Remaining acceptance work
+## Final acceptance checks
 
-1. **Original extension enable/master/requirement rules.** The original container
-   retains these rules, but their runtime behavior with the alternate frontend
-   needs a bounded original-extension check. Successful loading of the bridge
-   and DDS preview alone does not establish these cases.
-2. **Final page-state comparison.** Revisit the actual FNV fork and current live
-   frontend for the remaining page states, recording intentional MO2 mappings
-   separately from unexplained visual or behavioral differences. Main sidebar,
-   mods, health and panel paths already have detailed comparison evidence; this
-   is not a request to reimplement NMA Library/deployment semantics.
+- The original FNIS tools are blocked by their game requirement in FNV and
+  permitted in Skyrim. Native settings controls disable/restore the master and
+  both children; child controls remain unavailable independently. Structured
+  reports and original source hashes are in `extension-rules-{fnv,skyrim}-result.json`.
+- The actual reference fork was reopened and its Home, mods, health and Library
+  pages were inspected. Current Home pages show all registered profiles; FNV →
+  Skyrim → FNV renders the correct paired lists, native health pages and MO2
+  download folders. `final-pages-return.png` and `/tmp/mo2-final-pages-fixed.log`
+  record the completed check.
+- The comparison exposed and corrected empty NMA support-catalog presentation,
+  leftover Apply instructions and Open Downloads switching into Home. Downloads
+  now stays in the selected profile's workspace. The updated stale-action check
+  passed against the real host: an old picker cannot install into a new profile,
+  unavailable rows stay hidden and both profiles remain unchanged. See
+  `/tmp/mo2-final-download-context-fixed.log`.
+- The build passed. Native mods/health/panel/divider/workspace sources match the
+  reference; Home AXAML differences are unused XML namespaces only. Original
+  pinned UI sources and original MO2 extensions were not edited.
+
+## Coverage limits
 
 Additional LOOT categories and archive-preview file types remain broader test
 coverage items; they must not be described as already exercised. Native Linux
@@ -60,5 +72,7 @@ claim that the branch was published.
 
 The initial audit only reviewed evidence and repeated read-only checks. Subsequent
 Run-path verification launched the native FNV launcher and modded game, then
-restored the profile INIs; see the extension compatibility and FNV records. Overall integration
-acceptance remains open for the concrete gaps above.
+restored the profile INIs; see the extension compatibility and FNV records. The
+subsequent extension-rule and final page checks close the two remaining audit
+items. No requested local integration work remains in this audit; the coverage
+limits above are not claims of additional completed tests.

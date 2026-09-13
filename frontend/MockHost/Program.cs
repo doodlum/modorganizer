@@ -2,6 +2,7 @@ using NexusMods.App.UI.Dialog;
 using NexusMods.UI.Sdk.Dialog;
 using NexusMods.App.UI.Pages.LibraryPage;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using NexusMods.App.UI.Pages.LoadoutPage;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages.Sorting;
@@ -90,6 +91,29 @@ internal sealed class FixtureViewLocator : IViewLocator
 {
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
+        if (viewModel is Mo2GamesPage games) {
+            var gamesView = new MyGamesView { ViewModel = games };
+            gamesView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single().Description =
+                "Games from your registered MO2 instances.";
+            if (gamesView.FindControl<EmptyState>("DetectedGamesEmptyState")!.Subtitle is TextBlock emptyGames)
+                emptyGames.Text = "Add an MO2 instance from Settings to see its games here.";
+            // This page represents registered MO2 games; it has no independent
+            // NMA game-support catalog to populate the secondary section.
+            var otherGames = gamesView.FindControl<Border>("AllCurrentlySupportedGames")!;
+            otherGames.IsVisible = false;
+            if (otherGames.Parent is Panel parent && parent.Children.IndexOf(otherGames) is var index && index > 0 && parent.Children[index - 1] is Separator separator)
+                separator.IsVisible = false;
+            return gamesView;
+        }
+        if (viewModel is Mo2LoadoutsPage loadouts) {
+            var loadoutsView = new MyLoadoutsView { ViewModel = loadouts };
+            loadoutsView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single().Description =
+                "Your MO2 profiles across all games. Select a profile to manage its mods and plugin load order.";
+            var emptyLoadouts = loadoutsView.FindControl<EmptyState>("MyLoadoutsEmptyState")!;
+            emptyLoadouts.Header = "No MO2 profiles found";
+            emptyLoadouts.Subtitle = "Add an MO2 instance from Settings to see its profiles here.";
+            return loadoutsView;
+        }
         if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return new Mo2PluginsView { ViewModel = plugins };
         if (viewModel is Mo2CreateProfileCard create) {
             var createView = new NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView { ViewModel = create };
@@ -144,6 +168,7 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_FINAL_PAGES") == "1") await VerifyFinalPages(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_OPTIONS") is { } options) await VerifyLayoutOptions(live, liveWindow, options);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_RESTORE") == "1") await VerifyLayoutRestore(live, liveWindow);
@@ -539,6 +564,61 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyFinalPages(Mo2LiveWorkspace live, Window window)
+    {
+        async Task Capture(string name) {
+            await Task.Delay(1000);
+            using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
+            bitmap.Render(window);
+            bitmap.Save("/home/deck/mo2/frontend/artifacts/final-" + name + ".png");
+        }
+        live.OpenGames();
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyGamesView>().Any(), "My Games missing");
+        var games = window.GetVisualDescendants().OfType<MyGamesView>().Single();
+        if (games.FindControl<Border>("AllCurrentlySupportedGames")!.IsVisible)
+            throw new InvalidOperationException("MO2 games page retained an empty independent support catalog");
+        await Capture("my-games");
+        live.OpenProfiles();
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyLoadoutsView>().Any(), "My Loadouts missing");
+        var loadouts = window.GetVisualDescendants().OfType<MyLoadoutsView>().Single();
+        if (loadouts.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single().Description!.Contains("apply", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("MO2 loadouts still describe deployment");
+        var cards = loadouts.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.LoadoutCard.LoadoutCardView>().Count(x => x.ViewModel is Mo2LoadoutCard);
+        if (cards != live.CatalogEntries.Sum(x => x.Instance?.Profiles.Length ?? 0))
+            throw new InvalidOperationException("My Loadouts omitted registered MO2 profiles");
+        await Capture("my-loadouts");
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        foreach (var tag in new[] { "fnv", "skyrim", "fnv-return" }) {
+            var fnv = tag.StartsWith("fnv");
+            var directory = fnv ? "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" : "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2";
+            var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+            var target = entry.Instance!.Profiles.Single(x => x.Name == (fnv ? "Frontend Test" : "Default"));
+            await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + directory + ")").Click.Execute();
+            await WaitFor(() => live.Profile.IsConnected && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == target.Directory, "Profile switch did not connect", seconds: 110);
+            if (window.GetVisualDescendants().OfType<HomeLeftMenuView>().Any())
+                throw new InvalidOperationException("Game workspace retained the Home sidebar");
+            var workspace = live.WorkspaceController.ActiveWorkspace;
+            workspace.Panels.First().IsSelected = true;
+            await live.ProfileMenu.LeftMenuItemLoadout.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+            workspace.Panels.Last().IsSelected = true;
+            await live.ProfileMenu.LeftMenuItemExternalChanges!.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any() && window.GetVisualDescendants().OfType<Mo2PluginsView>().Any()
+                && live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Paired MO2 lists did not render");
+            await Capture(tag + "mods");
+            if (tag == "fnv-return") continue;
+            await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Any(x => x.ViewModel is Mo2HealthPage { HasResult: true }), "Native Health Check did not obtain MO2 reports", seconds: 110);
+            await Capture(tag + "health");
+            live.OpenDownloads();
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DownloadsView>().Any(), "MO2 downloads missing");
+            if (live.WorkspaceController.ActiveWorkspaceId != workspace.Id || window.GetVisualDescendants().OfType<HomeLeftMenuView>().Any())
+                throw new InvalidOperationException("Downloads left the selected profile workspace");
+            await Capture(tag + "downloads");
+            live.ShowProfile();
+        }
+        Console.WriteLine("PASS: current native Home pages show every MO2 profile and no Apply/support-catalog claims; FNV/Skyrim/FNV spine navigation, paired lists, Health Check and downloads render from live hosts");
+    }
+
     private static async Task VerifyNativeLaunch(Mo2LiveWorkspace live, Window window)
     {
         const string root = "/home/deck/mo2/frontend/artifacts/";
@@ -739,8 +819,12 @@ public partial class MockApp : Application
         }
         var before = await State();
         live.OpenDownloads();
-        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DownloadsView>().Any(), "Downloads page did not render");
-        var view = window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single();
+        async Task<Mo2DownloadsView> CurrentDownloads() {
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DownloadsView>()
+                .Any(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Name == "DownloadProfileContext")), "Downloads page did not render");
+            return window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single();
+        }
+        var view = await CurrentDownloads();
         var context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
         if (context.Text != "Fallout: New Vegas · Frontend Test") throw new InvalidOperationException("Downloads does not identify its MO2 game and profile");
         var import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
@@ -758,6 +842,13 @@ public partial class MockApp : Application
             await view.ChooseArchive(async () => {
                 if (!await profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException("Clone profile did not connect");
                 cloneBefore = await State();
+                // Switching profiles now restores its own workspace. Inspect the
+                // newly active downloads page while the old picker retains its target.
+                live.OpenDownloads();
+                view = await CurrentDownloads();
+                context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
+                import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
+                download = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
                 return missing;
             });
             if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || !disabledDuringSwitch ||

@@ -171,7 +171,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         else WorkspaceController.OpenPage(_homeWorkspace, page, existing is not null
             ? new OpenPageBehavior.ReplaceTab(panel.Id, existing.Id) : new OpenPageBehavior.NewTab(panel.Id));
     }
-    public void OpenDownloads() => OpenHomePage(_downloadsPage);
+    public void OpenDownloads()
+    {
+        if (Profile.ProfilePath.Length == 0) {
+            OpenHomePage(_downloadsPage);
+            return;
+        }
+        ShowProfile();
+        WorkspaceController.OpenPage(_profileWorkspace, _downloadsPage,
+            WorkspaceController.GetOpenPageBehavior(_downloadsPage, NavigationInformation.From(NavigationInput.Default)));
+    }
     public void ShowHome() => WorkspaceController.ChangeActiveWorkspace(_homeWorkspace);
     public void OpenGames() => OpenHomePage(_gamesPage);
     public void OpenConnections() => OpenHomePage(_connectionsPage);
