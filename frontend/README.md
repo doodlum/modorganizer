@@ -17,9 +17,13 @@ shows real profiles grouped by game across registered MO2 instances. Each
 instance has a native Create new loadout card that opens MO2’s Create Profile
 dialog. Selection uses each running host.
 Each MO2 instance/profile pair has its own native workspace. Switching away and
-back restores its open panels, tabs and mod search during the current session.
+back restores its open panels, tabs and mod search.
 A newly visited profile starts with mods on the left and plugins on the right.
-Layouts are not yet saved across frontend restarts.
+Panel layouts, selected tabs, searches and the Mods/Rules choice are saved across
+frontend restarts in the frontend configuration folder’s `workspace-layout.json`.
+Startup restores Home; selecting an MO2 profile restores that profile’s layout.
+`MO2_FRONTEND_LAYOUT` overrides the layout file for isolated testing. An unreadable
+or unsupported layout is left intact and its error appears in the status bar.
 **Create Copy**, **Rename** and **Delete** on each card open MO2’s original
 prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.

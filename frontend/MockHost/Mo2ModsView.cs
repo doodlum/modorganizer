@@ -44,6 +44,9 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
 internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
 {
     public LoadoutView NativeView { get; } = new();
+    private TabControl SubTabs => NativeView.FindControl<TabControl>("RulesTabControl")!;
+    private TextBox SearchBox => NativeView.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
+    private Control SearchPanel => NativeView.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<Control>("SearchPanel")!;
     public Mo2ModsView()
     {
         var native = NativeView;
@@ -73,17 +76,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             group.Items.Add(button); moves.Add(button);
         }
         this.WhenActivated(disposables => {
-            var model = ViewModel!;
-            var search = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!;
-            var text = search.FindControl<TextBox>("SearchTextBox")!;
-            var searchPanel = search.FindControl<Control>("SearchPanel")!;
-            text.Text = model.Mo2SearchText;
-            searchPanel.IsVisible = model.Mo2SearchExpanded;
-            System.Reactive.Disposables.Disposable.Create(() => {
-                model.Mo2SearchText = text.Text ?? "";
-                model.Mo2SearchExpanded = searchPanel.IsVisible;
-            }).AddTo(disposables);
+            this.Bind(ViewModel, vm => vm.Mo2SearchText, view => view.SearchBox.Text).AddTo(disposables);
+            this.Bind(ViewModel, vm => vm.Mo2SearchExpanded, view => view.SearchPanel.IsVisible).AddTo(disposables);
             this.OneWayBind(ViewModel, vm => vm, view => view.NativeView.ViewModel).AddTo(disposables);
+            this.Bind(ViewModel, vm => vm.SelectedSubTab, view => view.SubTabs.SelectedIndex, value => (int)value, value => value == 1 ? LoadoutPageSubTabs.Rules : LoadoutPageSubTabs.Mods).AddTo(disposables);
             ViewModel!.Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true)
                 .Subscribe(count => {
                     var selected = ViewModel.Adapter.SelectedModels.Select(x => x.Key).ToHashSet();

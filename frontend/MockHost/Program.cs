@@ -138,11 +138,13 @@ public partial class MockApp : Application
                 var live = new Mo2LiveWorkspace(endpoint);
                 var liveWindow = live.CreateWindow();
                 desktop.MainWindow = liveWindow;
-                if (endpoint.Length == 0) live.OpenGames();
+                if (endpoint.Length == 0) live.ShowHome();
                 desktop.Exit += (_, _) => live.Dispose();
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_OPTIONS") is { } options) await VerifyLayoutOptions(live, liveWindow, options);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_RESTORE") == "1") await VerifyLayoutRestore(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATALOG") == "1") {
                             if (endpoint.Length != 0 || live.Profile.Mods.Count != 0 || live.Profile.Order.Plugins.Count != 0)
                                 throw new InvalidOperationException("Default startup must have no fixture or assumed active profile data");
@@ -612,6 +614,70 @@ public partial class MockApp : Application
         Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite restrictions and Rules tab use MO2 state; original state restored");
     }
 
+    private static async Task VerifyLayoutOptions(Mo2LiveWorkspace live, Window window, string mode)
+    {
+        const string root = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host";
+        var entry = live.CatalogEntries.Single(x => x.Registration.Directory == root);
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance!.Game + " — Frontend Test (" + root + ")").Click.Execute();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any(), "Options workspace did not connect", seconds: 110);
+        var native = window.GetVisualDescendants().OfType<Mo2ModsView>().Single().NativeView;
+        var search = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!;
+        var tabs = native.FindControl<TabControl>("RulesTabControl")!;
+        var panel = live.WorkspaceController.ActiveWorkspace.Panels.OrderBy(x => x.LogicalBounds.X).First();
+        if (mode == "write") {
+            search.FindControl<Button>("SearchButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            search.FindControl<TextBox>("SearchTextBox")!.Text = "Configuration";
+            tabs.SelectedItem = native.FindControl<TabItem>("RulesTabItem");
+            var selected = panel.SelectedTab;
+            await window.GetVisualDescendants().OfType<TopBarView>().Single().ViewModel!.NewTabCommand.Execute();
+            await WaitFor(() => panel.Tabs.Count == 2, "New Tab did not open");
+            panel.SelectTab(selected.Id);
+            foreach (var tab in panel.Tabs) tab.Header.IsSelected = tab.Id == selected.Id;
+        }
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Any() &&
+            live.ModsPage?.SelectedSubTab == NexusMods.App.UI.Pages.LoadoutPage.LoadoutPageSubTabs.Rules && live.ModsPage.Mo2SearchExpanded && live.ModsPage.Mo2SearchText == "Configuration",
+            "Rules and expanded search did not restore");
+        if (panel.Tabs.Count != 2 || !panel.Tabs.Any(t => t.Contents.PageData.FactoryId == NewTabPageFactory.StaticId) || panel.SelectedTab.Contents.ViewModel is not ScenarioInstalledPage)
+            throw new InvalidOperationException("Extra New Tab or selected mods tab did not restore");
+        live.SaveLayouts();
+        if (live.LayoutError is { } error) throw new InvalidOperationException(error);
+        Console.WriteLine("PASS: layout options " + mode + " preserves Rules, expanded search, extra native New Tab and selected mods tab");
+    }
+
+    private static async Task VerifyLayoutRestore(Mo2LiveWorkspace live, Window window)
+    {
+        if (live.LayoutError is { } error) throw new InvalidOperationException(error);
+        if (live.Profile.ProfilePath.Length != 0 || !window.GetVisualDescendants().OfType<MyLoadoutsView>().Any())
+            throw new InvalidOperationException("Restart did not restore Home without connecting a profile");
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        async Task Visit(string directory, string name, int panels, string search) {
+            var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+            await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance!.Game + " — " + name + " (" + directory + ")").Click.Execute();
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any(), "Restored mods view missing", seconds: 110);
+            var native = window.GetVisualDescendants().OfType<Mo2ModsView>().Single().NativeView;
+            await WaitFor(() => native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!.Text == search,
+                "Search did not survive restart");
+            if (live.LayoutError is { } failure) throw new InvalidOperationException(failure);
+            if (live.WorkspaceController.ActiveWorkspace.Panels.Count != panels || live.ProfileMenu.WorkspaceId != live.WorkspaceController.ActiveWorkspaceId)
+                throw new InvalidOperationException("Restored panel count or contextual sidebar is wrong");
+            if (panels == 3 && !window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Any())
+                throw new InvalidOperationException("Selected Health Check tab did not survive restart");
+            var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");
+            if (snapshot.GetProperty("plugins").GetArrayLength() != live.Profile.Order.Plugins.Count)
+                throw new InvalidOperationException("Restored workspace did not connect the real MO2 plugins");
+        }
+        await Visit("/home/deck/mo2/frontend/artifacts/mo2-fnv-host", "Frontend Test", 3, "Configuration");
+        live.SaveLayouts();
+        using var saved = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("MO2_FRONTEND_LAYOUT")!));
+        if (!saved.RootElement.GetProperty("Workspaces").EnumerateArray().Any(w => w.GetProperty("ProfilePath").GetString()!.Contains("skyrimspecialedition") &&
+            w.GetProperty("Panels").EnumerateArray().Any(p => p.GetProperty("Tabs").EnumerateArray().Any(t => t.GetProperty("Search").GetString() == "SkyUI"))))
+            throw new InvalidOperationException("Saving after restart discarded an unvisited profile's layout");
+        await Visit("/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "Default", 2, "SkyUI");
+        await Visit("/home/deck/mo2/frontend/artifacts/mo2-fnv-host", "Frontend Test", 3, "Configuration");
+        Console.WriteLine("PASS: fresh frontend restores Home, per-profile panel counts, selected Health Check tab and native mod searches; unvisited layouts survive saving; MO2 reconnects on selection");
+    }
+
     private static async Task VerifyProfileWorkspaces(Mo2LiveWorkspace live, Window window)
     {
         var controller = live.WorkspaceController;
@@ -660,6 +726,8 @@ public partial class MockApp : Application
         if (!original.Mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))) ||
             !original.Plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))))
             throw new InvalidOperationException("Workspace switching changed MO2 mod/plugin state");
+        live.SaveLayouts();
+        if (live.LayoutError is { } layoutFailure) throw new InvalidOperationException(layoutFailure);
         Console.WriteLine("PASS: profile spine restores separate FNV/Skyrim workspace IDs, panel bounds, tabs, selected tabs and native searches; sidebar targets current workspace; MO2 state preserved");
     }
 

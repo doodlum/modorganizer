@@ -39,6 +39,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _gameLoadoutsPage;
     private readonly PageData _connectionsPage;
     private readonly Mo2HealthDetailsFactory _healthDetailsFactory;
+    private readonly Mo2WorkspaceLayout _layout;
+    public string? LayoutError => _layout.Error;
+    public void SaveLayouts() => _layout.Save(WorkspaceController.AllWorkspaces);
     public PageData ConnectionsPage => _connectionsPage;
     private readonly WorkspaceId _homeWorkspace;
     private WorkspaceId _profileWorkspace;
@@ -115,11 +118,13 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             () => new Mo2HealthPage(windows, this));
         _healthPage = health.Data;
         _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
+        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, health.Data], _healthDetailsFactory.Id);
         services.Add(new PageFactoryController([health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var home = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
         _homeWorkspace = home.Id;
+        _layout.Restore(home, WorkspaceController);
         WorkspaceController.ChangeActiveWorkspace(home.Id);
         HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data);
         _profileWorkspace = CreateProfileWorkspace(new Mo2WorkspaceContext()).Id;
@@ -148,6 +153,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
                 initial.Context = context; id = initial.Id;
             } else id = CreateProfileWorkspace(context).Id;
             _profileWorkspaces.Add(key, id);
+            if (WorkspaceController.TryGetWorkspace(id, out var restored)) _layout.Restore(restored, WorkspaceController);
         }
         _profileWorkspace = id;
         if (activate && WorkspaceController.ActiveWorkspaceId != id) WorkspaceController.ChangeActiveWorkspace(id);
@@ -166,6 +172,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             ? new OpenPageBehavior.ReplaceTab(panel.Id, existing.Id) : new OpenPageBehavior.NewTab(panel.Id));
     }
     public void OpenDownloads() => OpenHomePage(_downloadsPage);
+    public void ShowHome() => WorkspaceController.ChangeActiveWorkspace(_homeWorkspace);
     public void OpenGames() => OpenHomePage(_gamesPage);
     public void OpenConnections() => OpenHomePage(_connectionsPage);
     public void OpenProfiles() => OpenLoadouts(null);
@@ -210,11 +217,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Grid.SetRow(status, 2); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
-        Profile.Changed += () => status.Text = Profile.Status;
+        void UpdateStatus() => status.Text = Profile.Status + (LayoutError is { } error ? " · " + error : "");
+        Profile.Changed += UpdateStatus;
+        UpdateStatus();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        timer.Tick += async (_, _) => { await Profile.Refresh(); RefreshCatalog(); };
+        timer.Tick += async (_, _) => { await Profile.Refresh(); RefreshCatalog(); SaveLayouts(); UpdateStatus(); };
         window.Opened += async (_, _) => { await Profile.Refresh(); timer.Start(); };
-        window.Closed += (_, _) => timer.Stop();
+        window.Closing += (_, _) => SaveLayouts();
+        window.Closed += (_, _) => { timer.Stop(); SaveLayouts(); };
         return window;
     }
     public void Dispose() { _desktop.Dispose(); Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult(); }

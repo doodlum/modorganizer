@@ -35,7 +35,8 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     private readonly BindableReactiveProperty<int> _selected = new();
     public IReadOnlyBindableReactiveProperty<int> ItemCount => _count;
     public IReadOnlyBindableReactiveProperty<int> SelectionCount => _selected;
-    public LoadoutPageSubTabs SelectedSubTab { get; }
+    private LoadoutPageSubTabs _selectedSubTab;
+    public LoadoutPageSubTabs SelectedSubTab { get => _selectedSubTab; set => this.RaiseAndSetIfChanged(ref _selectedSubTab, value); }
     public bool HasRulesSection => true;
     public ISortingSelectionViewModel RulesSectionViewModel { get; }
     public bool IsCollection { get; }
@@ -60,8 +61,10 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandChangeVisibility { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
 
-    public string Mo2SearchText { get; set; } = "";
-    public bool Mo2SearchExpanded { get; set; }
+    private string _mo2SearchText = "";
+    private bool _mo2SearchExpanded;
+    public string Mo2SearchText { get => _mo2SearchText; set => this.RaiseAndSetIfChanged(ref _mo2SearchText, value); }
+    public bool Mo2SearchExpanded { get => _mo2SearchExpanded; set => this.RaiseAndSetIfChanged(ref _mo2SearchExpanded, value); }
 
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, IInstalledModsSource mods, NexusMods.Abstractions.Games.ISortOrderVariety order,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false, Action? openDownloads = null) : base(windows)

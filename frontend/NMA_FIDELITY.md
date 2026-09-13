@@ -240,3 +240,42 @@ Resolved/recurring reports still cleared/restored in the native detail panel.
 Evidence: `/tmp/mo2-profile-workspaces-health.log` and
 `artifacts/profile-workspaces-health.png`. The fixture and marker were removed
 after both MO2 hosts exited.
+
+## Layout restoration across restarts
+
+Version 2 of the frontend layout store now saves Home and each endpoint/profile
+workspace independently. It preserves panel bounds, selected panels/tabs,
+current pages, game filters, native New Tabs, mod searches, search expansion and
+Mods/Rules choice. Diagnostic detail references retain their originating profile
+and title; their report text is queried again from MO2, never cached as current
+health data. Unvisited saved layouts survive later saves.
+
+The store writes atomically when presentation state changes and on close. It
+contains no mod/plugin activation, priority, archive membership or profile
+creation/selection instructions. Startup restores Home; a profile layout is
+restored only when its MO2 connection is selected. The default file is
+`workspace-layout.json` in the frontend configuration folder;
+`MO2_FRONTEND_LAYOUT` provides an isolated override. Screenshot checks omit the
+default store unless the override is explicit.
+
+Malformed/unsupported files are preserved and reported in the status bar. Bounds,
+coverage, overlapping panels, selected tabs, page factories and profile identities
+are validated before restoring a saved grid. A failed restore retains the default
+workspace and disables writes to that file for the session.
+
+Two fresh processes passed the real FNV/Skyrim round trip: Home, FNV's three
+panels, Skyrim's two panels, selected Health Check and independent searches
+returned after restart, and saving before visiting Skyrim retained its layout.
+Evidence: `/tmp/mo2-layout-save.log`, `/tmp/mo2-layout-restored.log`,
+`artifacts/layout-save.png`, `artifacts/layout-restored.png`.
+A second write/read pair verified expanded search, Rules, an extra native New Tab
+and the selected mods tab: `/tmp/mo2-layout-options-{write,read}.log`,
+`artifacts/layout-options-read.png`. Both restored screenshots were inspected.
+An intentionally overlapping grid showed the restore error and left its input
+file byte-for-byte unchanged after startup/shutdown (`artifacts/layout-invalid.png`).
+Build passed with the existing upstream OpenTelemetry advisory.
+
+The saved data uses the native workspace's current-page model; it does not add
+cross-restart Back/Forward history or restore live game processes. Diagnostic
+reference serialization is implemented, but a restart with a live diagnostic
+extension has not yet been exercised.
