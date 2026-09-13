@@ -138,7 +138,7 @@ acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
 - Expand verification of other native LOOT message categories. Missing-master text and the native warning flag have passed an isolated install/activate/remove check.
-- Verify multi-selection plugin gestures, panel drag/drop, history and state restoration more broadly. Single-plugin pointer reorder and fixed-plugin rejection have passed against FNV.
+- Verify multi-row plugin drag/drop and panel drag/drop more broadly. Real Ctrl-click selection and activation, single-plugin pointer reorder, fixed-plugin rejection, native history, per-profile workspaces and layout restoration across restarts have passed. Restoring a diagnostic detail tab across a restart still needs a live extension check.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.
 
@@ -153,9 +153,9 @@ The installation path supplied in this session is shown in the Steam tooltip;
 `MO2_SCENARIO_GAME_PATH` and `MO2_SCENARIO_COVER` override local fixture metadata.
 The fixture currently starts with one detected New Vegas game and no loadouts.
 
-A separate [Nexus app reference fork](reference/README.md) is being developed to
-compare New Vegas screens against the real app, as requested. This does not
-connect the mock frontend to MO2 or to real mod data.
+The separate [FNV-enabled Nexus app reference fork](reference/README.md) is the
+reference for comparing New Vegas screens against NMA. The live frontend uses
+MO2's backend; the reference app retains NMA's backend and isolated app data.
 
 ## Settings and plugin-order fixtures
 

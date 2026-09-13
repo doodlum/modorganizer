@@ -9,6 +9,41 @@ from MO2 and the next running game; restoring it restored the in-game menu.
 This verifies the FNV acceptance run. It does not establish full MO2 feature
 parity or Skyrim gameplay.
 
+## Current sidebar PLAY recheck — 2026-09-13
+
+Rechecked the native sidebar PLAY command and direct Proton launcher on frontend
+commit `ca25619c`, after the launch-control and background-window changes.
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_LAUNCH=NVSE` started from the real catalog,
+selected the isolated Frontend Test profile, selected NVSE in the actual sidebar
+picker and executed its command. The game loaded `mo2-integration-test`, reported
+xNVSE 6.4.8, accepted forward movement and displayed Mod Configuration in its
+pause menu. Every in-game plugin index still matched the 14-entry order below.
+
+Evidence: [loaded save and xNVSE](artifacts/fnv-current-native-loaded.png),
+[movement](artifacts/fnv-current-movement.png),
+[pause menu](artifacts/fnv-current-pause-final.png),
+[indices 00–04](artifacts/fnv-current-order-00-04.png),
+[05–09](artifacts/fnv-current-order-05-09.png),
+[0A–0D](artifacts/fnv-current-order-0a-0d.png), and
+[comparison with MO2 profile files](artifacts/fnv-current-game-order-comparison.json).
+The console `qqq` command exited normally; the
+[frontend returned to PLAY](artifacts/fnv-current-final-return.png) and reported
+`NVSE exited (code 0)`. The verifier exited successfully.
+
+For automated keyboard checks, the isolated profile temporarily used
+`bDisable360Controller=1` under `[Interface]`, preserving the INI's CRLF endings.
+The game console confirmed the value was 1. Windows `keybd_event` injection
+worked for console commands, movement and Escape; Linux input injection did not
+reliably reach the game in this run. Pointer injection remained unreliable, so
+opening MCM's contents was **not reverified** here; the three-menu evidence below
+is from the earlier acceptance run. Initial attempts that only reached the save
+or menu were stopped with SIGTERM and are not counted as normal-exit checks.
+
+After the successful run, the original preference file was restored byte for
+byte. `plugins.txt`, `loadorder.txt` and `modlist.txt` retained their pre-check
+hashes, and the saved game's SHA256 remained the value recorded below. No mod
+activation, ordering or save writes were requested by this recheck.
+
 ## Enabled, disabled, restored
 
 | Check | Observed result | Local evidence |
@@ -86,7 +121,7 @@ MO2_VERIFY_ENABLE_MOD to invoke the real mod-row action; MO2_VERIFY_ENABLE_FNV_D
 uses the native Enable selected button, and MO2_VERIFY_PLUGIN_DOWN uses the
 native ordering-row command. These hooks change the isolated profile and are
 preparation steps, not substitutes for the in-game checks. Launch separately
-with MO2_VERIFY_LAUNCH=NVSE or the normal Run through MO2 button.
+with MO2_VERIFY_LAUNCH=NVSE or the native sidebar PLAY button with NVSE selected.
 
 Runtime screenshots, downloaded mods, and local snapshots are ignored artifacts
 kept in this workspace, not redistributed in the source repository.

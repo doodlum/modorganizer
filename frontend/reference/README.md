@@ -16,8 +16,9 @@ git -C reference-fnv submodule update --init extern/SMAPI
 
 From the MO2 repository root, `./frontend/run-reference.sh` runs the reference
 app using a separate XDG profile under `frontend/artifacts/fnv-profile`.
-This is the actual Nexus app with its backend, unlike `./frontend/run.sh`,
-which is the frontend-only fake-data host.
+This is the FNV-enabled Nexus app with its own backend, used as the UI reference.
+`./frontend/run.sh` runs the alternate frontend backed by real MO2 instances;
+`./frontend/run-fixtures.sh` selects the separate fake-data scenarios.
 
 Implemented reference functionality: Steam game identifier 22380, executable
 `FalloutNV.exe`, Nexus game ID 130, NVSE launching, Data-folder/FOMOD installer
