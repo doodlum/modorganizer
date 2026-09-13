@@ -1,8 +1,9 @@
 # Existing MO2 extensions
 
 The alternate frontend must preserve existing MO2 extensions with minimal
-changes. The current Avalonia fixture host does not load MO2 extensions and must
-not be presented as an extension-compatible runtime.
+changes. The live Avalonia frontend connects to the original Windows MO2 2.5.2 host
+under Proton. That host loads extensions; Avalonia does not load PE binaries or
+replace MOBase. The separate fixture mode is only frontend test scaffolding.
 
 ## Boundary to preserve
 
@@ -12,11 +13,11 @@ proxy as the extension host. Native plugins continue to load through
 Do not require extension authors to implement a new .NET plugin API or rewrite
 plugins around Nexus application models.
 
-The future frontend bridge should expose MO2 operations and state to Avalonia
-while extension lifecycle, callbacks, settings, requirements, game features and
-file mapping remain owned by the MO2 host. The bridge must marshal requests onto
-the host's Qt thread and preserve callback ordering, errors and plugin identity.
-The fixtures currently model frontend interactions only; they are not that bridge.
+The bridge is an ordinary Python tool extension. Its QTimer handles requests
+on the original Qt thread after onUserInterfaceInitialized. MO2 retains extension
+lifecycle, callbacks, settings, requirements, game features and file mapping.
+No extension API was changed. This architecture preserves the host boundary;
+runtime evidence for specific extension behavior is listed below.
 
 Extensions that create Qt widgets need the Qt UI runtime too. Preserve their
 existing dialogs and tool windows in a companion host, including focus and
@@ -43,9 +44,10 @@ process. Two runtime tracks therefore need separate validation:
    where its dependencies and API use are portable; Windows-specific behaviour
    needs targeted adaptations.
 
-Neither track is implemented or runtime-verified by this frontend branch yet.
-Choose platform adaptations in shared host/dependency layers before requesting
-changes from individual plugin authors. Preserve existing Windows builds.
+The Proton track is implemented and has runtime evidence below. The native
+Linux backend track is not implemented and is not a prerequisite: the user
+accepted Proton. Native-port adaptations should remain in shared host/dependency
+layers before requesting changes from individual plugin authors.
 
 ## Inventory and verification
 
@@ -68,3 +70,57 @@ settings and persistence; lifecycle and enable/requirement rules; process
 launch/wait callbacks; Qt widget ownership; and reload/shutdown. Compare behaviour
 with the original MO2 host. Static inventory or successful frontend rendering is
 not evidence that extensions work.
+
+
+## Current runtime evidence
+
+- The original FNV game and installer extensions discover the game, install MCM
+  and its author examples, and supply the live mod/plugin models. The game runs
+  through MO2/USVFS with xNVSE and MCM; disabling MCM in the frontend removes it
+  on the next launch. See [FNV acceptance](FNV_ACCEPTANCE.md).
+- The registered Skyrim host supplies its original game/plugin model, conflicts
+  and executable list. Switching FNV → Skyrim → FNV preserves each profile and
+  workspace. Skyrim gameplay has not been tested.
+- The original Python proxy loads the bridge and an ordinary IPluginDiagnose
+  test extension. MO2's Notifications action refreshes the diagnostic extension;
+  NMA Health Check follows new, resolved and recurring reports, including across
+  a frontend restart. See [fidelity evidence](NMA_FIDELITY.md).
+- Original MO2 mod details, profile manager and Nexus settings dialogs have
+  opened and returned through the frontend. Explicit original-window switching
+  also shows the same FNV profile, enabled mods and fourteen plugins, then hides
+  it without changing their state. Background host UI remains suppressed.
+
+This establishes specific integrations, not universal third-party plugin
+compatibility. The inventory above is still only an inventory. Broader preview,
+file-mapper, plugin settings/lifecycle and requirement-rule acceptance remains
+unverified until exercised against original extensions.
+
+
+### Original INI Editor: hidden host versus normal launch
+
+The unchanged installed `inieditor.dll` was exercised through MO2's registered
+INI Editor QAction, after native tool-menu initialization. A temporary ordinary
+Python tool extension supplied the verifier; it did not replace INI Editor or
+read/edit/save editor contents.
+
+Both runs opened `MOBase::TextViewer` visibly, with five text editors and one tab
+widget. In frontend-host mode, the main window retained WA_DontShowOnScreen and
+X11 reported no visible original main window. A normal launch without
+MO2_FRONTEND_HOST showed the main UI and the same native editor dialog structure.
+The verifier dismissed the editor with reject(), without saving changes.
+
+The fixture source is [tools/fixtures/tool_dialog.py](tools/fixtures/tool_dialog.py).
+It only initializes in the isolated `mo2-fnv-host` instance. With that host stopped,
+copy it to `plugins/frontend_tool_dialog.py`, then start the host in each mode
+separately. It opens INI Editor two seconds after UI initialization, reports
+structure/visibility to `frontend-tool-dialog-result.json` and dismisses the
+editor after ten seconds. Preserve each report before the next run. Stop MO2 and
+remove the installed fixture afterward. These operations deliberately open a
+native tool dialog and should only run in the isolated verification instance.
+
+Recorded reports: `artifacts/tool-dialog-hidden.json` and
+`artifacts/tool-dialog-normal.json`. They agree on dialog class and editor counts;
+only the main-window suppression flag differs. Profile-file hashes were checked
+before and after both runs. This verifies the original tool's Qt dialog path and
+normal-versus-hidden ownership behavior, not tool editing, persistence or every
+third-party tool extension.
