@@ -697,7 +697,14 @@ public partial class MockApp : Application
             if (!started || !profile.Status.Contains("The mod archive does not exist") || import.IsEnabled || download.IsEnabled ||
                 view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Install") && x.IsEnabled))
                 throw new InvalidOperationException("Current target did not reach native archive validation, or unavailable controls remained enabled");
+            if (!view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable") ||
+                view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "No downloads yet") ||
+                view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Install")))
+                throw new InvalidOperationException("Unavailable Downloads still presents stale archive rows or an empty-folder claim");
             await profile.Refresh();
+            if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable") ||
+                view.GetVisualDescendants().OfType<Button>().Count(x => Equals(x.Content, "Install")) != profile.Downloads.Count)
+                throw new InvalidOperationException("Fresh MO2 snapshot did not restore the download rows");
             if (!profile.IsConnected || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
                 throw new InvalidOperationException("Downloads did not recover after refresh or changed clone state");
         } finally {

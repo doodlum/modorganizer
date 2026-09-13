@@ -67,6 +67,13 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     (profile.IsConnected ? "" : "Unavailable · ") + profile.GameName + " · " + profile.CollectionName.Value;
                 ToolTip.SetTip(context, profile.ProfilePath.Length == 0 ? null : Mo2InstanceCatalog.LocalPath(profile.ProfilePath));
                 rows.Children.Clear();
+                if (!profile.IsConnected) {
+                    if (profile.ProfilePath.Length > 0) rows.Children.Add(new TextBlock {
+                        Name = "DownloadsUnavailable", Text = "Downloads are unavailable. Reconnect to MO2 to refresh this folder.",
+                        TextWrapping = TextWrapping.Wrap,
+                    });
+                    return;
+                }
                 if (profile.Downloads.Count == 0 && profile.ProfilePath.Length > 0) rows.Children.Add(new TextBlock { Text = "No downloads yet" });
                 foreach (var archive in profile.Downloads) {
                     var row = new DockPanel { Margin = new Thickness(0, 4) };

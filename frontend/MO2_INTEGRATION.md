@@ -86,6 +86,22 @@ Evidence: `/tmp/mo2-external-profile.log`,
 12 MO2 mod rows and 14 plugin rows; the screenshot was inspected. The process
 exited successfully and the build passed with the existing NU1902 warning.
 
+## Download availability
+
+A failed MO2 snapshot now replaces the archive list with an unavailable message.
+It does not retain rows labelled Downloaded/Downloading or claim that the folder
+is empty. A successful refresh restores rows from the current MO2 snapshot.
+Initial startup still asks the user to select a profile, and all transfer/install
+controls remain disabled while unavailable.
+
+The download-context runtime check now verifies that a native archive validation
+failure removes all Install rows and the empty-folder claim, then checks that
+refresh clears the unavailable message and restores exactly the host's archive
+count. Existing stale-picker, cross-profile and cross-instance rejection checks
+still pass; both profiles' mod/plugin snapshots remain unchanged. Evidence:
+`/tmp/mo2-download-availability.log` and `artifacts/download-availability.png`.
+Build passed with the existing NU1902 warning.
+
 ## Implementation history
 
 ### Download action profile boundaries
