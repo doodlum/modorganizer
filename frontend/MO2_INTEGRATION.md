@@ -59,6 +59,33 @@ restrictions. MO2’s native profile manager handles profile operations, includi
 the My Loadouts card’s rename action. Broader diagnostic scenarios and the
 remaining navigation/extension coverage still need validation.
 
+## Changes originating in the MO2 host
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_EXTERNAL_PROFILE=1` with `MO2_SCREENSHOT`
+passed against the isolated FNV instance. After selecting Frontend Test once,
+an independent bridge client changes MO2's native profile selector to Frontend
+Clone Test. The verifier does not call the frontend's SelectProfile, ShowProfile
+or Refresh to make the workspace follow this change. Its normal two-second poll
+must observe the native profile and select the corresponding workspace itself.
+
+The check compares every live mod name/state/priority and plugin
+name/activation/priority with an independent host snapshot. It also verifies the
+active spine icon, native profile caption and both visible panel views. The
+clone has its own workspace and search; returning through the native selector
+restores the original workspace ID and its previous search text.
+
+In the clone, independent native API changes toggle an editable plugin and move
+MCM Author Examples one priority position. Both changes, and their reversals,
+appear through periodic polling. The full original and clone mod/plugin
+snapshots are unchanged after restoration. The verifier includes cleanup for
+interrupted assertions. This tests the native selector and extension API path;
+it does not automate mouse input in the original MO2 window.
+
+Evidence: `/tmp/mo2-external-profile.log`,
+[returned live panels](artifacts/external-profile.png). The final render has
+12 MO2 mod rows and 14 plugin rows; the screenshot was inspected. The process
+exited successfully and the build passed with the existing NU1902 warning.
+
 ## Implementation history
 
 ### Download action profile boundaries

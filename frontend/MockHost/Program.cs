@@ -164,6 +164,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_PROFILE") == "1") await VerifyExternalProfile(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORIGINAL_UI") == "1") await VerifyOriginalUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1") await VerifyDownloadContext(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
@@ -532,6 +533,86 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyExternalProfile(Mo2LiveWorkspace live, Window window)
+    {
+        if (!live.Profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("External profile check requires isolated FNV Frontend Test");
+        var profile = live.Profile;
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        var controller = live.WorkspaceController;
+        var originalWorkspace = controller.ActiveWorkspace;
+        var originalPath = profile.ProfilePath;
+        var original = await client.SendAsync("snapshot");
+        string State(System.Text.Json.JsonElement snapshot) => snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
+        TextBox Search() => window.GetVisualDescendants().OfType<Mo2ModsView>().Single().NativeView
+            .FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
+        var originalSearch = Search().Text;
+        Search().Text = "Configuration";
+        async Task Follow(System.Text.Json.JsonElement expected) {
+            var path = expected.GetProperty("profile").GetProperty("path").GetString()!;
+            var mods = expected.GetProperty("mods").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32(), x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
+            var plugins = expected.GetProperty("plugins").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32() == 2, x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
+            await WaitFor(() => profile.ProfilePath == path && profile.IsConnected &&
+                controller.ActiveWorkspace.Context is Mo2WorkspaceContext c && c.ProfilePath == path &&
+                mods.SequenceEqual(profile.Mods.Select(x => ((string?)x.Name, x.State, x.Priority)).OrderBy(x => x.Item1)) &&
+                plugins.SequenceEqual(profile.Order.Plugins.Select(x => ((string?)x.DisplayName, x.IsActive, x.SortIndex)).OrderBy(x => x.Item1)),
+                "Periodic polling did not follow native MO2 profile/model changes", seconds: 30);
+            var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+            var active = spine.LoadoutSpineItems.Where(x => x.IsActive).ToArray();
+            if (active.Length != 1 || !active[0].Name.Contains(" — " + profile.CollectionName.Value + " ("))
+                throw new InvalidOperationException("Spine selection does not follow native MO2 profile");
+            var topbar = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.TopBar.TopBarView>().Single().ViewModel!;
+            if (topbar.ActiveWorkspaceSubtitle != profile.CollectionName.Value ||
+                !window.GetVisualDescendants().OfType<Mo2ModsView>().Any() || !window.GetVisualDescendants().OfType<Mo2PluginsView>().Any())
+                throw new InvalidOperationException("Native profile caption or live panels did not follow MO2");
+        }
+        System.Text.Json.JsonElement? cloneBefore = null;
+        try {
+            // Uses MO2's existing profile selector, without a frontend SelectProfile/ShowProfile call.
+            var clone = await client.SendAsync("selectProfile", new() { ["profilePath"] = originalPath, ["name"] = "Frontend Clone Test" });
+            cloneBefore = clone;
+            await Follow(clone);
+            if (controller.ActiveWorkspace.Id == originalWorkspace.Id || !string.IsNullOrEmpty(Search().Text))
+                throw new InvalidOperationException("External profile change reused the previous profile workspace/search");
+            var clonePath = profile.ProfilePath;
+            var plugin = clone.GetProperty("plugins").EnumerateArray().First(x => x.GetProperty("canToggle").GetBoolean());
+            var pluginName = plugin.GetProperty("name").GetString()!;
+            var enabled = plugin.GetProperty("state").GetInt32() == 2;
+            await client.SendAsync("setPluginActive", new() { ["profilePath"] = clonePath, ["name"] = pluginName, ["enabled"] = !enabled });
+            await Follow(await client.SendAsync("snapshot"));
+            await client.SendAsync("setPluginActive", new() { ["profilePath"] = clonePath, ["name"] = pluginName, ["enabled"] = enabled });
+            await Follow(await client.SendAsync("snapshot"));
+            var mod = clone.GetProperty("mods").EnumerateArray().Single(x => x.GetProperty("name").GetString() == "MCM Author Examples");
+            var priority = mod.GetProperty("priority").GetInt32();
+            if (priority <= 0) throw new InvalidOperationException("Expected a movable installed mod above priority zero");
+            await client.SendAsync("setModPriority", new() { ["profilePath"] = clonePath, ["name"] = "MCM Author Examples", ["priority"] = priority - 1 });
+            await Follow(await client.SendAsync("snapshot"));
+            if (profile.Mods.Single(x => x.Name == "MCM Author Examples").Priority != priority - 1)
+                throw new InvalidOperationException("Native mod priority did not change");
+            await client.SendAsync("setModPriority", new() { ["profilePath"] = clonePath, ["name"] = "MCM Author Examples", ["priority"] = priority });
+            await Follow(await client.SendAsync("snapshot"));
+            if (State(await client.SendAsync("snapshot")) != State(clone)) throw new InvalidOperationException("Clone state did not restore");
+            var returned = await client.SendAsync("selectProfile", new() { ["profilePath"] = clonePath, ["name"] = "Frontend Test" });
+            await Follow(returned);
+            if (controller.ActiveWorkspace.Id != originalWorkspace.Id || Search().Text != "Configuration" || State(returned) != State(original))
+                throw new InvalidOperationException("External return did not restore original workspace/search/MO2 state");
+            Console.WriteLine("PASS: independent native profile selector, mod priority and plugin activation changes are detected by periodic polling; workspace, spine, caption and live panels follow MO2; both profiles restored");
+        } finally {
+            var current = await client.SendAsync("snapshot");
+            if (cloneBefore is { } saved && current.GetProperty("profile").GetProperty("name").GetString() == "Frontend Clone Test") {
+                var savedMod = saved.GetProperty("mods").EnumerateArray().Single(x => x.GetProperty("name").GetString() == "MCM Author Examples");
+                if (current.GetProperty("mods").EnumerateArray().Single(x => x.GetProperty("name").GetString() == "MCM Author Examples").GetProperty("priority").GetInt32() != savedMod.GetProperty("priority").GetInt32())
+                    await client.SendAsync("setModPriority", new() { ["profilePath"] = current.GetProperty("profile").GetProperty("path").GetString(), ["name"] = "MCM Author Examples", ["priority"] = savedMod.GetProperty("priority").GetInt32() });
+                foreach (var plugin in saved.GetProperty("plugins").EnumerateArray().Where(x => x.GetProperty("canToggle").GetBoolean()))
+                    await client.SendAsync("setPluginActive", new() { ["profilePath"] = current.GetProperty("profile").GetProperty("path").GetString(), ["name"] = plugin.GetProperty("name").GetString(), ["enabled"] = plugin.GetProperty("state").GetInt32() == 2 });
+                await client.SendAsync("selectProfile", new() { ["profilePath"] = current.GetProperty("profile").GetProperty("path").GetString(), ["name"] = "Frontend Test" });
+            }
+            await profile.Refresh();
+            live.ShowProfile();
+            Search().Text = originalSearch;
+        }
     }
 
     private static async Task VerifyOriginalUi(Mo2LiveWorkspace live, Window window)
