@@ -89,6 +89,14 @@ class Bridge:
             from .overwrite import Overwrite
             overwrite = Overwrite(self.organizer, self.mod_actions.window)
             return overwrite.read() if action == 'readOverwrite' else overwrite.action(request.get('operation'))
+        if action in ('readArchives', 'previewArchive'):
+            if self.mod_actions is None: raise ValueError('MO2 archive integration is unavailable')
+            from .archives import Archives
+            archives = Archives(self.organizer, self.mod_actions.window)
+            return archives.read() if action == 'readArchives' else archives.preview(request.get('name'))
+        if action in ('selectionLinks', 'createSeparator'):
+            if self.mod_actions is None: raise ValueError('MO2 mod integration is unavailable')
+            return self.mod_actions.selection_links(request.get('names')) if action == 'selectionLinks' else self.mod_actions.create_separator(request.get('name'))
         if action == 'healthCheck':
             if self.mod_actions is None:
                 raise ValueError('MO2 health checks are unavailable')

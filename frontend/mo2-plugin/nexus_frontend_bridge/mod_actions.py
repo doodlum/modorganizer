@@ -6,6 +6,94 @@ class ModActions:
         self.organizer = organizer
         self.window = window
 
+    def selection_links(self, names):
+        """Read native conflict models; resolve names through the virtual filesystem."""
+        from PyQt6.QtCore import QAbstractProxyModel, QEvent, QObject, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QDialog, QTreeView
+        mods = self.organizer.modList()
+        if not isinstance(names, list) or any(not isinstance(n, str) or n not in mods.allMods() for n in names):
+            raise ValueError('Selected mods changed; refresh the mod list')
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        selected = set(names)
+        plugins = [p for p in self.organizer.pluginList().pluginNames()
+                   if selected.intersection(self.organizer.getFileOrigins(p))]
+        winners, losers, errors = set(), set(), []
+        # Only conflicting mods need their original conflict model populated.
+        conflicting = {m['name'] for m in self.snapshot() if m['conflicts'] and not m['overwrite']}
+        for name in selected.intersection(conflicting):
+            captured = []
+            class Capture(QObject):
+                def eventFilter(inner, watched, event):
+                    if isinstance(watched, QDialog) and watched.objectName() == 'ModInfoDialog' and event.type() == QEvent.Type.Polish:
+                        watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                        def read():
+                            try:
+                                for tree_name in ('overwriteTree', 'overwrittenTree'):
+                                    tree = watched.findChild(QTreeView, tree_name)
+                                    if tree is None: raise ValueError('Native conflict list is unavailable')
+                                    model = tree.model()
+                                    while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+                                    for row in range(model.rowCount()):
+                                        path = str(model.index(row, 0).data() or '').lstrip('/\\')
+                                        origins = list(self.organizer.getFileOrigins(path))
+                                        if len(origins) < 2 or name not in origins: continue
+                                        if origins[0] == name: losers.update(origins[1:])
+                                        else: winners.add(origins[0])
+                                captured.append(True)
+                            except Exception as error: errors.append(str(error))
+                            finally: watched.reject()
+                        QTimer.singleShot(0, read)
+                    return False
+            app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+            visible = self.window.isVisible()
+            try: self.details(name)
+            finally:
+                app.removeEventFilter(capture)
+                if not visible: self.window.hide()
+            if errors: raise ValueError(errors[0])
+            if not captured: raise ValueError('Native conflict details did not complete')
+        return {'plugins': plugins, 'winningMods': sorted(winners - selected), 'losingMods': sorted(losers - selected)}
+
+    def create_separator(self, name=None):
+        from PyQt6.QtCore import QAbstractProxyModel, QCoreApplication, QEvent, QObject, QPoint, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMenu, QTreeView
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        view = self.window.findChild(QTreeView, 'modList')
+        if view is None: raise ValueError('MO2 mod list is unavailable')
+        # Invoke the native global menu: it owns name validation and creation.
+        invoked, errors = [], []
+        expected = QCoreApplication.translate('ModListGlobalContextMenu', 'Create separator').replace('&', '')
+        class Capture(QObject):
+            armed = True
+            def eventFilter(inner, watched, event):
+                if inner.armed and isinstance(watched, QMenu) and event.type() == QEvent.Type.Polish:
+                    inner.armed = False
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def run():
+                        actions = [a for a in watched.actions() if a.text().replace('&', '') == expected and a.isEnabled()]
+                        watched.close()
+                        if len(actions) != 1: errors.append('Native separator action is unavailable'); return
+                        invoked.append(True); actions[0].trigger()
+                    QTimer.singleShot(0, run)
+                return False
+        mods = self.organizer.modList()
+        if name is not None and name not in mods.allMods(): raise ValueError('Selected mod no longer exists')
+        priority = mods.priority(name) if name is not None else -1
+        before = set(mods.allMods())
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        visible = self.window.isVisible()
+        try:
+            self.window.show()
+            view.customContextMenuRequested.emit(QPoint(-1, -1))
+        finally:
+            app.removeEventFilter(capture)
+            if not visible: self.window.hide()
+        if errors: raise ValueError(errors[0])
+        if not invoked: raise ValueError('MO2 did not open its separator menu')
+        created = [n for n in mods.allMods() if n not in before and n.endswith('_separator')]
+        if len(created) == 1 and priority >= 0: mods.setPriority(created[0], priority)
+        return {'created': created}
+
     def manage_executables(self):
         from PyQt6.QtGui import QAction
         action = self.window.findChild(QAction, 'actionModify_Executables')
@@ -133,6 +221,8 @@ class ModActions:
                 'state': int(getattr(state, 'value', state)), 'priority': mods.priority(name),
                 'priorityText': str(model.index(row, 9).data(Qt.ItemDataRole.DisplayRole) or ''),
                 'overwrite': name in overwrite_names,
+                'nexusId': mods.getMod(name).nexusId(),
+                'separator': mods.getMod(name).isSeparator(),
                 'conflicts': plain(model.index(row, 1).data(Qt.ItemDataRole.ToolTipRole)),
                 'flags': plain(model.index(row, 2).data(Qt.ItemDataRole.ToolTipRole)),
             })
@@ -272,7 +362,7 @@ class ModActions:
         if not isinstance(name, str) or name not in names:
             raise ValueError('Mod no longer exists')
         state = mods.state(name)
-        if int(getattr(state, 'value', state)) & 4:
+        if int(getattr(state, 'value', state)) & 4 and not mods.getMod(name).isSeparator():
             raise ValueError('Essential content cannot be uninstalled')
         view = self.window.findChild(QTreeView, 'modList')
         if view is None or not view.isEnabled():
@@ -291,5 +381,9 @@ class ModActions:
         # This is the original single-mod removal path, including MO2's Yes/No
         # dialog, profile cleanup, origin removal and download notification.
         # removeRow returns true even after Cancel, so inspect actual state.
+        # A separator may still be selected after native creation. Clear the
+        # view selection before removal so its delayed marker refresh cannot
+        # retain the removed ModInfo index.
+        view.selectionModel().clear()
         model.removeRow(row)
         return {'removed': name not in mods.allMods(), 'modName': name}

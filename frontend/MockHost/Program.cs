@@ -89,7 +89,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--inspect-mo2") { Mo2ProfileFiles.Inspect(args.Skip(1).ToArray()); return; }
         IconProvider.Current.Register<MaterialDesignIconProvider>();
         AppBuilder.Configure<MockApp>().UsePlatformDetect()
-            .With(new X11PlatformOptions { UseDBusMenu = false })
+            .With(new X11PlatformOptions { UseDBusMenu = false, WmClass = "mo2-nexus-frontend" })
             .With(new SkiaOptions { UseOpacitySaveLayer = true })
             .UseReactiveUI().LogToTrace().StartWithClassicDesktopLifetime(args);
     }
@@ -145,6 +145,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2LogsPage logs) return new Mo2LogsView { ViewModel = logs };
+        if (viewModel is Mo2ArchivesPage archives) return new Mo2ArchivesView { ViewModel = archives };
         if (viewModel is Mo2OverwritePage overwrite) return new Mo2OverwriteView { ViewModel = overwrite };
         if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
@@ -158,7 +159,8 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (view is IViewContract vc && contract is not null) vc.ViewContract = contract;
         if (view is NexusMods.App.UI.Controls.Spine.Buttons.Icon.IconButton homeIcon && contract == "Home")
             homeIcon.AttachedToVisualTree += (_,_) => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-                foreach (var icon in homeIcon.GetVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>()) icon.Value = NexusMods.UI.Sdk.Icons.IconValues.NexusColor;
+                foreach (var icon in homeIcon.GetVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>()) icon.Value = new NexusMods.UI.Sdk.Icons.ProjektankerIcon("mdi-home");
+                foreach (var border in homeIcon.GetVisualDescendants().OfType<Border>().Where(x => x.Name == "IconButtonInnerBorder")) border.CornerRadius = new CornerRadius(8);
             });
         return view;
     }
@@ -186,6 +188,7 @@ public partial class MockApp : Application
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_INPUT") == "1") await VerifyWorkspaceInput(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ARCHIVES") == "1") await VerifyArchives(live,liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI") == "1") await VerifyNewUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_FINAL_PAGES") == "1") await VerifyFinalPages(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
@@ -429,7 +432,7 @@ public partial class MockApp : Application
         if (!entry.Instance.Profiles.Any(x => x.Name == "Frontend Clone Test")) await live.Profile.ManageProfiles();
         var clone = Mo2ProfileFiles.Read(entry.Registration.Directory).Profiles.Single(x => x.Name == "Frontend Clone Test");
         if (!await live.Profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException(live.Profile.Status);
-        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Cloned profile rows did not activate");
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Cloned profile rows did not activate");
         var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
         if ((mod.State & 2) != 0) {
             live.Profile.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
@@ -583,6 +586,40 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyArchives(Mo2LiveWorkspace live,Window window)
+    {
+        async Task Click(Control control) {
+            window.Activate();
+            await Task.Delay(400);
+            var point = control.PointToScreen(new Point(Math.Min(control.Bounds.Width/2,70),control.Bounds.Height/2));
+            Console.WriteLine($"ARCHIVE POINTER: {control.Name ?? control.GetType().Name} at {point.X},{point.Y}");
+            var start = new System.Diagnostics.ProcessStartInfo("python3") { UseShellExecute = false };
+            start.ArgumentList.Add("/home/deck/mo2/frontend/artifacts/pointer-check.py"); start.ArgumentList.Add(point.X.ToString()); start.ArgumentList.Add(point.Y.ToString());
+            using var process = System.Diagnostics.Process.Start(start)!; await process.WaitForExitAsync();
+            if (process.ExitCode != 0) throw new Exception("Pointer helper failed");
+        }
+        var item = window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView>().Single(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Archives"));
+        await Click(item);
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ArchivesView>().Any(),"Archives sidebar did not open");
+        var view = window.GetVisualDescendants().OfType<Mo2ArchivesView>().First();
+        var table = view.GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        await WaitFor(() => table.Rows?.Count > 0,"Native archives did not load");
+        var count = table.Rows!.Count;
+        var filter = view.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "ArchivesFilter");
+        filter.Text = "Fallout - Misc.bsa";
+        await WaitFor(() => table.Rows?.Count == 1,"Archive filter mismatch");
+        var label = table.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Text == filter.Text);
+        await Click(label);
+        var browse = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "BrowseArchive");
+        if (!browse.IsEnabled) throw new Exception("Archive selection did not enable Browse");
+        await Click(browse);
+        await WaitFor(() => File.Exists("/tmp/mo2-bsa-preview-verified"),"Original BSA preview was not verified",seconds:60);
+        await WaitFor(() => !live.Profile.ManagingMod && live.Profile.IsConnected,"Archive preview did not return to frontend",seconds:30);
+        filter.Text = "";
+        await WaitFor(() => table.Rows?.Count == count,"Archive listing did not restore");
+        Console.WriteLine($"PASS: real pointer Archives navigation, {count} native archives, filtering, selection, original BSA preview and frontend recovery");
+    }
+
     private static async Task VerifyWorkspaceInput(Mo2LiveWorkspace live, Window window)
     {
         var entry = live.Catalog.Read().Single(x => x.Registration.Endpoint == live.Profile.Endpoint);
@@ -699,9 +736,9 @@ public partial class MockApp : Application
         filter.SelectedIndex = 2;
         await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => (x.State & 2) == 0 && (x.State & 4) == 0), "Disabled filter mismatch");
         filter.SelectedIndex = 0;
-        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Filter did not restore rows");
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Filter did not restore rows");
         var table = view.NativeView.FindControl<TreeDataGrid>("TreeDataGrid")!;
-        await WaitFor(() => table.Rows?.Count == live.Profile.Mods.Count, "Mod rows not rendered");
+        await WaitFor(() => table.Rows?.Count == live.Profile.Mods.Count(x => !x.IsOverwrite), "Mod rows not rendered");
         var movable = live.Profile.Mods.Where(x => (x.State & 4) == 0 && x.Priority > 0).OrderBy(x => x.Priority).First();
         var previous = live.Profile.Mods.OrderBy(x => x.Priority).Select(x => (x.Name,x.Priority)).ToArray();
         try {
@@ -800,7 +837,7 @@ public partial class MockApp : Application
             workspace.Panels.Last().IsSelected = true;
             await live.ProfileMenu.LeftMenuItemExternalChanges!.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
             await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any() && window.GetVisualDescendants().OfType<Mo2PluginsView>().Any()
-                && live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Paired MO2 lists did not render");
+                && live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Paired MO2 lists did not render");
             await Capture(tag + "mods");
             if (tag == "fnv-return") continue;
             await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
@@ -1336,7 +1373,7 @@ public partial class MockApp : Application
         live.ShowProfile();
         await WaitFor(() => window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Any(), "Profile sidebar did not restore launch controls");
         if (panel.Model.SelectedExecutable != original) throw new InvalidOperationException("Home navigation lost the executable selection");
-        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault()?.NativeView.FindControl<TextBlock>("ModsCount")?.Text == live.Profile.Mods.Count.ToString(),
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault()?.NativeView.FindControl<TextBlock>("ModsCount")?.Text == live.Profile.Mods.Count(x => !x.IsOverwrite).ToString(),
             "Native mod count did not return after Home navigation");
         if (window.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Run through MO2") || Equals(x.Content, "Refresh from MO2")))
             throw new InvalidOperationException("Duplicate header controls remain");
@@ -1383,7 +1420,7 @@ public partial class MockApp : Application
             !native.FindControl<Button>("ViewFilesButton")!.IsEnabled)
             throw new InvalidOperationException("Native toolbar does not respect Overwrite restrictions");
         search.FindControl<Button>("SearchClearButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-        await WaitFor(() => table.Rows!.Count == live.Profile.Mods.Count, "Native clear search did not restore all mods");
+        await WaitFor(() => table.Rows!.Count == live.Profile.Mods.Count(x => !x.IsOverwrite), "Native clear search did not restore all mods");
         var tabs = native.FindControl<TabControl>("RulesTabControl")!;
         tabs.SelectedItem = native.FindControl<TabItem>("RulesTabItem");
         await WaitFor(() => native.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Any(), "Native Rules tab did not render");
@@ -1866,7 +1903,7 @@ public partial class MockApp : Application
             visit.Command!.Execute(visit.CommandParameter);
             await WaitFor(() => !live.Profile.SelectingProfile && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(profile.Directory)
                 && live.WorkspaceController.ActiveWorkspace.Context is Mo2WorkspaceContext, "Game card did not switch both panels: " + live.Profile.Status, seconds: 110);
-            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Native mod rows did not refresh after game switch");
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Native mod rows did not refresh after game switch");
             var priorities = live.ModsPage!.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
             if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Mod rows lost MO2 priority order after switching games");
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, window);
@@ -1876,7 +1913,7 @@ public partial class MockApp : Application
             await VisitGameProfile(skyrim, selected);
             if (live.WorkspaceController.ActiveWorkspace.Panels.SelectMany(x => x.Tabs).Count(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true }) != 1)
                 throw new InvalidOperationException("Profile selection duplicated the mod-list tab");
-            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite) && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
             var snapshot = await new Mo2BridgeClient(skyrim.Registration.Endpoint).SendAsync("snapshot");
             var mods = snapshot.GetProperty("mods").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32(), x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
             if (!mods.SequenceEqual(live.Profile.Mods.Select(x => ((string?)x.Name, x.State, x.Priority)).OrderBy(x => x.Item1)))
@@ -1888,7 +1925,7 @@ public partial class MockApp : Application
                 throw new InvalidOperationException("Native mod details disagree with MO2");
             var overwrite = live.Profile.Mods.Single(x => x.IsOverwrite);
             if ((overwrite.State & 4) == 0 || overwrite.PriorityText.Length != 0) throw new InvalidOperationException("Overwrite lost its native fixed-priority state");
-            foreach (var mod in live.Profile.Mods) {
+            foreach (var mod in live.Profile.Mods.Where(x => !x.IsOverwrite)) {
                 var row = live.ModsPage!.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id);
                 if (row.Get<ValueComponent<string>>(Mo2ModsAdapter.ConflictsKey).Value.Value != mod.Conflicts)
                     throw new InvalidOperationException("Conflict column disagrees with MO2");

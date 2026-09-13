@@ -21,6 +21,7 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
         CompositeItemModel<ISortItemKey> Create(IReactiveSortItem item) {
             var model = new CompositeItemModel<ISortItemKey>(item.Key);
             if (item is ScenarioPlugin { GameArt.Length: > 0 } gameItem) model.Add(LoadOrderColumns.DisplayNameColumn.ImageComponentKey, new ImageComponent(Mo2GameArt.Thumbnail(gameItem.GameArt)));
+            if (item is ScenarioPlugin { ModArt: { } art }) model.Add(LoadOrderColumns.DisplayNameColumn.ImageComponentKey,new ImageComponent(art));
             model.Add(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey, new StringComponent(item.DisplayName));
             model.Add(LoadOrderColumns.ModNameColumn.ModNameComponentKey, new StringComponent(item.ModName));
             model.Add(LoadOrderColumns.IsActiveComponentKey, new ValueComponent<bool>(item.IsActive));

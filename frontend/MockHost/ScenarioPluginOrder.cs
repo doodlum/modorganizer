@@ -24,6 +24,7 @@ internal sealed class ScenarioPlugin : ReactiveObject, IReactiveSortItem
     public bool CanMove { get; init; } = true;
     public string Diagnostics { get; init; } = "";
     public bool HasWarning { get; init; }
+    public Avalonia.Media.Imaging.Bitmap? ModArt { get; init; }
     public string GameArt { get; init; } = "";
     public string ModIndex { get; init; } = "";
     public ISortItemLoadoutData? LoadoutData { get; set; }
@@ -83,6 +84,7 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
         plugin.IsActive = enabled;
         _items.AddOrUpdate(plugin);
     }
+    public ScenarioPlugin? FindPlugin(ISortItemKey key) => _items.Lookup(key).ValueOrDefault();
     public IReadOnlyList<ScenarioPlugin> Plugins => _items.Items.OrderBy(item => item.SortIndex).ToArray();
     public Optional<SortOrderId> GetSortOrderIdFor(OneOf<LoadoutId, CollectionGroupId> parentEntity, IDb? db = null) => Optional<SortOrderId>.Create(default);
     public ValueTask<SortOrderId> GetOrCreateSortOrderFor(LoadoutId loadoutId, OneOf<LoadoutId, CollectionGroupId> parentEntity, CancellationToken token = default) => ValueTask.FromResult(default(SortOrderId));

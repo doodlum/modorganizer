@@ -1,6 +1,7 @@
 using System.Reactive.Linq;
 using System.Text.Json;
 using DynamicData;
+using DynamicData.Kernel;
 using NexusMods.Abstractions.Loadouts;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages;
@@ -11,7 +12,8 @@ namespace Mo2.Frontend;
 
 internal readonly record struct Mo2ProfileTarget(string Endpoint, string ProfilePath);
 internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused);
-internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false);
+internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false, int NexusId = 0, bool IsSeparator = false)
+{ public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0); }
 
 // Only a view of the running host. No activation/order/profile files are written here.
 internal sealed class Mo2LiveProfile : IInstalledModsSource
@@ -23,6 +25,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     private readonly Dictionary<string, EntityId> _ids = new(StringComparer.OrdinalIgnoreCase);
     public R3.BindableReactiveProperty<string> CollectionName { get; } = new("Connecting to MO2…");
     public IReadOnlyCollection<Mo2LiveMod> Mods => _mods.Items.ToArray();
+    public Mo2LiveMod? FindMod(EntityId id) => _mods.Lookup(id).ValueOrDefault();
     public ScenarioPluginOrder Order { get; } = new(false);
     public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
     public string Endpoint { get; private set; }
@@ -53,6 +56,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         Order.ApplyOrder = Reorder;
     }
     private string? _lastSnapshot;
+    private string? _highlightSnapshot;
     public bool IsConnected => _lastSnapshot is not null;
     public Mo2ProfileTarget CurrentTarget => new(Endpoint, ProfilePath);
     private bool CanStartHostAction => IsConnected && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
@@ -80,6 +84,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             .Where(x => !x.GetProperty("hidden").GetBoolean())
             .Select(x => new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean())).ToArray() : [];
         var profile = snapshot.GetProperty("profile");
+        if (ProfilePath != profile.GetProperty("path").GetString()) _selectedModNames = [];
         ProfilePath = profile.GetProperty("path").GetString()!;
         CollectionName.Value = profile.GetProperty("name").GetString()!;
         var mods = snapshot.GetProperty("mods").EnumerateArray().Select(mod => {
@@ -89,7 +94,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 mod.TryGetProperty("priorityText", out var priorityText) ? priorityText.GetString() ?? "" : mod.GetProperty("priority").GetInt32().ToString(),
                 mod.TryGetProperty("conflicts", out var conflicts) ? conflicts.GetString() ?? "" : "",
                 mod.TryGetProperty("flags", out var flags) ? flags.GetString() ?? "" : "",
-                mod.TryGetProperty("overwrite", out var overwrite) && overwrite.GetBoolean());
+                mod.TryGetProperty("overwrite", out var overwrite) && overwrite.GetBoolean(),
+                mod.TryGetProperty("nexusId", out var nexusId) ? nexusId.GetInt32() : 0,
+                mod.TryGetProperty("separator", out var separator) && separator.GetBoolean());
         }).ToArray();
         _mods.Edit(cache => {
             var ids = mods.Select(x => x.Id).ToHashSet();
@@ -103,6 +110,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             plugin.GetProperty("name").GetString()!, plugin.GetProperty("origin").GetString()!, plugin.GetProperty("priority").GetInt32(),
             plugin.GetProperty("masters").EnumerateArray().Select(x => x.GetString()!).ToArray()) {
                 GameArt = plugin.GetProperty("origin").GetString() is { } origin && (origin == "data" || origin.StartsWith("DLC:")) ? GameName : "",
+                ModArt = Mo2GameArt.ModThumbnail(NexusGame,mods.FirstOrDefault(m => m.Name == plugin.GetProperty("origin").GetString())?.NexusId ?? 0),
                 IsActive = plugin.GetProperty("state").GetInt32() == 2,
                 HasWarning = plugin.TryGetProperty("hasWarning", out var warning) && warning.GetBoolean(),
                 CanToggle = !plugin.TryGetProperty("canToggle", out var toggle) || toggle.GetBoolean(),
@@ -111,6 +119,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 ModIndex = plugin.TryGetProperty("modIndex", out var modIndex) ? modIndex.GetString() ?? "" : "",
 
             }));
+        var highlightSnapshot = Endpoint + ProfilePath + snapshot.GetProperty("mods").GetRawText();
+        if (highlightSnapshot != _highlightSnapshot) { _highlightSnapshot = highlightSnapshot; _ = RefreshHighlights(); }
         Status = $"{mods.Length} mods · {Order.Plugins.Count} plugins · Connected to MO2";
         Changed?.Invoke();
     }
@@ -167,6 +177,27 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             var result = await Client.SendAsync("readOverwrite", new() { ["profilePath"] = target.ProfilePath });
             return result.GetProperty("files").EnumerateArray().Select(x => new Mo2OverwriteFile(x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64())).ToArray();
         } finally { _commands.Release(); }
+    }
+    public async Task<Mo2Archive[]> ReadArchives(Mo2ProfileTarget target)
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to browse archives.");
+            var result = await Client.SendAsync("readArchives",new() { ["profilePath"] = target.ProfilePath });
+            return result.GetProperty("archives").EnumerateArray().Select(x => new Mo2Archive(x.GetProperty("name").GetString()!,x.GetProperty("mod").GetString()!,x.GetProperty("active").GetBoolean(),x.GetProperty("canToggle").GetBoolean())).ToArray();
+        } finally { _commands.Release(); }
+    }
+    public async Task BrowseArchive(string name,Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (target != CurrentTarget) return;
+            Status = "Browsing " + name + " in MO2"; Changed?.Invoke();
+            await Client.SendAsync("previewArchive",new() { ["profilePath"] = target.ProfilePath, ["name"] = name },timeout:TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
     public async Task OverwriteAction(string operation, Mo2ProfileTarget target)
     {
@@ -236,7 +267,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             var found = _mods.Lookup(id);
             if (!found.HasValue) return;
             var mod = found.Value;
-            if ((mod.State & 4) != 0 || mod.Priority < 0) return;
+            if (!mod.CanManage || mod.Priority < 0) return;
             var priority = Math.Clamp(absolute ? delta : mod.Priority + delta, 0, _mods.Items.Where(x => !x.IsOverwrite && x.Priority >= 0).Max(x => x.Priority));
             Apply(await Client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
         } catch (Exception error) { Report(error); }
@@ -395,6 +426,52 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
+    private int _selectionVersion;
+    private string[] _selectedModNames = [];
+    public IReadOnlySet<string> LinkedPlugins { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlySet<string> WinningMods { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlySet<string> LosingMods { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public event Action? HighlightsChanged;
+    public void HighlightMods(IEnumerable<EntityId> ids)
+    {
+        var selected = ids.ToHashSet();
+        _selectedModNames = Mods.Where(x => selected.Contains(x.Id)).Select(x => x.Name).ToArray();
+        _ = RefreshHighlights();
+    }
+    private async Task RefreshHighlights()
+    {
+        var version = ++_selectionVersion;
+        var target = CurrentTarget;
+        var names = _selectedModNames;
+        LinkedPlugins = Order.Plugins.Where(p => names.Contains(p.ModName,StringComparer.OrdinalIgnoreCase)).Select(p => p.DisplayName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        WinningMods = new HashSet<string>(); LosingMods = new HashSet<string>(); HighlightsChanged?.Invoke();
+        if (names.Length == 0 || !CanStartHostAction) return;
+        await Task.Delay(120); // Coalesce rapid pointer/keyboard selection changes.
+        if (version != _selectionVersion) return;
+        await _commands.WaitAsync();
+        try {
+            if (version != _selectionVersion || target != CurrentTarget || !CanStartHostAction) return;
+            var result = await Client.SendAsync("selectionLinks",new() { ["profilePath"] = target.ProfilePath, ["names"] = names });
+            if (version != _selectionVersion || target != CurrentTarget) return;
+            HashSet<string> Read(string key) => result.GetProperty(key).EnumerateArray().Select(x => x.GetString()!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            LinkedPlugins = Read("plugins"); WinningMods = Read("winningMods"); LosingMods = Read("losingMods");
+            HighlightsChanged?.Invoke();
+        } catch (Exception error) { if (version == _selectionVersion && target == CurrentTarget) Report(error); }
+        finally { _commands.Release(); }
+    }
+    public async Task CreateSeparator(EntityId? above)
+    {
+        if (!CanStartHostAction) return;
+        var target = CurrentTarget;
+        var name = above is { } id ? Mods.FirstOrDefault(x => x.Id == id)?.Name : null;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (target != CurrentTarget) return;
+            await Client.SendAsync("createSeparator",new() { ["profilePath"] = target.ProfilePath, ["name"] = name },timeout:TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public async Task ShowModDetails(EntityId id)
     {
         if (!CanStartHostAction) return;
@@ -415,7 +492,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public void Remove(IEnumerable<LoadoutItemId> ids)
     {
-        var selected = ids.Select(id => _mods.Lookup(id.Value)).Where(x => x.HasValue && (x.Value.State & 4) == 0).Select(x => x.Value.Name).ToArray();
+        var selected = ids.Select(id => _mods.Lookup(id.Value)).Where(x => x.HasValue && x.Value.CanManage).Select(x => x.Value.Name).ToArray();
         _ = RemoveAsync(selected, ProfilePath);
     }
     private async Task RemoveAsync(string[] names, string profile)
@@ -434,11 +511,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
-    public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => Observable.Defer(() => _mods.CountChanged.StartWith(_mods.Count).DistinctUntilChanged());
+    public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => _mods.Connect().Filter(x => !x.IsOverwrite).QueryWhenChanged(x => x.Count).DistinctUntilChanged();
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveLoadoutItems(LoadoutFilter filter)
-        => _mods.Connect().Transform(CreateModModel);
+        => _mods.Connect().Filter(x => !x.IsOverwrite).Transform(CreateModModel);
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveFilteredMods(IObservable<Func<Mo2LiveMod,bool>> filter)
-        => _mods.Connect().Filter(filter).Transform(CreateModModel);
+        => _mods.Connect().Filter(x => !x.IsOverwrite).Filter(filter).Transform(CreateModModel);
     private static CompositeItemModel<EntityId> CreateModModel(Mo2LiveMod mod) {
             var model = new CompositeItemModel<EntityId>(mod.Id);
             model.Add(Mo2ModsAdapter.StateKey, new ValueComponent<int>(mod.State));
@@ -452,7 +529,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if ((mod.State & 4) == 0) {
                 model.Add(LoadoutColumns.EnabledState.EnabledStateToggleComponentKey, new LoadoutComponents.EnabledStateToggle(new ValueComponent<bool?>((mod.State & 2) != 0)));
             }
-            model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: (mod.State & 4) == 0));
+            model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: mod.CanManage));
             return model;
         }
 }

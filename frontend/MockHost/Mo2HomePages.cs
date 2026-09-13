@@ -63,8 +63,19 @@ internal static class Mo2GameArt
     private static readonly Dictionary<string,Bitmap> Thumbnails = new();
     public static Bitmap Thumbnail(string game) {
         if (Thumbnails.TryGetValue(game,out var ready)) return ready;
-        using var icon = Icon(game);
-        using var png = new MemoryStream(); icon.Save(png); png.Position = 0;
+        using var art = Cover(game);
+        return Thumbnails[game] = Compose(art);
+    }
+    public static Bitmap? ModThumbnail(string game,int nexusId) {
+        var key = $"{game}/{nexusId}";
+        if (Thumbnails.TryGetValue(key,out var ready)) return ready;
+        var root = Environment.GetEnvironmentVariable("XDG_CACHE_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".cache");
+        var path = Path.Combine(root,"mo2-nexus-frontend","thumbnails",game,$"{nexusId}.image");
+        if (!File.Exists(path)) return null;
+        try { using var art = new Bitmap(path); return Thumbnails[key] = Compose(art); } catch { return null; }
+    }
+    private static Bitmap Compose(Bitmap art) {
+        using var png = new MemoryStream(); art.Save(png); png.Position = 0;
         using var source = SkiaSharp.SKBitmap.Decode(png);
         using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(184,104));
         var canvas = surface.Canvas;
@@ -77,12 +88,12 @@ internal static class Mo2GameArt
         var width = source.Width * scale; var height = source.Height * scale;
         canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),background);
         using var foreground = new SkiaSharp.SKPaint { IsAntialias = true };
-        var fit = Math.Min(104f / source.Width,104f / source.Height);
+        var fit = Math.Min(184f / source.Width,104f / source.Height);
         width = source.Width * fit; height = source.Height * fit;
         canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),foreground);
         using var composed = surface.Snapshot(); using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png,100);
         using var bytes = encoded.AsStream();
-        return Thumbnails[game] = new Bitmap(bytes);
+        return new Bitmap(bytes);
     }
     public static Bitmap Icon(string game)
     {

@@ -13,6 +13,7 @@ internal sealed class Mo2LoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel>, IL
 {
     public WorkspaceId WorkspaceId { get; }
     public ReadOnlyObservableCollection<ILeftMenuItemViewModel> LeftMenuCollectionItems { get; } = new(new());
+    public ILeftMenuItemViewModel ArchivesItem { get; }
     public ILeftMenuItemViewModel LogsItem { get; }
     public ILeftMenuItemViewModel OverwriteItem { get; }
     public ILeftMenuItemViewModel ToolsItem { get; }
@@ -24,11 +25,12 @@ internal sealed class Mo2LoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel>, IL
     public ILeftMenuItemViewModel LeftMenuItemLibrary { get; }
     public ILeftMenuItemViewModel LeftMenuItemLoadout { get; }
     public ILeftMenuItemViewModel? LeftMenuItemExternalChanges { get; }
-    public Mo2LoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData mods, PageData plugins, PageData downloads, PageData health, PageData profiles, PageData tools, PageData overwrite, PageData logs)
+    public Mo2LoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData mods, PageData plugins, PageData downloads, PageData health, PageData profiles, PageData tools, PageData overwrite, PageData logs, PageData archives)
     {
         WorkspaceId = workspace;
         ILeftMenuItemViewModel Item(string title, IconValue icon, PageData page) =>
             new LeftMenuItemViewModel(controller, workspace, page) { Text = new StringComponent(title), Icon = icon };
+        ArchivesItem = Item("Archives", Mo2ArchivesPage.ArchiveIcon, archives);
         LogsItem = Item("Logs", Mo2LogsPage.LogsIcon, logs);
         OverwriteItem = Item("Overwrite", IconValues.Folder, overwrite);
         ToolsItem = Item("Tools", Mo2ToolsPage.ToolIcon, tools);

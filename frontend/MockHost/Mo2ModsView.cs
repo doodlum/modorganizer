@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Templates;
 using Avalonia.ReactiveUI;
+using Avalonia.VisualTree;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages;
 using NexusMods.App.UI.Pages.LoadoutPage;
@@ -61,13 +62,16 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
             var flags = item.Get<ValueComponent<string>>(FlagsKey).Value.Value;
             var label = new TextBlock { Text = item.Get<NameComponent>(SharedColumns.Name.NameComponentKey).Value.Value,
                 TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(6,0) };
-            var color = conflicts.Length == 0 ? "#00000000" : conflicts.Contains("Overwritten", StringComparison.OrdinalIgnoreCase) && !conflicts.Contains("Overwrites", StringComparison.OrdinalIgnoreCase) ? "#443E2026" : conflicts.Contains("Overwrites", StringComparison.OrdinalIgnoreCase) && !conflicts.Contains("Overwritten", StringComparison.OrdinalIgnoreCase) ? "#44305B3C" : "#44685527";
-            var border = new Border { Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(color)), Child = label };
+            if (_profile.FindMod(item.Key)?.IsSeparator == true)
+                label.FontWeight = Avalonia.Media.FontWeight.Bold;
+            var border = new Border { Child = label };
             ToolTip.SetTip(border, label.Text + "\n" + string.Join("\n", new[] { conflicts, flags }.Where(x => x.Length > 0)));
-            if ((label.Text ?? "").StartsWith("DLC:",StringComparison.OrdinalIgnoreCase)) {
+            var mod = _profile.FindMod(item.Key);
+            var thumbnail = mod?.Name.StartsWith("DLC:",StringComparison.OrdinalIgnoreCase) == true ? Mo2GameArt.Thumbnail(_profile.GameName) : Mo2GameArt.ModThumbnail(_profile.NexusGame,mod?.NexusId ?? 0);
+            if (thumbnail is not null) {
                 var row = new DockPanel();
                 var art = new Border { Width = 46, Height = 26, Margin = new Thickness(4,0), CornerRadius = new CornerRadius(4), ClipToBounds = true,
-                    Child = new Image { Source = Mo2GameArt.Thumbnail(_profile.GameName), Stretch = Avalonia.Media.Stretch.Uniform } };
+                    Child = new Image { Source = thumbnail, Stretch = Avalonia.Media.Stretch.Uniform } };
                 DockPanel.SetDock(art,Dock.Left); row.Children.Add(art); row.Children.Add(border); return row;
             }
             return border;
@@ -102,27 +106,19 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         native.FindControl<StandardButton>("ViewLibraryButton")!.Text = "Downloads";
         ToolTip.SetTip(native.FindControl<StandardButton>("ViewFilesButton")!, "View this mod’s files and conflicts in MO2");
         var group = native.FindControl<ItemsControl>("ContextControlGroup")!;
-        var moves = new List<StandardButton>();
-        foreach (var delta in new[] { -1, 1 }) {
-            var button = new StandardButton { ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
-                LeftIcon = delta < 0 ? IconValues.ArrowUp : IconValues.ArrowDown, Size = StandardButton.Sizes.Toolbar,
-                Fill = StandardButton.Fills.None, Type = StandardButton.Types.Tertiary,
-                Name = delta < 0 ? "MoveModEarlierButton" : "MoveModLaterButton" };
-            var description = delta < 0 ? "Move earlier in MO2 priority" : "Move later in MO2 priority";
-            ToolTip.SetTip(button, description);
-            Avalonia.Automation.AutomationProperties.SetName(button, description);
-            button.Click += async (_, _) => {
-                if (ViewModel is { LiveProfile: { } profile } model && model.Adapter.SelectedModels.Count == 1)
-                    await ((Mo2ModsAdapter)model.Adapter).Move(model.Adapter.SelectedModels.Single().Key, delta);
-            };
-            group.Items.Add(button); moves.Add(button);
-        }
         var filters = new ComboBox { Name = "ModStateFilter", ItemsSource = new[] { "All mods", "Enabled", "Disabled", "Conflicts", "No conflicts" }, SelectedIndex = 0, MinWidth = 120 };
         var priority = new TextBox { Name = "ModPriorityInput", Width = 70, Watermark = "Priority" };
         var setPriority = new Button { Name = "SetModPriorityButton", Content = "Move" };
         ToolTip.SetTip(priority, "MO2 mod priority (0 is first)");
         var filterRow = new WrapPanel { Margin = new Thickness(24,4,24,8) };
         filters.Margin = priority.Margin = setPriority.Margin = new Thickness(0,0,8,4);
+        var separator = new Button { Name = "CreateSeparatorButton", Content = "Create separator…", Margin = new Thickness(0,0,8,4) };
+        separator.Click += async (_,_) => {
+            if (ViewModel is { LiveProfile: { } profile } model)
+                await profile.CreateSeparator(model.Adapter.SelectedModels.Count == 1 ? model.Adapter.SelectedModels.Single().Key : null);
+        };
+        ToolTip.SetTip(separator,"Create an MO2 separator above the selected mod, or at the end of the list");
+        filterRow.Children.Add(separator);
         filterRow.Children.Add(filters); filterRow.Children.Add(priority); filterRow.Children.Add(setPriority);
         var modsGrid = (Grid)native.FindControl<TabItem>("ModsTabItem")!.Content!;
         modsGrid.RowDefinitions.Insert(2,new RowDefinition(GridLength.Auto));
@@ -137,18 +133,25 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             this.Bind(ViewModel, vm => vm.Mo2SearchText, view => view.SearchBox.Text).AddTo(disposables);
             this.Bind(ViewModel, vm => vm.Mo2SearchExpanded, view => view.SearchPanel.IsVisible).AddTo(disposables);
             this.OneWayBind(ViewModel, vm => vm, view => view.NativeView.ViewModel).AddTo(disposables);
+            void Highlight() => Mo2RowHighlights.Apply(native, ViewModel!.LiveProfile!, plugins: false);
+            EventHandler layout = (_,_) => Highlight();
+            native.LayoutUpdated += layout;
+            ViewModel!.LiveProfile!.HighlightsChanged += Highlight;
+            System.Reactive.Disposables.Disposable.Create(() => { native.LayoutUpdated -= layout; ViewModel!.LiveProfile!.HighlightsChanged -= Highlight; }).AddTo(disposables);
             ViewModel!.SelectedSubTab = LoadoutPageSubTabs.Mods;
             SubTabs.SelectedIndex = 0;
-            ViewModel!.Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true)
-                .Subscribe(count => {
+            void UpdateSelection() {
+                    var count = ViewModel.Adapter.SelectedModels.Count;
+                    ViewModel.LiveProfile!.HighlightMods(ViewModel.Adapter.SelectedModels.Select(x => x.Key));
                     var selected = ViewModel.Adapter.SelectedModels.Select(x => x.Key).ToHashSet();
                     var mods = ViewModel.LiveProfile!.Mods.Where(x => selected.Contains(x.Id)).ToArray();
-                    setPriority.IsEnabled = count == 1 && mods.Length == 1 && (mods[0].State & 4) == 0;
+                    setPriority.IsEnabled = count == 1 && mods.Length == 1 && mods[0].CanManage;
                     if (count == 1 && mods.Length == 1) priority.Text = Math.Max(0,mods[0].Priority).ToString();
-                    foreach (var button in moves) button.IsEnabled = count == 1 && mods.Length == 1 && (mods[0].State & 4) == 0;
                     native.FindControl<StandardButton>("ViewFilesButton")!.IsEnabled = count == 1;
-                    native.FindControl<StandardButton>("DeleteButton")!.IsEnabled = mods.Any(x => (x.State & 4) == 0);
-                }).AddTo(disposables);
+                    native.FindControl<StandardButton>("DeleteButton")!.IsEnabled = mods.Any(x => x.CanManage);
+            }
+            ViewModel!.Adapter.SelectedModels.ObserveChanged().Subscribe(_ => UpdateSelection()).AddTo(disposables);
+            UpdateSelection();
         });
     }
 }

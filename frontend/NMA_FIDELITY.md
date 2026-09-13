@@ -553,3 +553,46 @@ use the same 46×26 bitmap. Logs and Overwrite header SVGs use NMA's orange and
 white/lavender palette; the original gradient Vortex Tools pictogram is retained.
 The full pointer check passed again in `/tmp/mo2-blur-icons-check.log`; the visible
 blur and the Logs/Overwrite header pictograms were inspected in the running app.
+
+## Selection, artwork and Steam Deck follow-up (2026-09-13)
+
+- Selected mods highlight their plugin files in purple and the conflicting file
+  providers in green/red. The bridge reads MO2's native conflict models invisibly
+  and resolves exact file origins; it does not scan or modify the game directory.
+  Selection changes are debounced, stale responses are discarded, and download
+  progress does not repeatedly rebuild conflict details. Pointer checks covered
+  switching directly between two selected mods, both conflict directions and
+  MCM's one-plugin / author-examples three-plugin ownership.
+- Create separator invokes MO2's original name dialog, then its priority API.
+  Native create/remove round-trip checks preserved all existing priorities. MO2's
+  non-toggleable separator state is separate from permission to move/remove it.
+  Clearing native selection before removal prevents a delayed marker from
+  retaining a deleted mod index. Verification content was removed afterwards.
+- Overwrite remains available through its own page and no longer appears in the
+  Mods table or its item count.
+- Both tables now compose the complete game **cover art**, fitted proportionally
+  over its blurred background, in matching 46×26 thumbnails. This supersedes the
+  earlier game-icon thumbnail request. Installed mod artwork uses its Nexus ID
+  and a local public-image cache. MCM's official image was cached with
+  `tools/cache_mod_thumbnail.py`; its mod and ESP rows show the same artwork.
+  Automatic artwork acquisition for every newly installed mod is not implemented.
+- Home uses Vortex's `mdiHome` symbol and rounded-square button shape, based on
+  its local `SpineButton.tsx`/`Spine/index.tsx`. The frontend's separate taskbar
+  icon is embedded and installed with `tools/install_desktop.py`; X11 reports
+  `WM_CLASS=mo2-nexus-frontend` and a populated `_NET_WM_ICON`.
+- Plugins uses the native sorting editor with a flat row source, compact 40px
+  rows and proportional name columns. Up/down controls and the decorative trophy
+  rail are removed; drag handling remains attached to the original adapter.
+  The list retains one real scrollbar, ellipsized names and full-name tooltips.
+  Both lists were inspected side by side in a 1280×750 Steam Deck work area.
+- Archives is an Installed page with native archive discovery (21 FNV archives,
+  125 Skyrim archives), filtering and the original BSA/BA2 Preview extension.
+  FNV's `Fallout - Misc.bsa` opened in the original preview with 142 entries while
+  MO2's main window remained hidden. Closing it returned control to the bridge.
+  An initial automated navigation test used an ineffective uinput pointer;
+  direct X11 pointer navigation and the live Archives list subsequently passed.
+
+Validation: frontend build, 19 bridge contracts and four download contracts pass.
+Native separator cleanup and both conflict directions passed independently of
+frontend rendering. Shared popup login and complete MO2 feature parity remain
+open in the active integration goal.
