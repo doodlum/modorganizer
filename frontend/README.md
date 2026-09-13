@@ -144,12 +144,11 @@ a panel. It is a partial integration check, not proof of full behavioral parity.
 The live frontend uses the native NMA navigation and panels with real MO2
 games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
 acceptance and switching between the registered FNV and Skyrim hosts pass.
-Remaining work includes:
-
-- Expand verification of other native LOOT message categories. Missing-master text and the native warning flag have passed an isolated install/activate/remove check.
-- Complete the remaining page-state review. Diagnostic detail tabs now also have a live-extension restart check: restored tabs query MO2 again and follow resolved/recurring reports. Real Ctrl-click selection and activation, two-plugin pointer dragging, panel-divider gestures, native history and per-profile layout restoration have passed.
-- Review remaining page states and visual layout against NMA.
-- Publish the branch to the requested GitHub remote when authentication is available.
+The [current acceptance audit](ACCEPTANCE_AUDIT.md) maps the requirements to
+implementation and runtime evidence. Its concrete remaining checks are original
+file-mapper behavior, extension enable/requirement rules and the final page-state
+comparison against the FNV-enabled reference fork. It also distinguishes broader
+coverage items and unverified remote publication from completed workflows.
 
 MO2 remains the owner of installed mods and profiles; the live frontend does
 not maintain an independent NMA Library or deployment store.
