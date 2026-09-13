@@ -195,3 +195,47 @@ Evidence: `artifacts/preview-settings-{write,read,verify}-result.json`,
 hashes remained unchanged across the full check. The temporary verifier was
 removed after the final host exit. This verifies the original DDS setting's UI,
 MO2 persistence and reload, not every third-party extension setting.
+
+
+### Original file mapping and a completion-callback gap
+
+A read-only Windows Python probe launched through the original organizer API in
+the isolated FNV host loaded USVFS and read five game INI paths from the game's
+Documents directory. Every hash matched its corresponding profile-local INI.
+The unhooked files differed (two different files and three absent files), so this
+is evidence of effective mapping rather than equal copies on disk. The probe
+completed with exit code zero; all mod/profile hashes remained unchanged.
+
+This matches [INI Bakery's mapping implementation](https://github.com/ModOrganizer2/modorganizer-tool_inibakery/blob/de678f72ea8bf13c72456644d81da5b93c82274d/src/inibakery.cpp),
+which maps the managed game's INIs from the selected profile when local settings
+are enabled. MO2's ordinary data-directory mod mappings do not account for these
+Documents-directory paths. The original installed INI Bakery DLL was not modified;
+its SHA256 is `41627799e639e5a19312a90cce5f75991be4d000cb41bea3aacb94854b5d3cc8`.
+The original Gamebryo file mapper maps plugin/load-order lists separately.
+
+The same probe exposed a distinct compatibility gap. onAboutToRun received the
+probe binary, and onFinishedRun ran, but its binary argument was empty. In the
+MO2 2.5.2 source, OrganizerProxy.startApplication starts one ProcessRunner and
+returns its handle; waitForApplication attaches a new ProcessRunner to that
+handle without its original spawn metadata. That runner calls afterRun with an
+empty binary. The frontend's current Executables.launch uses this same pair.
+Extensions that identify the completed executable can therefore behave differently
+than under MO2's original Run button. That original slot keeps one configured
+runner through execution and completion. Correcting the frontend launch path and
+verifying callback identity is outstanding; a successful mapping result does not
+close this separate issue.
+
+The temporary verifier is [file_mapper.py](tools/fixtures/file_mapper.py), with
+[mapped_ini_probe.py](tools/fixtures/mapped_ini_probe.py) as the child process.
+With the isolated host stopped, install the verifier as
+`plugins/frontend_file_mapper_check.py` and the child script as
+`artifacts/mapped_ini_probe.py`. Remove old `mapped-ini-probe-result.json`,
+`mapped-ini-request.json` and `native-file-mapper-result.json` before a new run.
+The verifier launches after UI initialization and requires Frontend Test with
+local settings. It reads only the reported INI paths and records hashes, injection
+state and callback flags. It does not alter INIs or start a game. Stop the host
+and remove the installed fixture and request/child files afterward.
+
+Result: `artifacts/native-file-mapper-result.json` (mapping passed; completion
+binary empty). The temporary fixture was removed after the host exited. This
+checks native INI mapping, not every mapper or the plugin-disabled contrast case.
