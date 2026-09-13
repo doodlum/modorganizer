@@ -91,7 +91,7 @@ not evidence that extensions work.
   it without changing their state. Background host UI remains suppressed.
 
 This establishes specific integrations, not universal third-party plugin
-compatibility. The inventory above is still only an inventory. Broader preview,
+compatibility. The inventory above is still only an inventory. Broader archive-preview,
 file-mapper, plugin settings/lifecycle and requirement-rule acceptance remains
 unverified until exercised against original extensions.
 
@@ -124,3 +124,39 @@ only the main-window suppression flag differs. Profile-file hashes were checked
 before and after both runs. This verifies the original tool's Qt dialog path and
 normal-versus-hidden ownership behavior, not tool editing, persistence or every
 third-party tool extension.
+
+
+### Original Python DDS preview
+
+The live frontend's mod-details action opened the native MO2 details dialog for
+MCM. A temporary ordinary tool extension selected `textures/MCM/Check1.dds` in
+its native Filetree and triggered MO2's existing Preview action. The unchanged
+installed `DDSPreview.py` supplied the resulting widget through the original
+Python proxy and IPluginPreview API. No replacement image decoder or frontend
+preview implementation was used.
+
+The native PreviewDialog was visible, contained one valid OpenGL `DDSWidget`,
+and rendered the checkbox texture with transparency. The main MO2 window
+retained WA_DontShowOnScreen. The preview and details dialogs returned normally,
+and every mod/profile file retained its original hash. The screenshot was
+inspected: [original DDS preview](artifacts/native-dds-preview.png).
+Structured result: `artifacts/native-dds-preview-result.json`.
+Original plugin SHA256:
+`a5fc7f2959b2ec55ded0ab8164c2fd16531dbdc394c33c0adb0a4b7de169e253`.
+
+The Images-tab DDS checkbox is unavailable in this host because it depends on
+Qt's QImageReader formats. That does not determine DDS Preview Plugin support;
+the native Filetree Preview action calls MO2's extension preview generator.
+
+To reproduce, stop the isolated FNV host and install
+[tools/fixtures/preview_dialog.py](tools/fixtures/preview_dialog.py) as
+`plugins/frontend_preview_check.py`. Remove any old
+`frontend-preview-result.json` from that host, then run the frontend with
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_PREVIEW=1 MO2_SCREENSHOT=...`.
+The fixture opens the known MCM texture only when the mod-details dialog opens,
+restores the previous details tab, and closes both dialogs without edits.
+After verification, stop MO2 and remove the installed fixture and result file.
+The tracked fixture source remains; the installed copy was removed after this
+successful check. Build passed with the existing NU1902 warning. The frontend
+verifier exited successfully (`/tmp/mo2-preview.log`). This checks a loose DDS
+preview, not archive preview or every supported file type.

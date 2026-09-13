@@ -164,6 +164,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PREVIEW") == "1") await VerifyPreview(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_PROFILE") == "1") await VerifyExternalProfile(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORIGINAL_UI") == "1") await VerifyOriginalUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1") await VerifyDownloadContext(live, liveWindow);
@@ -533,6 +534,24 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyPreview(Mo2LiveWorkspace live)
+    {
+        const string report = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host/frontend-preview-result.json";
+        if (!live.Profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || File.Exists(report))
+            throw new InvalidOperationException("Preview check requires isolated FNV and no stale preview report");
+        var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
+        await live.Profile.ShowModDetails(mod.Id);
+        if (!File.Exists(report)) throw new InvalidOperationException("Original preview did not complete: " + live.Profile.Status);
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(report));
+        var result = document.RootElement;
+        if (result.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.GetString());
+        if (!result.GetProperty("visible").GetBoolean() || result.GetProperty("suppressed").GetBoolean() || !result.GetProperty("mainSuppressed").GetBoolean() ||
+            !result.GetProperty("captured").GetBoolean() || result.GetProperty("glWidgets").GetArrayLength() != 1 ||
+            result.GetProperty("glWidgets")[0].GetString() != "DDSWidget" || !result.GetProperty("glValid")[0].GetBoolean())
+            throw new InvalidOperationException("Original DDS preview was suppressed or lacked a valid native OpenGL widget");
+        Console.WriteLine("PASS: frontend mod details opens original DDS Preview Plugin; native preview is visible with a valid OpenGL widget; main MO2 window stays suppressed; dialogs return normally");
     }
 
     private static async Task VerifyExternalProfile(Mo2LiveWorkspace live, Window window)
