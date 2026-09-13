@@ -359,3 +359,42 @@ Evidence: `/tmp/mo2-plugin-drag.log`,
 code 0. Build passed with the existing upstream OpenTelemetry warning.
 This check covers two adjacent ESPs in ascending display order; it does not
 establish non-adjacent selection, descending-order dragging or panel dragging.
+
+## Native panel resizing and plugin details
+
+The panel, workspace and divider implementations match the corresponding files
+in the FNV reference fork byte for byte. Its tab-header implementation selects
+and closes tabs; it does not implement dragging tabs between panels. The native
+panel drag interaction is divider resizing.
+
+`MO2_VERIFY_PANEL_DRAG=1 python3 frontend/tools/check_plugin_mouse.py` exercises
+real pointer gestures on both divider orientations. It widens and restores the
+mod panel, adds a third panel through NMA's native command, expands its horizontal
+divider, switches to Skyrim and back, then restores the divider and closes the
+temporary panel. FNV keeps its workspace ID, panel bounds and original tabs
+across the game switch. The check verifies full panel coverage, unchanged MO2
+mod/plugin state and restoration of the normal two-panel arrangement.
+
+The first screenshots exposed a fixed 150-pixel plugin-details region consuming
+the shortened plugin table. Details now size to their content, reserve space for
+the native explanation banner, column header and a complete row, and use at most
+one quarter of the panel height (capped at 150 pixels). With nothing selected,
+the details region collapses. A regression check requires room for a full row
+after resizing, including the expanded short panel with two plugins selected.
+
+The selection pointer helper now measures each row after the previous click has
+settled; changing the details region can move rows. The combined activation,
+two-plugin dragging, divider resizing and plugin-metadata checks run with:
+
+```sh
+MO2_VERIFY_PLUGIN_MULTI=1 MO2_VERIFY_PLUGIN_DRAG=1 MO2_VERIFY_PANEL_DRAG=1 \
+MO2_VERIFY_PLUGIN_DETAILS=1 python3 frontend/tools/check_plugin_mouse.py
+```
+
+Evidence: `/tmp/mo2-panel-drag.log`,
+[wider mod panel](artifacts/panel-width-expand.png),
+[short plugin panel with selected details](artifacts/panel-height-expand.png),
+[restored height](artifacts/panel-height-restore.png), and
+[final two panels](artifacts/panel-drag.png).
+The combined run and frontend exited with code 0; all 14 plugin metadata checks
+passed. Build passed with the existing upstream OpenTelemetry warning.

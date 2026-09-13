@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise isolated FNV plugin selection, or drag/drop with MO2_VERIFY_PLUGIN_DRAG=1."""
+"""Real frontend pointer checks: plugin activation, MO2_VERIFY_PLUGIN_DRAG or MO2_VERIFY_PANEL_DRAG."""
 from pathlib import Path
 import os,json,subprocess,time
 from evdev import UInput,AbsInfo,ecodes as e
@@ -9,10 +9,14 @@ for name in ['MO2_BRIDGE_DIRECTORY','MO2_FIXTURES','MO2_FRONTEND_LAYOUT']:
  env.pop(name,None)
 drag=env.get('MO2_VERIFY_PLUGIN_DRAG') == '1'
 if drag:
- env.pop('MO2_VERIFY_PLUGIN_MULTI',None)
+ if os.environ.get('MO2_VERIFY_PLUGIN_MULTI') != '1': env.pop('MO2_VERIFY_PLUGIN_MULTI',None)
  env['MO2_SCREENSHOT']='/home/deck/mo2/frontend/artifacts/plugin-drag.png'
+panel=env.get('MO2_VERIFY_PANEL_DRAG') == '1'
+if panel:
+ if os.environ.get('MO2_VERIFY_PLUGIN_MULTI') != '1': env.pop('MO2_VERIFY_PLUGIN_MULTI',None)
+ env['MO2_SCREENSHOT']='/home/deck/mo2/frontend/artifacts/panel-drag.png'
 seen=set()
-with open('/tmp/mo2-plugin-drag.log' if drag else '/tmp/mo2-plugin-multi.log','w') as output, UInput({e.EV_KEY:[e.KEY_LEFTCTRL,e.KEY_LEFTSHIFT,e.KEY_A]},name='MO2 multi-select keyboard') as keyboard, UInput({e.EV_KEY:[e.BTN_LEFT],e.EV_ABS:[(e.ABS_X,AbsInfo(0,0,1279,0,0,0)),(e.ABS_Y,AbsInfo(0,0,799,0,0,0))]},name='MO2 multi-select pointer',input_props=[e.INPUT_PROP_POINTER]) as pointer:
+with open('/tmp/mo2-panel-drag.log' if panel else '/tmp/mo2-plugin-drag.log' if drag else '/tmp/mo2-plugin-multi.log','w') as output, UInput({e.EV_KEY:[e.KEY_LEFTCTRL,e.KEY_LEFTSHIFT,e.KEY_A]},name='MO2 multi-select keyboard') as keyboard, UInput({e.EV_KEY:[e.BTN_LEFT],e.EV_ABS:[(e.ABS_X,AbsInfo(0,0,1279,0,0,0)),(e.ABS_Y,AbsInfo(0,0,799,0,0,0))]},name='MO2 multi-select pointer',input_props=[e.INPUT_PROP_POINTER]) as pointer:
  process=subprocess.Popen(['.tools/dotnet/dotnet','frontend/MockHost/bin/Debug/net9.0/MockHost.dll'],env=env,stdout=output,stderr=subprocess.STDOUT)
  try:
   while process.poll() is None:

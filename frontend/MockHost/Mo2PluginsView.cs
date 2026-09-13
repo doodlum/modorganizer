@@ -23,11 +23,19 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             actions.Children.Add(button); activationButtons.Add((button, enabled));
         }
         var details = new TextBlock { Name = "Mo2PluginDiagnostics", TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(12) };
-        var detailScroll = new ScrollViewer { Content = details, Height = 150, IsVisible = false };
+        var detailScroll = new ScrollViewer { Content = details, MaxHeight = 150, IsVisible = false };
         DockPanel.SetDock(detailScroll, Dock.Bottom); layout.Children.Add(detailScroll);
         actions.IsEnabled = false;
         DockPanel.SetDock(actions, Dock.Top); layout.Children.Add(actions);
         var editor = new LoadOrderView();
+        var alert = editor.FindControl<Control>("LoadOrderAlert")!;
+        LayoutUpdated += (_, _) => {
+            // Keep the native column header and a complete plugin row visible
+            // before allocating space to the optional selection details.
+            var available = Bounds.Height - actions.DesiredSize.Height - alert.Bounds.Height - 112;
+            detailScroll.MaxHeight = Math.Min(150, Math.Min(Bounds.Height * .25, Math.Max(0, available)));
+            details.Margin = new Thickness(12, detailScroll.MaxHeight < 80 ? 4 : 12);
+        };
         var chooseProfile = new TextBlock { Text = "Select a profile in My Loadouts to view its plugins.",
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(24) };
@@ -43,7 +51,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 actions.IsEnabled = selected.Any(x => x.CanToggle);
                 details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
                 if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";
-                detailScroll.IsVisible = profile.ProfilePath.Length > 0;
+                detailScroll.IsVisible = profile.ProfilePath.Length > 0 && selected.Length > 0;
             }
             void UpdateConnection() {
                 var connected = profile.ProfilePath.Length > 0;

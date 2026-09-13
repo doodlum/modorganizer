@@ -165,6 +165,7 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DRAG") == "1") await VerifyPluginDrag(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PANEL_DRAG") == "1") await VerifyPanelDrag(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1" && live.Profile.IsConnected) await VerifyTopBar(live, liveWindow, openLogs: true);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_WORKSPACES") == "1") await VerifyProfileWorkspaces(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
@@ -530,6 +531,100 @@ public partial class MockApp : Application
         live.ShowProfile();
     }
 
+    private static async Task VerifyPanelDrag(Mo2LiveWorkspace live, Window window)
+    {
+        if (!live.Profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Panel pointer test requires the isolated FNV profile");
+        var workspace = live.WorkspaceController.ActiveWorkspace;
+        var originalPanels = workspace.Panels.ToDictionary(x => x.Id, x => x.LogicalBounds);
+        var tabs = workspace.Panels.SelectMany(x => x.Tabs).Select(x => x.Id).ToHashSet();
+        var original = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        var mods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
+        async Task Drag(string phase, bool horizontal, int delta) {
+            await WaitFor(() => window.GetVisualDescendants().OfType<PanelResizerView>().Any(x => x.ViewModel!.IsHorizontal == horizontal), "Native divider did not render");
+            await Task.Delay(300);
+            var divider = window.GetVisualDescendants().OfType<PanelResizerView>().First(x => x.ViewModel!.IsHorizontal == horizontal);
+            var before = divider.ViewModel!.LogicalStartPoint;
+            var start = divider.PointToScreen(new Point(divider.Bounds.Width / 2, divider.Bounds.Height / 2));
+            var end = new PixelPoint(start.X + (horizontal ? 0 : delta), start.Y + (horizontal ? delta : 0));
+            object PointData(PixelPoint p) => new { X = p.X, Y = p.Y, Ctrl = false };
+            window.Activate();
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new {
+                Phase = phase, Points = Array.Empty<object>(), Drag = new { Start = PointData(start), End = PointData(end) }
+            }));
+            await Task.Delay(2500);
+            await WaitFor(() => workspace.Resizers.Any(x => x.IsHorizontal == horizontal &&
+                Math.Abs((horizontal ? x.LogicalStartPoint.Y - before.Y : x.LogicalStartPoint.X - before.X)) > .05), "Pointer did not resize panels: " + phase, seconds: 30);
+            if (!tabs.IsSubsetOf(workspace.Panels.SelectMany(x => x.Tabs).Select(x => x.Id)))
+                throw new InvalidOperationException("Resizing replaced MO2 tabs");
+            var pluginTable = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().GetVisualDescendants().OfType<TreeDataGrid>().Single();
+            if (phase == "panel-height-expand") {
+                pluginTable.RowSelection!.Clear();
+                pluginTable.RowSelection.Select(new IndexPath(10));
+                pluginTable.RowSelection.Select(new IndexPath(11));
+                await WaitFor(() => live.PluginsPage!.Adapter.SelectedModels.Count == 2, "Short panel could not select plugins");
+                await Task.Delay(300);
+            }
+            var viewport = pluginTable.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(x => x.Extent.Height - x.Viewport.Height).First();
+            if (viewport.Viewport.Height < 48) throw new InvalidOperationException("Resized plugin panel has no room for a complete row");
+            var rectangles = workspace.Panels.Select(x => x.LogicalBounds).ToArray();
+            if (Math.Abs(rectangles.Sum(x => x.Width * x.Height) - 1) > .001 || rectangles.Any(x => x.Width <= 0 || x.Height <= 0 || x.X < 0 || x.Y < 0 || x.Right > 1.001 || x.Bottom > 1.001))
+                throw new InvalidOperationException("Resize left invalid panel coverage");
+            using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
+            bitmap.Render(window); bitmap.Save("/home/deck/mo2/frontend/artifacts/" + phase + ".png");
+            Console.WriteLine("PASS: native pointer divider " + phase + " retains MO2 tabs and full panel coverage");
+        }
+        try {
+            await Drag("panel-width-expand", false, 100);
+            await Drag("panel-width-restore", false, -100);
+            await workspace.AddPanelButtonViewModels.First(x => x.NewLayoutState.Any(p => p.Rect.Height < .99)).AddPanelCommand.Execute();
+            await WaitFor(() => workspace.Panels.Count == 3, "Third panel did not open");
+            await Drag("panel-height-expand", true, 80);
+            var layout = workspace.Panels.ToDictionary(x => x.Id, x => x.LogicalBounds);
+            var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+            foreach (var directory in new[] { "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" }) {
+                var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+                var profile = entry.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
+                await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + profile.Name + " (" + directory + ")").Click.Execute();
+                await WaitFor(() => Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == profile.Directory && !live.Profile.SelectingProfile, "Game switch did not connect", seconds: 110);
+            }
+            if (live.WorkspaceController.ActiveWorkspace.Id != workspace.Id || workspace.Panels.Count != layout.Count || workspace.Panels.Any(x => layout[x.Id] != x.LogicalBounds))
+                throw new InvalidOperationException("Game switching lost the pointer-resized workspace");
+            await Drag("panel-height-restore", true, -80);
+            await live.Profile.Refresh();
+            if (!original.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))) || !mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))))
+                throw new InvalidOperationException("Panel interaction changed MO2 state");
+            Console.WriteLine("PASS: FNV/Skyrim switching preserves pointer-resized FNV workspace; original mod/plugin state unchanged");
+        } finally {
+            File.Delete("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json");
+            foreach (var panel in workspace.Panels.Where(x => !originalPanels.ContainsKey(x.Id)).ToArray())
+                await panel.CloseCommand.Execute();
+        }
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().Bounds.Height > 500, "Original two-panel view did not restore");
+        if (workspace.Panels.Count != originalPanels.Count || workspace.Panels.Any(x =>
+            Math.Abs(x.LogicalBounds.Width - originalPanels[x.Id].Width) > .005 || Math.Abs(x.LogicalBounds.Height - originalPanels[x.Id].Height) > .005))
+            throw new InvalidOperationException("Original panel bounds did not restore");
+    }
+
+    private static async Task SelectPluginsWithPointer(TreeDataGrid table, ScenarioLoadOrderPage page, string[] names, string phase)
+    {
+        table.RowSelection!.Clear();
+        for (var index = 0; index < names.Length; index++) {
+            var name = names[index];
+            var scroll = table.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(x => x.Extent.Height - x.Viewport.Height).First();
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await WaitFor(() => table.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == name), "Selection row did not render");
+            await Task.Delay(300);
+            var text = table.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == name);
+            var point = text.PointToScreen(new Point(12, text.Bounds.Height / 2));
+            var key = page.LiveProfile!.Order.Plugins.Single(x => x.DisplayName == name).Key;
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new {
+                Phase = phase + "-select-" + index, Points = new[] { new { X = point.X, Y = point.Y, Ctrl = index > 0 } }
+            }));
+            await WaitFor(() => page.Adapter.SelectedModels.Count == index + 1 && page.Adapter.SelectedModels.Any(x => x.Key.Equals(key)), "Pointer did not select " + name, seconds: 30);
+        }
+    }
+
     private static async Task VerifyPluginDrag(Mo2LiveWorkspace live, Window window)
     {
         var profile = live.Profile;
@@ -557,9 +652,7 @@ public partial class MockApp : Application
             window.Activate();
             TextBlock Text(string name) => table.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == name);
             object Point(PixelPoint point, bool ctrl = false) => new { X = point.X, Y = point.Y, Ctrl = ctrl };
-            var points = moving.Select((name, i) => Point(Text(name).PointToScreen(new Point(12, Text(name).Bounds.Height / 2)), i > 0)).ToArray();
-            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new { Phase = "select-" + phase, Points = points }));
-            await WaitFor(() => live.PluginsPage!.Adapter.SelectedModels.Count == 2, "Drag selection did not contain two rows");
+            await SelectPluginsWithPointer(table, live.PluginsPage!, moving, phase);
             scroll.Offset = new Vector(0, scroll.Extent.Height);
             await Task.Delay(300);
             var start = Text(moving[0]).PointToScreen(new Point(12, Text(moving[0]).Bounds.Height / 2));
@@ -606,18 +699,12 @@ public partial class MockApp : Application
         var targets = live.Profile.Order.Plugins.Where(x => x.DisplayName.StartsWith("MCM Example") && x.CanToggle && x.IsActive).Take(2).Select(x => x.DisplayName).ToArray();
         if (targets.Length != 2) throw new InvalidOperationException("Two active MCM example plugins are required");
         async Task MousePhase(string phase, Button button) {
-            var scroll = table.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(s => s.Extent.Height - s.Viewport.Height).First();
-            scroll.Offset = new Vector(0, scroll.Extent.Height);
-            await WaitFor(() => targets.All(name => table.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == name)), "Plugin rows did not scroll into view");
             window.Activate();
-            var points = targets.Select((name, index) => {
-                var text = table.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == name);
-                var point = text.PointToScreen(new Point(12, text.Bounds.Height / 2));
-                return new { X = point.X, Y = point.Y, Ctrl = index > 0 };
-            }).ToList();
-            var action = button.PointToScreen(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2));
-            points.Add(new { X = action.X, Y = action.Y, Ctrl = false });
-            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new { Phase = phase, Points = points }));
+            await SelectPluginsWithPointer(table, live.PluginsPage!, targets, phase);
+            var point = button.PointToScreen(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2));
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new {
+                Phase = phase, Points = new[] { new { X = point.X, Y = point.Y, Ctrl = false } }
+            }));
         }
         try {
             await MousePhase("disable", disable);
