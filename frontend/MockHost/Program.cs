@@ -164,6 +164,7 @@ public partial class MockApp : Application
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DRAG") == "1") await VerifyPluginDrag(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1" && live.Profile.IsConnected) await VerifyTopBar(live, liveWindow, openLogs: true);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_WORKSPACES") == "1") await VerifyProfileWorkspaces(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
@@ -527,6 +528,69 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyPluginDrag(Mo2LiveWorkspace live, Window window)
+    {
+        var profile = live.Profile;
+        if (!profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Plugin drag test requires the isolated FNV profile");
+        var table = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        table.RowDragStarted += (_, e) => Console.WriteLine("DRAG START: " + e.Models.Count() + " rows");
+        table.RowDrop += (_, e) => Console.WriteLine("DRAG DROP: " + e.Position);
+        var original = profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        var mods = profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
+        var names = original.Select(x => x.DisplayName).ToArray();
+        var moving = profile.Order.Plugins.Where(x => x.DisplayName.StartsWith("MCM Example") && x.CanMove).Take(2).Select(x => x.DisplayName).ToArray();
+        const string target = "The Mod Configuration Menu.esp";
+        if (moving.Length != 2 || names[^1] != target || !names.Skip(names.Length - 4).Take(2).SequenceEqual(moving))
+            throw new InvalidOperationException("Unexpected isolated plugin order");
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        async Task<string[]> HostOrder() => (await client.SendAsync("snapshot")).GetProperty("plugins").EnumerateArray()
+            .OrderBy(x => x.GetProperty("priority").GetInt32()).Select(x => x.GetProperty("name").GetString()!).ToArray();
+        async Task Phase(string phase, string destination, bool after, string[] expected) {
+            table.RowSelection!.Clear();
+            var scroll = table.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(x => x.Extent.Height - x.Viewport.Height).First();
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await WaitFor(() => moving.Append(destination).All(name => table.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == name)), "Drag rows did not render");
+            await Task.Delay(300);
+            window.Activate();
+            TextBlock Text(string name) => table.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == name);
+            object Point(PixelPoint point, bool ctrl = false) => new { X = point.X, Y = point.Y, Ctrl = ctrl };
+            var points = moving.Select((name, i) => Point(Text(name).PointToScreen(new Point(12, Text(name).Bounds.Height / 2)), i > 0)).ToArray();
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new { Phase = "select-" + phase, Points = points }));
+            await WaitFor(() => live.PluginsPage!.Adapter.SelectedModels.Count == 2, "Drag selection did not contain two rows");
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await Task.Delay(300);
+            var start = Text(moving[0]).PointToScreen(new Point(12, Text(moving[0]).Bounds.Height / 2));
+            var row = Text(destination).GetVisualAncestors().OfType<Avalonia.Controls.Primitives.TreeDataGridRow>().First();
+            var end = row.PointToScreen(new Point(start.X - row.PointToScreen(default).X, row.Bounds.Height * (after ? 0.65 : 0.35)));
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new {
+                Phase = phase, Points = Array.Empty<object>(), Drag = new { Start = Point(start), End = Point(end) }
+            }));
+            await Task.Delay(4000);
+            using (var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height))) {
+                bitmap.Render(window); bitmap.Save("/home/deck/mo2/frontend/artifacts/plugin-" + phase + ".png");
+            }
+            Console.WriteLine("DRAG STATE: selected=" + live.PluginsPage!.Adapter.SelectedModels.Count + " order=" + string.Join(",", profile.Order.Plugins.TakeLast(4).Select(x => x.DisplayName)));
+            await WaitFor(() => expected.SequenceEqual(profile.Order.Plugins.Select(x => x.DisplayName)), "Pointer drag did not move both selected plugins: " + phase, seconds: 60);
+            if (!expected.SequenceEqual(await HostOrder())) throw new InvalidOperationException("Host order disagrees with pointer drag");
+            Console.WriteLine("PASS: actual two-plugin pointer drag " + phase + " matches independent MO2 host order");
+        }
+        try {
+            await Phase("drag-down", target, true, names.Except(moving).Concat(moving).ToArray());
+            await Phase("drag-up", names[^2], false, names);
+        } finally {
+            File.Delete("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json");
+            await profile.Refresh();
+            if (!names.SequenceEqual(profile.Order.Plugins.Select(x => x.DisplayName)))
+                await profile.Order.ApplyOrder!(names.Select(name => profile.Order.Plugins.Single(x => x.DisplayName == name)).ToArray(), CancellationToken.None);
+            table.RowSelection!.Clear();
+        }
+        if (!original.SequenceEqual(profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))) ||
+            !mods.SequenceEqual(profile.Mods.Select(x => (x.Name, x.State, x.Priority))) || !names.SequenceEqual(await HostOrder()))
+            throw new InvalidOperationException("Plugin drag check did not preserve original MO2 state");
+        Console.WriteLine("PASS: multi-row drag restored full plugin order and preserved mod/plugin activation");
     }
 
     private static async Task VerifyPluginMulti(Mo2LiveWorkspace live, Window window)

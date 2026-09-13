@@ -332,3 +332,30 @@ comparisons before returning to FNV. Evidence: `/tmp/mo2-plugin-multi.log` and
 `artifacts/plugin-multi.png`. Both real mouse phases completed and the frontend
 exited successfully. Build passed with the existing upstream OpenTelemetry
 advisory. Multi-row dragging was not exercised by this check.
+
+## Two-plugin pointer dragging
+
+`MO2_VERIFY_PLUGIN_DRAG=1 python3 frontend/tools/check_plugin_mouse.py` now
+exercises real Ctrl-click selection and pointer dragging through the native NMA
+table. In the isolated FNV Frontend Test profile, it selects two adjacent MCM
+example ESPs, drags them after MCM, then selects them again and drags them back
+before the remaining example ESP. The native drag-start event reported two rows
+in each gesture. Both resulting full orders matched an independent bridge
+snapshot; no command-based move substitutes for either gesture.
+
+The first attempts started the two-row drag but missed its destination: the
+last row's bottom edge was clipped by the horizontal scrollbar. The check now
+waits for selection and scrolling to settle and drops inside the visible half
+of the destination row. No product reorder change was needed.
+
+The successful run restored all plugin priorities and activation states, and
+preserved all mod priorities and activation states. Selection clears after the
+actual order changes, unlike the state-only activation updates described above.
+The verifier also has a finally-path restoration if a gesture check fails.
+Evidence: `/tmp/mo2-plugin-drag.log`,
+[after dragging down](artifacts/plugin-drag-down.png),
+[after dragging back](artifacts/plugin-drag-up.png), and
+[final panels](artifacts/plugin-drag.png). The helper and frontend exited with
+code 0. Build passed with the existing upstream OpenTelemetry warning.
+This check covers two adjacent ESPs in ascending display order; it does not
+establish non-adjacent selection, descending-order dragging or panel dragging.
