@@ -168,6 +168,7 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH") == "1") await VerifyHealth(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_MODS") == "1") await VerifyNativeMods(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DETAILS") == "1") await VerifyPluginDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEXUS_ACCOUNT") == "1") {
@@ -197,7 +198,11 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_UNINSTALL") == "1") await VerifyUninstall(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
-                            await live.Profile.Launch(executable);
+                            var launchPanel = liveWindow.GetVisualDescendants().OfType<Mo2LaunchPanel>().Single();
+                            launchPanel.Executable.SelectedItem = executable;
+                            if (launchPanel.Model.SelectedExecutable != executable || !launchPanel.Model.CanLaunch)
+                                throw new InvalidOperationException("Native launch control cannot select this executable");
+                            await launchPanel.Model.Command.Execute();
                             Console.WriteLine("LAUNCH RESULT: " + live.Profile.Status);
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CONTROLS") == "1") await VerifyControls(live, live.Profile.Endpoint, desktop.MainWindow!);
@@ -514,6 +519,37 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifySidebarLaunch(Mo2LiveWorkspace live, Window window)
+    {
+        var panel = window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Single();
+        var native = panel.NativeButton.FindControl<Button>("LaunchButton")!;
+        await WaitFor(() => ReferenceEquals(native.Command, panel.Model.Command), "Native PLAY button was not bound to MO2 launch command");
+        var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");
+        var expected = snapshot.GetProperty("executables").EnumerateArray().Select(x => x.GetString()!).ToArray();
+        if (!expected.SequenceEqual(panel.Executable.ItemsSource!.Cast<string>())) throw new InvalidOperationException("Sidebar executable choices disagree with MO2");
+        var original = panel.Model.SelectedExecutable;
+        foreach (var choice in expected) {
+            panel.Executable.SelectedItem = choice;
+            if (panel.Model.SelectedExecutable != choice || !panel.Model.CanLaunch)
+                throw new InvalidOperationException("Sidebar could not select an MO2 executable");
+        }
+        panel.Executable.SelectedItem = null;
+        if (panel.Model.CanLaunch || await panel.Model.Command.CanExecute.FirstAsync())
+            throw new InvalidOperationException("PLAY must be disabled without a valid executable");
+        panel.Executable.SelectedItem = original;
+        if (!await panel.Model.Command.CanExecute.FirstAsync()) throw new InvalidOperationException("PLAY did not re-enable for a valid executable");
+        live.OpenGames();
+        await WaitFor(() => !window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Any(), "Home unexpectedly contains profile launch controls");
+        live.ShowProfile();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Any(), "Profile sidebar did not restore launch controls");
+        if (panel.Model.SelectedExecutable != original) throw new InvalidOperationException("Home navigation lost the executable selection");
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault()?.NativeView.FindControl<TextBlock>("ModsCount")?.Text == live.Profile.Mods.Count.ToString(),
+            "Native mod count did not return after Home navigation");
+        if (window.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Run through MO2") || Equals(x.Content, "Refresh from MO2")))
+            throw new InvalidOperationException("Duplicate header controls remain");
+        Console.WriteLine($"PASS: native sidebar PLAY command bound to MO2; {expected.Length} executable choices match host; invalid selection disables PLAY; Home hides controls and restores selection");
     }
 
     private static async Task VerifyNativeMods(Mo2LiveWorkspace live, Window window)
@@ -840,6 +876,7 @@ public partial class MockApp : Application
             await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Native mod rows did not refresh after game switch");
             var priorities = live.ModsPage!.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
             if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Mod rows lost MO2 priority order after switching games");
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, window);
         }
         try {
             await VisitGameProfile(skyrim, selected);

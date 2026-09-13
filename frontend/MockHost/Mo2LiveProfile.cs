@@ -45,6 +45,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         Order.ApplyOrder = Reorder;
     }
     private string? _lastSnapshot;
+    public bool IsConnected => _lastSnapshot is not null;
     private void Apply(JsonElement snapshot)
     {
         var raw = snapshot.GetRawText();

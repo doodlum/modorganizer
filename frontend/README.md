@@ -15,12 +15,14 @@ The sidebar, game widgets, loadout cards, top bar and panel system use the origi
 NMA views. My Games → View → profile switches the connected game. My Loadouts
 shows real profiles grouped by game across registered MO2 instances. Each
 instance has a native Create new loadout card that opens MO2’s Create Profile
-dialog. Selection
-uses each running host. **Manage MO2 profiles…** opens MO2’s original dialog;
+dialog. Selection uses each running host.
 **Create Copy**, **Rename** and **Delete** on each card open MO2’s original
 prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.
-Configured executables launch through MO2. Profile selection starts a configured instance launcher when MO2 is stopped.
+The native **PLAY** button and MO2 executable picker sit at the bottom of the
+profile sidebar. Launch is disabled while MO2 is busy, disconnected, or no valid
+executable is selected. The native top bar shows the active profile name.
+Profile selection starts a configured instance launcher when MO2 is stopped.
 Pause, resume and cancel route through MO2’s existing download controls.
 FNV gameplay, the MCM menu, enabled/disabled runs and all 14 plugin indices are
 verified; see [in-game evidence](FNV_ACCEPTANCE.md). The mod panel includes MO2’s Overwrite and conflict/status messages.

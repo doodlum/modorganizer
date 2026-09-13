@@ -158,58 +158,35 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     public Window CreateWindow()
     {
-        var title = new TextBlock { Text = Profile.CollectionName.Value, FontSize = 20, Margin = new Thickness(16, 12) };
         var status = new TextBlock { Text = Profile.Status, Margin = new Thickness(16, 8), TextWrapping = TextWrapping.Wrap };
-        var refresh = new Button { Content = "Refresh from MO2", Margin = new Thickness(12) };
-        refresh.Click += async (_, _) => await Profile.Refresh();
-        var downloads = new Button { Content = "Downloads", Margin = new Thickness(12) };
-        downloads.Click += (_, _) => OpenDownloads();
-        var profiles = new Button { Content = "Manage MO2 profiles…", Margin = new Thickness(12) };
-        profiles.Click += async (_, _) => await Profile.ManageProfiles();
-        var header = new DockPanel();
-        DockPanel.SetDock(profiles, Dock.Right); header.Children.Add(profiles);
-        DockPanel.SetDock(downloads, Dock.Right); header.Children.Add(downloads);
-        DockPanel.SetDock(refresh, Dock.Right); header.Children.Add(refresh); header.Children.Add(title);
-        var executable = new ComboBox { MinWidth = 180, Margin = new Thickness(16, 0, 8, 8) };
-        var launch = new Button { Content = "Run through MO2", Margin = new Thickness(0, 0, 8, 8), IsEnabled = false };
-        launch.Click += async (_, _) => { if (executable.SelectedItem is string name) await Profile.Launch(name); };
-        var launchBar = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
-        launchBar.Children.Add(executable); launchBar.Children.Add(launch);
-        var top = new StackPanel(); top.Children.Add(header); top.Children.Add(launchBar);
-        Profile.Changed += () => {
-            if (!(executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(Profile.Executables)) {
-                var selected = executable.SelectedItem as string;
-                executable.ItemsSource = Profile.Executables;
-                executable.SelectedItem = Profile.Executables.Contains(selected!) ? selected : Profile.Executables.FirstOrDefault();
-            }
-            launchBar.IsEnabled = !Profile.Launching && !Profile.Installing && !Profile.SelectingProfile && !Profile.ManagingMod;
-            launch.IsEnabled = Profile.Executables.Count > 0;
-        };
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
-        Grid.SetColumn(top, 2);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         var topBar = new TopBarView { ViewModel = new Mo2TopBar(this) };
+        topBar.ViewModel.WhenAnyValue(x => x.ActiveWorkspaceSubtitle).Subscribe(text =>
+            topBar.FindControl<TextBlock>("ActiveWorkspaceSubtitleTextBlock")!.IsVisible = !string.IsNullOrEmpty(text));
         var account = topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>("LoginButton")!;
         account.Text = "Nexus account";
         ToolTip.SetTip(account, "Manage the selected instance’s Nexus account in MO2. Select a profile first.");
         Grid.SetColumn(topBar, 1); Grid.SetColumnSpan(topBar, 2); grid.Children.Add(topBar);
         var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
-        Grid.SetRow(top, 1); grid.Children.Add(top);
-        Grid.SetRow(view, 2); Grid.SetColumn(view, 2); grid.Children.Add(view);
+        Grid.SetRow(view, 1); Grid.SetColumn(view, 2); grid.Children.Add(view);
         var spine = new Spine { ViewModel = new Mo2Spine(this) };
-        Grid.SetRowSpan(spine, 3); grid.Children.Add(spine);
+        Grid.SetRowSpan(spine, 2); grid.Children.Add(spine);
         var profileSidebar = new NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView { ViewModel = ProfileMenu };
         // MO2 has no separate collection/deployment authority.
         foreach (var name in new[] { "NewCollection", "ApplyControlViewHost" })
             profileSidebar.FindControl<Control>(name)!.IsVisible = false;
+        var launchPanel = new Mo2LaunchPanel(Profile);
+        Grid.SetRow(launchPanel, 1);
+        ((Grid)profileSidebar.Content!).Children.Add(launchPanel);
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
         var sidebar = new ContentControl { Content = homeSidebar };
-        Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); Grid.SetRowSpan(sidebar, 2); grid.Children.Add(sidebar);
-        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; top.IsVisible = workspace.Id == _profileWorkspace; sidebar.Content = workspace.Id == _profileWorkspace ? profileSidebar : homeSidebar; });
-        Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod; header.IsEnabled = !Profile.Launching && !Profile.ManagingMod; };
-        Grid.SetRow(status, 3); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
+        Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); grid.Children.Add(sidebar);
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; sidebar.Content = workspace.Id == _profileWorkspace ? profileSidebar : homeSidebar; });
+        Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod; };
+        Grid.SetRow(status, 2); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
         var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
-        Profile.Changed += () => { title.Text = Profile.CollectionName.Value; status.Text = Profile.Status; };
+        Profile.Changed += () => status.Text = Profile.Status;
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timer.Tick += async (_, _) => { await Profile.Refresh(); RefreshCatalog(); };
         window.Opened += async (_, _) => { await Profile.Refresh(); timer.Start(); };

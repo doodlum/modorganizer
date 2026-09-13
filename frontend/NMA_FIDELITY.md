@@ -135,3 +135,21 @@ mod rows and 150 plugins matched an independent MO2 snapshot, including eight
 mods with native conflict messages. The default row order remained numeric
 MO2 priority on Skyrim and after returning to FNV. Evidence:
 `/tmp/mo2-native-mods-cross-game.log` and `artifacts/native-mods-cross-game.png`.
+
+## Sidebar launch controls
+
+NMA's native PLAY control now sits below an MO2 executable picker at the bottom
+of the profile sidebar. The separate launch/profile/refresh header rows were
+removed. Downloads remain in the sidebar and profile management remains on My
+Loadouts cards. The native top-bar subtitle displays the active profile name.
+PLAY uses the existing MO2 launch method and is disabled for a missing connection,
+invalid selection or busy host. There is no independent Apply operation.
+
+`MO2_VERIFY_SIDEBAR_LAUNCH=1` passed on FNV, Skyrim and the return to FNV:
+three/four executable choices matched independent host snapshots, the native
+button bound to the MO2 launch command, invalid selection disabled it, and Home
+hid/restored the controls without losing selection. The native mod-count label
+also restored. Evidence: `/tmp/mo2-sidebar-launch.log` and
+`artifacts/sidebar-launch.png`. These checks verify UI selection/binding; they
+did not launch a game. Existing FNV gameplay evidence covers the unchanged MO2
+runner. `MO2_VERIFY_LAUNCH` now invokes the sidebar command for future launch checks.
