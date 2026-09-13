@@ -49,6 +49,22 @@ class ContractTests(unittest.TestCase):
         self.bridge = module.Bridge(self.organizer, self.temp.name, {True: 2, False: 1})
     def request(self, **fields):
         return dict(protocol=1, session=self.bridge.session, profilePath=self.organizer.current, **fields)
+    def test_tools_use_original_actions_and_reject_stale_profiles(self):
+        class Tools:
+            def __init__(self): self.calls = []
+            def list_tools(self): return {'tools': [{'id': ['INI Editor'], 'enabled': True}]}
+            def run_tool(self, tool): self.calls.append(tool); return {'opened': True}
+            def manage_executables(self): self.calls.append('settings'); return {'opened': True}
+        native = Tools(); self.bridge.mod_actions = native
+        self.assertEqual(self.bridge.execute(self.request(action='listTools'))['tools'][0]['id'], ['INI Editor'])
+        for action in ('listTools', 'runTool', 'manageExecutables'):
+            request = self.request(action=action, tool=['INI Editor']); request['profilePath'] = 'other'
+            with self.assertRaises(ValueError): self.bridge.execute(request)
+        self.assertEqual(native.calls, [])
+        self.bridge.execute(self.request(action='runTool', tool=['INI Editor']))
+        self.bridge.execute(self.request(action='manageExecutables'))
+        self.assertEqual(native.calls, [['INI Editor'], 'settings'])
+
     def test_snapshot_reports_host_order_state_and_origin(self):
         result = self.bridge.execute(self.request(action='snapshot'))
         self.assertEqual(result['plugins'][0]['masters'], ['FalloutNV.esm'])

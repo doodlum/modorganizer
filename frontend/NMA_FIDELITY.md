@@ -1,3 +1,21 @@
+# Navigation and Tools follow-up — 2026-09-13
+
+This follow-up supersedes the earlier Rules-tab and per-profile-spine descriptions below.
+
+- One square icon per registered game. It returns to the last selected profile for that game; the native Profiles page is available inside the game workspace.
+- Installed contains My Mods and Plugins. Utilities contains Health Check and Tools. Rules is hidden for live MO2 pages and old Rules-tab selections restore to Mods.
+- Tools follows the open Vortex Tools page: default launcher, pinned tools, filterable rows and launch buttons. Add / edit opens MO2's original executable settings; extension rows trigger the original enabled tools-menu actions. Pins and their order are presentation preferences per instance.
+- The Tools header uses Vortex's actual `assets/pictograms/tools.svg` with its primary colour `#fb923c`; the sidebar/tab uses the same `mdi-wrench-outline` as Vortex. Asset source and GPL licence are retained in `MockHost/Assets/Vortex/`.
+- Downloads embeds NMA's actual DownloadsPageView and adapter with an MO2 provider. Native search, selection and transfer controls operate on MO2 archives; the filename, downloaded bytes and status columns fit a half-width panel. Archive import and Nexus-link actions retain profile guards. Unknown transfer totals/speeds are not invented.
+- The mod list updates changed records instead of clearing every row on every changed snapshot. Native search combines with enabled, disabled and conflict filters. Conflict rows use green for winning, red for overwritten and amber for mixed/other native reports; the tooltip retains MO2's exact report. Direct priority entry and earlier/later controls call MO2 and retain selection after a move.
+- Hidden-host mode disables Qt's automatic quit-on-last-window-close so closing an original extension dialog does not terminate MO2. Explicit original-window close still uses MO2's own shutdown workflow.
+
+Reference: [Vortex](https://github.com/Nexus-Mods/Vortex), local reference commit `089b1c59958e9c9c52d9ba0ae47fbdcfd17ba493`, `src/renderer/src/views/pages/Tools/index.tsx` and `src/renderer/src/views/components/iconMap.ts`. The rest of the shell and panel system continue to use the NMA FNV fork comparison below.
+
+Validation: `MO2_VERIFY_NEW_UI=1` exercises navigation, filter removal/restoration, an actual priority-button move and restoration, original tool enumeration, native download rows and game-scoped Profiles. `MO2_VERIFY_NEW_UI_SWITCH=1` also switches to Skyrim, checks its real conflict rows, and returns to the remembered FNV profile. Captures are `artifacts/new-ui-{mods,tools,downloads,profiles,skyrim-conflicts}.png` at 1280×800. The original INI Editor was separately observed as a mapped `INI Files` window while MO2's main window stayed unmapped, then closed without saving; the frontend remained connected. All 24 FNV profile files matched their pre-check hashes. Bridge contracts: 18 passing; download contracts: 3 passing.
+
+---
+
 # FNV fork comparison
 
 Reference checked on 2026-09-13: `../reference-fnv`, branch

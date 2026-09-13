@@ -37,7 +37,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public IReadOnlyBindableReactiveProperty<int> SelectionCount => _selected;
     private LoadoutPageSubTabs _selectedSubTab;
     public LoadoutPageSubTabs SelectedSubTab { get => _selectedSubTab; set => this.RaiseAndSetIfChanged(ref _selectedSubTab, value); }
-    public bool HasRulesSection => true;
+    public bool HasRulesSection => LiveProfile is null;
     public ISortingSelectionViewModel RulesSectionViewModel { get; }
     public bool IsCollection { get; }
     public bool EnableCollectionSharing => false;

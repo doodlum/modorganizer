@@ -28,7 +28,8 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         Downloads = new SpineDownloadButtonDesignerViewModel { Number = 0, Units = "", Click = ReactiveCommand.Create(shell.OpenDownloads) };
         var games = new ObservableCollection<IImageButtonViewModel>();
         LoadoutSpineItems = new(games);
-        var targets = new Dictionary<ImageButtonViewModel, (Mo2Registration Registration, Mo2ProfileSnapshot Profile)>();
+        var targets = new Dictionary<ImageButtonViewModel, string>();
+        var remembered = new Dictionary<string, (Mo2Registration Registration, Mo2ProfileSnapshot Profile)>();
         string? fingerprint = null;
         void RefreshGames() {
             var entries = shell.CatalogEntries.Where(x => x.Instance is not null).ToArray();
@@ -38,18 +39,24 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             if (next == fingerprint) return;
             fingerprint = next;
             games.Clear(); targets.Clear();
-            foreach (var entry in entries)
-                foreach (var (profile, index) in entry.Instance!.Profiles.Select((profile, index) => (profile, index))) {
-                    var item = new ImageButtonViewModel {
-                        Name = entry.Instance.Game + " — " + profile.Name + " (" + entry.Registration.Directory + ")",
-                        Image = Mo2GameArt.Icon(entry.Instance.Game),
-                        LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = (index + 1).ToString() },
-                        Click = ReactiveCommand.CreateFromTask(async () => {
-                            if (await shell.Profile.SelectProfile(entry.Registration, profile)) shell.ShowProfile();
-                        })
-                    };
-                    targets.Add(item, (entry.Registration, profile)); games.Add(item);
-                }
+            foreach (var group in entries.GroupBy(x => x.Instance!.Game)) {
+                var game = group.Key;
+                var item = new ImageButtonViewModel {
+                    Name = game, Image = Mo2GameArt.Icon(game),
+                    LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = "" },
+                    Click = ReactiveCommand.CreateFromTask(async () => {
+                        var available = shell.CatalogEntries.Where(x => x.Instance?.Game == game && x.Instance.Profiles.Length > 0).ToArray();
+                        if (available.Length == 0) { shell.OpenLoadouts(game); return; }
+                        var entry = available.OrderByDescending(x => x.Registration.Launcher is not null).First();
+                        var profile = entry.Instance!.Profiles.FirstOrDefault(x => x.Name == entry.Instance.SelectedProfile) ?? entry.Instance.Profiles.First();
+                        var target = remembered.TryGetValue(game, out var previous) && available.Any(x => x.Registration == previous.Registration && x.Instance!.Profiles.Any(p => p.Directory == previous.Profile.Directory))
+                            ? previous : (entry.Registration, profile);
+                        if (shell.Profile.IsConnected && shell.Profile.CurrentTarget.Endpoint == target.Item1.Endpoint && Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath) == Path.GetFullPath(target.Item2.Directory)) shell.ShowProfile();
+                        else if (await shell.Profile.SelectProfile(target.Item1, target.Item2)) shell.ShowProfile();
+                    })
+                };
+                targets.Add(item, game); games.Add(item);
+            }
             RefreshSelection();
         }
         RefreshGames();
@@ -59,9 +66,12 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             ((IconButtonViewModel)Home).IsActive = home;
             // Direct endpoint startup precedes the first native profile snapshot.
             var selectedPath = shell.Profile.ProfilePath.Length == 0 ? null : Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath);
-            foreach (var (item, target) in targets)
-                item.IsActive = !home && selectedPath is not null && shell.Profile.Endpoint == target.Registration.Endpoint &&
-                    selectedPath == target.Profile.Directory;
+            var selected = shell.CatalogEntries.FirstOrDefault(x => x.Registration.Endpoint == shell.Profile.Endpoint);
+            var profile = selected?.Instance?.Profiles.FirstOrDefault(x => x.Directory == selectedPath);
+            if (selected?.Instance is not null && profile is not null) remembered[selected.Instance.Game] = (selected.Registration, profile);
+            foreach (var (item, game) in targets)
+                item.IsActive = !home && selectedPath is not null && selected?.Instance?.Game == game;
+
         }
         shell.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => RefreshSelection());
         shell.Profile.Changed += RefreshSelection;

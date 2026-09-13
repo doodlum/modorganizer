@@ -40,6 +40,7 @@ class Bridge:
         mods = organizer.modList()
         plugins = organizer.pluginList()
         return {
+            'selectedExecutable': self.executables.selector().currentText() if self.executables is not None else '',
             'executables': self.executables.snapshot() if self.executables is not None else [],
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
             'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
@@ -75,6 +76,13 @@ class Bridge:
                 raise ValueError('MO2 interface is unavailable or visibility is not a boolean')
             self.interface.set_visible(request['visible'])
             return self.snapshot()
+        if action == 'manageExecutables':
+            if self.mod_actions is None: raise ValueError('MO2 tools are unavailable')
+            return self.mod_actions.manage_executables()
+        if action in ('listTools', 'runTool'):
+            if self.mod_actions is None:
+                raise ValueError('MO2 tools are unavailable')
+            return self.mod_actions.list_tools() if action == 'listTools' else self.mod_actions.run_tool(request.get('tool'))
         if action == 'healthCheck':
             if self.mod_actions is None:
                 raise ValueError('MO2 health checks are unavailable')

@@ -1,5 +1,8 @@
 # Integration acceptance audit — 2026-09-13
 
+Follow-up navigation and Tools changes are documented in [NMA_FIDELITY.md](NMA_FIDELITY.md). They replace the earlier per-profile game icons and Rules tab with one icon per game, Profiles, Plugins under Installed, and Tools under Utilities. Downloads now uses NMA's native DownloadsPageView. The new live checks cover mod priority restoration, filters, original tools, downloads, and FNV/Skyrim switching. Earlier evidence below remains historical evidence for unchanged backend functionality.
+
+
 The requested local integration is verified: an MO2-owned frontend with NMA
 navigation/panels, usable interchangeably with original MO2 for the registered
 FNV and Skyrim instances. The requirement evidence below includes functional

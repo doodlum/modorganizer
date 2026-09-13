@@ -6,6 +6,49 @@ class ModActions:
         self.organizer = organizer
         self.window = window
 
+    def manage_executables(self):
+        from PyQt6.QtGui import QAction
+        action = self.window.findChild(QAction, 'actionModify_Executables')
+        if not self.window.isEnabled() or action is None or not action.isEnabled():
+            raise ValueError('MO2 executable settings are unavailable')
+        action.trigger()
+        return {'opened': True}
+
+    def _tools(self):
+        from PyQt6.QtGui import QAction
+        if not self.window.isEnabled():
+            raise ValueError('MO2 is busy; wait before opening tools')
+        action = self.window.findChild(QAction, 'actionTool')
+        if action is None or action.menu() is None:
+            raise ValueError('MO2 tools menu is unavailable')
+        menu = action.menu()
+        menu.aboutToShow.emit()
+        def leaves(current, path):
+            for item in current.actions():
+                if item.isSeparator() or not item.isVisible(): continue
+                name = item.text().replace('&', '').strip()
+                if not name: continue
+                key = path + [name]
+                if item.menu() is not None:
+                    yield from leaves(item.menu(), key)
+                else:
+                    yield key, item
+        return list(leaves(menu, []))
+
+    def list_tools(self):
+        return {'tools': [{'id': path, 'name': path[-1], 'group': ' / '.join(path[:-1]),
+                           'description': action.toolTip().replace('&', ''), 'enabled': action.isEnabled()}
+                          for path, action in self._tools()]}
+
+    def run_tool(self, identifier):
+        if not isinstance(identifier, list) or not all(isinstance(x, str) for x in identifier):
+            raise ValueError('A tool identifier is required')
+        matches = [action for path, action in self._tools() if path == identifier]
+        if len(matches) != 1 or not matches[0].isEnabled():
+            raise ValueError('This MO2 tool is unavailable; refresh the tools page')
+        matches[0].trigger()
+        return {'opened': True}
+
     def health_check(self):
         from PyQt6.QtCore import QObject, QEvent, QMetaObject, QTimer, Qt
         from PyQt6.QtGui import QTextDocument

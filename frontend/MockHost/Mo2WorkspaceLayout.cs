@@ -98,7 +98,7 @@ internal sealed class Mo2WorkspaceLayout
                 for (var j = 0; j < panel.Tabs.Count; j++) {
                     if (panel.Tabs[j].Contents.ViewModel is ScenarioInstalledPage mods) {
                         mods.Mo2SearchText = state.Tabs[j].Search; mods.Mo2SearchExpanded = state.Tabs[j].SearchExpanded;
-                        mods.SelectedSubTab = (LoadoutPageSubTabs)state.Tabs[j].SubTab;
+                        mods.SelectedSubTab = LoadoutPageSubTabs.Mods;
                     }
                     panel.Tabs[j].Header.IsSelected = j == state.Selected;
                 }

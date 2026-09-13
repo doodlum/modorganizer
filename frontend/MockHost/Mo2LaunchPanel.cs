@@ -38,7 +38,7 @@ internal sealed class Mo2LaunchButton : AViewModel<ILaunchButtonViewModel>, ILau
     private void Refresh()
     {
         if (_endpoint != _profile.Endpoint || !_profile.Executables.Contains(SelectedExecutable))
-            SelectedExecutable = _profile.Executables.FirstOrDefault() ?? "";
+            SelectedExecutable = _profile.Executables.Contains(_profile.SelectedExecutable) ? _profile.SelectedExecutable : _profile.Executables.FirstOrDefault() ?? "";
         _endpoint = _profile.Endpoint;
         UpdateAvailability();
         _running.OnNext(_profile.Launching);

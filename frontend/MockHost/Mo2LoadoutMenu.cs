@@ -13,6 +13,8 @@ internal sealed class Mo2LoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel>, IL
 {
     public WorkspaceId WorkspaceId { get; }
     public ReadOnlyObservableCollection<ILeftMenuItemViewModel> LeftMenuCollectionItems { get; } = new(new());
+    public ILeftMenuItemViewModel ToolsItem { get; }
+    public ILeftMenuItemViewModel ProfilesItem { get; }
     public bool HasSingleCollection => false;
     public IApplyControlViewModel ApplyControlViewModel => null!;
     public ILeftMenuItemViewModel LeftMenuItemNewCollection => null!;
@@ -20,11 +22,13 @@ internal sealed class Mo2LoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel>, IL
     public ILeftMenuItemViewModel LeftMenuItemLibrary { get; }
     public ILeftMenuItemViewModel LeftMenuItemLoadout { get; }
     public ILeftMenuItemViewModel? LeftMenuItemExternalChanges { get; }
-    public Mo2LoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData mods, PageData plugins, PageData downloads, PageData health)
+    public Mo2LoadoutMenu(IWorkspaceController controller, WorkspaceId workspace, PageData mods, PageData plugins, PageData downloads, PageData health, PageData profiles, PageData tools)
     {
         WorkspaceId = workspace;
         ILeftMenuItemViewModel Item(string title, IconValue icon, PageData page) =>
             new LeftMenuItemViewModel(controller, workspace, page) { Text = new StringComponent(title), Icon = icon };
+        ToolsItem = Item("Tools", Mo2ToolsPage.ToolIcon, tools);
+        ProfilesItem = Item("Profiles", IconValues.Package, profiles);
         LeftMenuItemLibrary = Item("Downloads", IconValues.LibraryOutline, downloads);
         LeftMenuItemLoadout = Item("My Mods", IconValues.FormatAlignJustify, mods);
         LeftMenuItemHealthCheck = Item("Health Check", IconValues.Cardiology, health);

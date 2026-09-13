@@ -35,6 +35,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
     public bool ManagingMod { get; private set; }
+    public string SelectedExecutable { get; private set; } = "";
     public IReadOnlyList<string> Executables { get; private set; } = [];
     public string ProfilePath { get; private set; } = "";
     public string Status { get; private set; } = "Connecting to MO2…";
@@ -67,6 +68,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var raw = snapshot.GetRawText();
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
+        SelectedExecutable = snapshot.TryGetProperty("selectedExecutable", out var selectedExecutable) ? selectedExecutable.GetString() ?? "" : "";
         Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
         LogsDirectory = snapshot.GetProperty("instance").TryGetProperty("logsPath", out var logs) && logs.GetString() is { } logsPath ? Mo2InstanceCatalog.LocalPath(logsPath) : null;
         OriginalUiVisible = snapshot.GetProperty("instance").TryGetProperty("uiVisible", out var visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null;
@@ -86,7 +88,14 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 mod.TryGetProperty("flags", out var flags) ? flags.GetString() ?? "" : "",
                 mod.TryGetProperty("overwrite", out var overwrite) && overwrite.GetBoolean());
         }).ToArray();
-        _mods.Edit(cache => { cache.Clear(); cache.AddOrUpdate(mods); });
+        _mods.Edit(cache => {
+            var ids = mods.Select(x => x.Id).ToHashSet();
+            cache.RemoveKeys(cache.Keys.Where(x => !ids.Contains(x)).ToArray());
+            foreach (var mod in mods) {
+                var old = cache.Lookup(mod.Id);
+                if (!old.HasValue || old.Value != mod) cache.AddOrUpdate(mod);
+            }
+        });
         Order.Replace(snapshot.GetProperty("plugins").EnumerateArray().Select(plugin => new ScenarioPlugin(
             plugin.GetProperty("name").GetString()!, plugin.GetProperty("origin").GetString()!, plugin.GetProperty("priority").GetInt32(),
             plugin.GetProperty("masters").EnumerateArray().Select(x => x.GetString()!).ToArray()) {
@@ -119,6 +128,31 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             return result.GetProperty("problems").EnumerateArray().Select(x =>
                 (x.GetProperty("title").GetString()!, x.GetProperty("details").GetString()!)).ToArray();
         } finally { _commands.Release(); }
+    }
+    public async Task<Mo2Tool[]> ReadTools()
+    {
+        var target = CurrentTarget;
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to view tools.");
+            var result = await Client.SendAsync("listTools", new() { ["profilePath"] = target.ProfilePath });
+            return result.GetProperty("tools").EnumerateArray().Select(x => new Mo2Tool(
+                x.GetProperty("id").EnumerateArray().Select(y => y.GetString()!).ToArray(),
+                x.GetProperty("name").GetString()!, x.GetProperty("group").GetString()!,
+                x.GetProperty("description").GetString()!, x.GetProperty("enabled").GetBoolean())).ToArray();
+        } finally { _commands.Release(); }
+    }
+    public async Task RunTool(Mo2Tool tool, Mo2ProfileTarget target, bool manageExecutables = false)
+    {
+        if (!CanStartHostAction) return;
+        ManagingMod = true; Status = "Opening " + tool.Name; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("The profile changed. Refresh Tools before opening a tool.");
+            await Client.SendAsync(manageExecutables ? "manageExecutables" : "runTool", new() { ["profilePath"] = target.ProfilePath, ["tool"] = tool.Id }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
     private void Report(Exception error) { _lastSnapshot = null; Status = error.Message; Changed?.Invoke(); }
     public void Toggle(IEnumerable<LoadoutItemId> ids)
@@ -166,9 +200,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
-    public async Task MoveMod(EntityId id, int delta)
+    public async Task MoveMod(EntityId id, int delta, bool absolute = false)
     {
         var profile = ProfilePath;
+        Status = "Updating mod priority…"; Changed?.Invoke();
         await _commands.WaitAsync();
         try {
             if (profile != ProfilePath) throw new InvalidOperationException("Active profile changed; select the mod again");
@@ -176,7 +211,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if (!found.HasValue) return;
             var mod = found.Value;
             if ((mod.State & 4) != 0 || mod.Priority < 0) return;
-            var priority = Math.Clamp(mod.Priority + delta, 0, _mods.Items.Where(x => !x.IsOverwrite && x.Priority >= 0).Max(x => x.Priority));
+            var priority = Math.Clamp(absolute ? delta : mod.Priority + delta, 0, _mods.Items.Where(x => !x.IsOverwrite && x.Priority >= 0).Max(x => x.Priority));
             Apply(await Client.SendAsync("setModPriority", new() { ["profilePath"] = profile, ["name"] = mod.Name, ["priority"] = priority }));
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
@@ -367,8 +402,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public IObservable<int> CountLoadoutItems(LoadoutFilter filter) => Observable.Defer(() => _mods.CountChanged.StartWith(_mods.Count).DistinctUntilChanged());
     public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveLoadoutItems(LoadoutFilter filter)
-        => _mods.Connect().Transform(mod => {
+        => _mods.Connect().Transform(CreateModModel);
+    public IObservable<IChangeSet<CompositeItemModel<EntityId>, EntityId>> ObserveFilteredMods(IObservable<Func<Mo2LiveMod,bool>> filter)
+        => _mods.Connect().Filter(filter).Transform(CreateModModel);
+    private static CompositeItemModel<EntityId> CreateModModel(Mo2LiveMod mod) {
             var model = new CompositeItemModel<EntityId>(mod.Id);
+            model.Add(Mo2ModsAdapter.StateKey, new ValueComponent<int>(mod.State));
             model.Add(Mo2ModsAdapter.PriorityKey, new ValueComponent<int>(mod.Priority));
             model.Add(Mo2ModsAdapter.PriorityTextKey, new ValueComponent<string>(mod.PriorityText));
             model.Add(Mo2ModsAdapter.ConflictsKey, new ValueComponent<string>(mod.Conflicts));
@@ -381,5 +420,5 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             }
             model.Add(LoadoutColumns.EnabledState.UninstallItemComponentKey, new SharedComponents.UninstallItemAction(isEnabled: (mod.State & 4) == 0));
             return model;
-        });
+        }
 }

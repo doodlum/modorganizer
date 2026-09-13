@@ -1,3 +1,5 @@
+using ObservableCollections;
+using R3;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -11,14 +13,6 @@ using System.Reactive.Disposables;
 
 namespace Mo2.Frontend;
 
-internal interface IMo2DownloadsPage : IPageViewModelInterface { }
-internal sealed class Mo2DownloadsPage : APageViewModel<IMo2DownloadsPage>, IMo2DownloadsPage
-{
-    public Mo2LiveProfile Profile { get; }
-    public Mo2DownloadsPage(IWindowManager windows, Mo2LiveProfile profile) : base(windows)
-    { Profile = profile; TabTitle = "Downloads"; TabIcon = IconValues.LibraryOutline; }
-}
-
 internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
 {
     internal async Task ChooseArchive(Func<Task<string?>> choose)
@@ -30,21 +24,23 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
     }
     public Mo2DownloadsView()
     {
-        var layout = new DockPanel { Margin = new Thickness(16) };
-        var header = new StackPanel { Spacing = 12 };
-        header.Children.Add(new TextBlock { Text = "Downloads", FontSize = 22 });
-        var context = new TextBlock { Name = "DownloadProfileContext", TextWrapping = TextWrapping.Wrap };
-        header.Children.Add(context);
-        var import = new Button { Content = "Install archive…", Name = "InstallArchiveButton" };
-        header.Children.Add(import);
-        var link = new TextBox { Watermark = "Paste a Nexus file link", Name = "NexusFileLink" };
-        var download = new Button { Content = "Download through MO2", Name = "DownloadNexusButton" };
-        header.Children.Add(link); header.Children.Add(download);
-        header.Children.Add(new TextBlock { Text = "Archives in this instance’s downloads folder", Margin = new Thickness(0, 8) });
-        DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
-        var rows = new StackPanel { Spacing = 8 };
-        layout.Children.Add(new ScrollViewer { Content = rows });
-        Content = layout;
+        var native = new NexusMods.App.UI.Pages.Downloads.DownloadsPageView();
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        var actions = new WrapPanel { Margin = new Thickness(24,12,24,0) };
+        var import = new Button { Content = "Install archive…", Name = "InstallArchiveButton", Margin = new Thickness(0,0,8,4) };
+        var install = new Button { Content = "Install selected", Name = "InstallSelectedDownload", Margin = new Thickness(0,0,8,4) };
+        var nexus = new Button { Content = "Nexus link…", Margin = new Thickness(0,0,0,4) };
+        var link = new TextBox { Watermark = "Paste a Nexus file link", Name = "NexusFileLink", MinWidth = 260 };
+        var download = new Button { Content = "Download through MO2", Name = "DownloadNexusButton", Margin = new Thickness(0,8,0,0) };
+        var flyoutContent = new StackPanel(); flyoutContent.Children.Add(link); flyoutContent.Children.Add(download);
+        nexus.Flyout = new Flyout { Content = flyoutContent };
+        actions.Children.Add(import); actions.Children.Add(install); actions.Children.Add(nexus);
+        layout.Children.Add(actions); Grid.SetRow(native,1); layout.Children.Add(native);
+        var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,160,24,0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        Grid.SetRow(unavailable,1); layout.Children.Add(unavailable);
+        // Retained as a context marker for stale-picker checks; visible context is the native page header.
+        var context = new TextBlock { Name = "DownloadProfileContext", IsVisible = false };
+        layout.Children.Add(context); Content = layout;
         import.Click += async (_, _) => {
             if (ViewModel is null || TopLevel.GetTopLevel(this) is not { } window) return;
             await ChooseArchive(async () => {
@@ -55,49 +51,51 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                 return files.FirstOrDefault()?.TryGetLocalPath();
             });
         };
-        download.Click += async (_, _) => { if (ViewModel is not null) await ViewModel.Profile.DownloadNexus(link.Text ?? ""); };
+        install.Click += async (_,_) => {
+            if (ViewModel is not { } model) return;
+            var target = model.Profile.CurrentTarget;
+            foreach (var file in model.Selected.Where(x => !x.Partial).ToArray()) await model.Profile.InstallArchive(file.Path, target);
+        };
+        download.Click += async (_, _) => { if (ViewModel is not null) { nexus.Flyout.Hide(); await ViewModel.Profile.DownloadNexus(link.Text ?? ""); } };
         this.WhenActivated(disposables => {
-            if (ViewModel is null) return;
-            var profile = ViewModel.Profile;
+            if (ViewModel is not { } model) return;
+            native.ViewModel = model;
+            var profile = model.Profile;
             void Refresh()
             {
-                import.IsEnabled = download.IsEnabled = profile.CanUseDownloads;
-                var target = profile.CurrentTarget;
-                context.Text = profile.ProfilePath.Length == 0 ? "Select a profile in My Loadouts to use its MO2 downloads." :
-                    (profile.IsConnected ? "" : "Unavailable · ") + profile.GameName + " · " + profile.CollectionName.Value;
-                ToolTip.SetTip(context, profile.ProfilePath.Length == 0 ? null : Mo2InstanceCatalog.LocalPath(profile.ProfilePath));
-                rows.Children.Clear();
-                if (!profile.IsConnected) {
-                    if (profile.ProfilePath.Length > 0) rows.Children.Add(new TextBlock {
-                        Name = "DownloadsUnavailable", Text = "Downloads are unavailable. Reconnect to MO2 to refresh this folder.",
-                        TextWrapping = TextWrapping.Wrap,
-                    });
-                    return;
-                }
-                if (profile.Downloads.Count == 0 && profile.ProfilePath.Length > 0) rows.Children.Add(new TextBlock { Text = "No downloads yet" });
-                foreach (var archive in profile.Downloads) {
-                    var row = new DockPanel { Margin = new Thickness(0, 4) };
-                    var install = new Button { Content = "Install", IsEnabled = !archive.Partial && profile.CanUseDownloads, Margin = new Thickness(12, 0, 0, 0) };
-                    install.Click += async (_, _) => await profile.InstallArchive(archive.Path, target);
-                    DockPanel.SetDock(install, Dock.Right); row.Children.Add(install);
-                    if (archive.Partial) {
-                        var controls = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
-                        foreach (var operation in archive.Paused ? new[] { "resume" } : new[] { "pause", "resume", "cancel" }) {
-                            var button = new Button { Content = char.ToUpperInvariant(operation[0]) + operation[1..], IsEnabled = profile.CanUseDownloads };
-                            button.Click += async (_, _) => await profile.ControlDownload(archive.Path, operation, target);
-                            controls.Children.Add(button);
-                        }
-                        DockPanel.SetDock(controls, Dock.Bottom); row.Children.Add(controls);
-                    }
-                    var text = new StackPanel { Spacing = 4 };
-                    text.Children.Add(new TextBlock { Text = archive.Name, TextWrapping = TextWrapping.Wrap });
-                    var state = archive.Paused ? "Paused" : archive.Partial ? "Downloading / incomplete" : archive.Installed ? "Previously installed" : "Downloaded";
-                    text.Children.Add(new TextBlock { Text = $"{archive.Bytes / 1024d / 1024d:0.0} MB · {state}", Opacity = 0.65 });
-                    row.Children.Add(text); rows.Children.Add(row);
+                import.IsEnabled = download.IsEnabled = nexus.IsEnabled = profile.CanUseDownloads;
+                install.IsEnabled = profile.CanUseDownloads && model.Selected.Any(x => !x.Partial);
+                context.Text = model.HeaderDescription;
+                unavailable.IsVisible = !profile.IsConnected;
+                unavailable.Text = profile.ProfilePath.Length == 0 ? "Select a profile to view downloads." : "Downloads are unavailable. Reconnect to MO2 to refresh this folder.";
+                foreach (var name in new[] { "PauseAllButton", "ResumeAllButton", "PauseSelectedButton", "ResumeSelectedButton", "CancelSelectedButton" }) {
+                    var button = native.FindControl<NexusMods.App.UI.Controls.StandardButton>(name)!;
+                    button.ShowLabel = Bounds.Width > 650;
+                    button.IsVisible = !name.Contains("Selected") || model.Selected.Any(x => x.Partial && (name.StartsWith("Cancel") || x.Paused == name.StartsWith("Resume")));
+                    button.IsEnabled = profile.CanUseDownloads && (name.Contains("Selected") ? model.Selected : profile.Downloads).Any(x => x.Partial && (name.StartsWith("Cancel") || x.Paused == name.StartsWith("Resume")));
+                    ToolTip.SetTip(button, name.Replace("Button", "").Replace("All", " all").Replace("Selected", " selected"));
                 }
             }
-            profile.Changed += Refresh;
-            Disposable.Create(() => profile.Changed -= Refresh).DisposeWith(disposables);
+            profile.Changed += Refresh; SizeChanged += Resized;
+            void Resized(object? sender, SizeChangedEventArgs args) => Refresh();
+            System.Reactive.Disposables.Disposable.Create(() => { profile.Changed -= Refresh; SizeChanged -= Resized; }).DisposeWith(disposables);
+            model.Adapter.SelectedModels.ObserveChanged().Subscribe(_ => Refresh()).DisposeWith(disposables);
+            model.Adapter.Source.Subscribe(source => {
+                var columns = source switch {
+                    FlatTreeDataGridSource<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>> flat => flat.Columns,
+                    HierarchicalTreeDataGridSource<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>> tree => tree.Columns,
+                    _ => null
+                };
+                if (columns is null) return;
+                columns.Clear();
+                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TemplateColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>("Name",
+                    new Avalonia.Controls.Templates.FuncDataTemplate<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>((item, _) => {
+                        var label = new TextBlock { Text = item?.Get<NexusMods.App.UI.Controls.NameComponent>(NexusMods.App.UI.Pages.Downloads.DownloadColumns.Name.NameComponentKey).Value.Value ?? "", TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+                        ToolTip.SetTip(label, label.Text); return label;
+                    }), width: new GridLength(180)));
+                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>("Downloaded", x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(Mo2DownloadProvider.BytesKey).Value.Value, width: new GridLength(90)));
+                columns.Add(NexusMods.App.UI.Controls.ColumnCreator.Create<NexusMods.Abstractions.Downloads.DownloadId, NexusMods.App.UI.Pages.Downloads.DownloadColumns.Status>(width: new GridLength(155)));
+            }).DisposeWith(disposables);
             Refresh();
         });
     }

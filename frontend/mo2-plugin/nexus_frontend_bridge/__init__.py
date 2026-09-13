@@ -18,12 +18,19 @@ class FrontendVisibility(QObject):
         super().__init__()
         self.hidden = hidden
         self.window = None
+        self.quit_on_last_window = QApplication.instance().quitOnLastWindowClosed()
+        if hidden:
+            QApplication.instance().setQuitOnLastWindowClosed(False)
 
     def is_visible(self):
         return self.window is not None and self.window.isVisible() and not self.hidden
 
     def set_visible(self, visible):
         self.hidden = not visible
+        # A tool can be the only mapped window while the main host is hidden.
+        # Closing it must not terminate MO2. Explicit main-window close still
+        # goes through MO2's own ExitModOrganizer/save workflow.
+        QApplication.instance().setQuitOnLastWindowClosed(self.quit_on_last_window if visible else False)
         self.window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, not visible)
         if visible:
             self.window.showNormal()

@@ -134,6 +134,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         }
         if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
+        if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
         if (viewModel is not IViewModel vm) return null;
@@ -168,6 +169,7 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI") == "1") await VerifyNewUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_FINAL_PAGES") == "1") await VerifyFinalPages(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_OPTIONS") is { } options) await VerifyLayoutOptions(live, liveWindow, options);
@@ -562,6 +564,83 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyNewUi(Mo2LiveWorkspace live, Window window)
+    {
+        async Task Capture(string name) {
+            await Task.Delay(600);
+            using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
+            bitmap.Render(window); bitmap.Save("/home/deck/mo2/frontend/artifacts/new-ui-" + name + ".png");
+        }
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        if (spine.LoadoutSpineItems.Count != live.CatalogEntries.Where(x => x.Instance != null).Select(x => x.Instance!.Game).Distinct().Count()) throw new Exception("Expected one spine icon per game");
+        var view = window.GetVisualDescendants().OfType<Mo2ModsView>().Single();
+        if (view.NativeView.FindControl<TabItem>("RulesTabItem")!.IsVisible) throw new Exception("Rules remains visible");
+        var filter = view.GetVisualDescendants().OfType<ComboBox>().Single(x => x.Name == "ModStateFilter");
+        filter.SelectedIndex = 2;
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => (x.State & 2) == 0 && (x.State & 4) == 0), "Disabled filter mismatch");
+        filter.SelectedIndex = 0;
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count, "Filter did not restore rows");
+        var table = view.NativeView.FindControl<TreeDataGrid>("TreeDataGrid")!;
+        await WaitFor(() => table.Rows?.Count == live.Profile.Mods.Count, "Mod rows not rendered");
+        var movable = live.Profile.Mods.Where(x => (x.State & 4) == 0 && x.Priority > 0).OrderBy(x => x.Priority).First();
+        var previous = live.Profile.Mods.OrderBy(x => x.Priority).Select(x => (x.Name,x.Priority)).ToArray();
+        try {
+            var row = live.Profile.Mods.OrderBy(x => x.Priority).ToList().FindIndex(x => x.Id == movable.Id);
+            table.RowSelection!.Select(new IndexPath(row));
+            await WaitFor(() => view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "SetModPriorityButton").IsEnabled, "Priority action disabled");
+            view.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "ModPriorityInput").Text = (movable.Priority - 1).ToString();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "SetModPriorityButton").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => live.Profile.Mods.Single(x => x.Id == movable.Id).Priority == movable.Priority - 1, "UI priority move failed");
+            Console.WriteLine("PRIORITY_ACK_MS: " + watch.ElapsedMilliseconds);
+        } finally {
+            await live.Profile.MoveMod(movable.Id, movable.Priority, absolute: true);
+        }
+        if (!previous.SequenceEqual(live.Profile.Mods.OrderBy(x => x.Priority).Select(x => (x.Name,x.Priority)))) throw new Exception("Priority restoration mismatch");
+        await Capture("mods");
+        await live.ProfileMenu.ToolsItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ToolsView>().Any(x => x.GetVisualDescendants().OfType<Button>().Any(b => b.Name == "LaunchToolButton")), "Tools did not load");
+        var tools = await live.Profile.ReadTools();
+        if (tools.Length == 0) throw new Exception("Original MO2 tools missing");
+        Console.WriteLine("TOOLS: " + string.Join(", ",tools.Select(x => x.Name)));
+        await Capture("tools");
+        if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOOLS_DIALOG") == "1") {
+            var toolView = window.GetVisualDescendants().OfType<Mo2ToolsView>().Single();
+            toolView.GetVisualDescendants().OfType<Button>().Single(x => ToolTip.GetTip(x)?.ToString() == "Open INI Editor").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => live.Profile.ManagingMod, "Tool click was dropped");
+            await WaitFor(() => !live.Profile.ManagingMod, "Close INI Editor to finish the tool check", seconds: 90);
+            if (live.Profile.OriginalUiVisible == true) throw new Exception("Tool launch exposed the main MO2 window");
+            await WaitFor(() => File.Exists("/tmp/mo2-tool-window-verified"), "Original INI Editor window was not verified", seconds: 60);
+            Console.WriteLine("PASS: Tools button returned with main MO2 hidden");
+        }
+        live.OpenDownloads();
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Downloads.DownloadsPageView>().Any(), "Native downloads view missing");
+        var downloadsView = window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single();
+        await WaitFor(() => downloadsView.ViewModel!.Adapter.SourceCount.Value == live.Profile.Downloads.Count && downloadsView.GetVisualDescendants().OfType<TreeDataGrid>().Single().Rows?.Count == live.Profile.Downloads.Count, "Download rows missing");
+        await Capture("downloads");
+        await live.ProfileMenu.ProfilesItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyLoadoutsView>().Any(), "Profiles page missing");
+        if (window.GetVisualDescendants().OfType<HomeLeftMenuView>().Any()) throw new Exception("Profiles left game workspace");
+        await Capture("profiles");
+        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI_SWITCH") == "1") {
+            var originalTarget = live.Profile.CurrentTarget;
+            var originalGame = live.CatalogEntries.First(x => x.Registration.Endpoint == originalTarget.Endpoint).Instance!.Game;
+            await spine.LoadoutSpineItems.Single(x => x.Name == "Skyrim Special Edition").Click.Execute();
+            await WaitFor(() => live.Profile.IsConnected && live.Profile.GameName.Contains("Skyrim"), "Skyrim icon did not connect", seconds: 110);
+            var workspace = live.WorkspaceController.ActiveWorkspace;
+            workspace.Panels.First().IsSelected = true;
+            await live.ProfileMenu.LeftMenuItemLoadout.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+            await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any(), "Skyrim mods missing");
+            var skyrimView = window.GetVisualDescendants().OfType<Mo2ModsView>().Single();
+            skyrimView.GetVisualDescendants().OfType<ComboBox>().Single(x => x.Name == "ModStateFilter").SelectedIndex = 3;
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => x.Conflicts.Length > 0), "Skyrim conflicts filter mismatch");
+            await Capture("skyrim-conflicts");
+            await spine.LoadoutSpineItems.Single(x => x.Name == originalGame).Click.Execute();
+            await WaitFor(() => live.Profile.IsConnected && live.Profile.CurrentTarget == originalTarget, "Game icon did not restore FNV profile", seconds: 110);
+        }
+        Console.WriteLine("PASS: unique game icons, no Rules, live filters, original tools, native downloads, game Profiles");
     }
 
     private static async Task VerifyFinalPages(Mo2LiveWorkspace live, Window window)
