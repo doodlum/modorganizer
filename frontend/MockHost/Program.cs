@@ -160,6 +160,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_WORKSPACES") == "1") await VerifyProfileWorkspaces(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_SKYRIM") == "1") {
                             var entry = live.CatalogEntries.Single(x => x.Registration.Directory == "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2");
@@ -611,6 +612,57 @@ public partial class MockApp : Application
         Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite restrictions and Rules tab use MO2 state; original state restored");
     }
 
+    private static async Task VerifyProfileWorkspaces(Mo2LiveWorkspace live, Window window)
+    {
+        var controller = live.WorkspaceController;
+        var fnv = controller.ActiveWorkspace;
+        var original = (Mods: live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray(),
+            Plugins: live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray());
+        TextBox Search() => window.GetVisualDescendants().OfType<Mo2ModsView>().Single().NativeView
+            .FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
+        Search().Text = "Configuration";
+        await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(OpenPageBehaviorType.NewPanel));
+        await WaitFor(() => fnv.Panels.Count == 3 && window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Any(), "FNV third panel did not open");
+        string Layout(IWorkspaceViewModel workspace) => string.Join(";", workspace.Panels.Select(p =>
+            p.Id + ":" + p.LogicalBounds + ":" + p.SelectedTab.Id + ":" + string.Join(",", p.Tabs.Select(t => t.Id + "/" + t.Contents.PageData.FactoryId))));
+        var fnvLayout = Layout(fnv);
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        async Task Visit(string directory, string name) {
+            var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+            await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance!.Game + " — " + name + " (" + directory + ")").Click.Execute();
+            await WaitFor(() => controller.ActiveWorkspace.Context is Mo2WorkspaceContext c &&
+                c.ProfilePath == live.Profile.ProfilePath && Mo2InstanceCatalog.LocalPath(c.ProfilePath) == entry.Instance!.Profiles.Single(x => x.Name == name).Directory &&
+                window.GetVisualDescendants().OfType<Mo2ModsView>().Any(), "Profile workspace did not activate", seconds: 110);
+        }
+        const string skyrimRoot = "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2";
+        const string fnvRoot = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host";
+        await Visit(skyrimRoot, "Default");
+        var skyrim = controller.ActiveWorkspace;
+        if (skyrim.Id == fnv.Id || skyrim.Panels.Count != 2 || !string.IsNullOrEmpty(Search().Text))
+            throw new InvalidOperationException("Skyrim inherited FNV's workspace or search");
+        Search().Text = "SkyUI";
+        var skyrimLayout = Layout(skyrim);
+        await Visit(fnvRoot, "Frontend Test");
+        if (controller.ActiveWorkspace.Id != fnv.Id || Layout(fnv) != fnvLayout || Search().Text != "Configuration")
+            throw new InvalidOperationException($"FNV restoration failed: workspace={controller.ActiveWorkspace.Id == fnv.Id}; layout={Layout(fnv) == fnvLayout}; search={Search().Text}; before={fnvLayout}; after={Layout(fnv)}");
+        if (live.ProfileMenu.WorkspaceId != fnv.Id) throw new InvalidOperationException("Sidebar targets another profile workspace");
+        await Visit(skyrimRoot, "Default");
+        if (controller.ActiveWorkspace.Id != skyrim.Id || Layout(skyrim) != skyrimLayout || Search().Text != "SkyUI")
+            throw new InvalidOperationException("Skyrim did not restore its independent layout and search");
+        await Visit(fnvRoot, "Frontend Test");
+        await Visit(fnvRoot, "Frontend Clone Test");
+        if (controller.ActiveWorkspace.Id == fnv.Id || controller.ActiveWorkspace.Id == skyrim.Id || controller.ActiveWorkspace.Panels.Count != 2 || !string.IsNullOrEmpty(Search().Text))
+            throw new InvalidOperationException("Two profiles in the same MO2 instance shared a workspace");
+        await Visit(fnvRoot, "Frontend Test");
+        if (controller.ActiveWorkspace.Id != fnv.Id || Layout(fnv) != fnvLayout || Search().Text != "Configuration")
+            throw new InvalidOperationException("FNV layout did not survive a same-instance profile switch");
+        await live.Profile.Refresh();
+        if (!original.Mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))) ||
+            !original.Plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))))
+            throw new InvalidOperationException("Workspace switching changed MO2 mod/plugin state");
+        Console.WriteLine("PASS: profile spine restores separate FNV/Skyrim workspace IDs, panel bounds, tabs, selected tabs and native searches; sidebar targets current workspace; MO2 state preserved");
+    }
+
     private static async Task VerifyHealthDetails(Mo2LiveWorkspace live, Window window)
     {
         const string marker = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host/plugins/data/frontend-health-fixture-active";
@@ -641,11 +693,11 @@ public partial class MockApp : Application
                 (source ? details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("original MO2 diagnostic extension") :
                     !details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("another or disconnected MO2 profile")),
                 "Diagnostic details did not respect its source profile", seconds: 110);
-            if (!window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(x => ReferenceEquals(x.ViewModel, details)))
-                throw new InvalidOperationException("Details profile test lost the visible panel");
+            if (window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(x => ReferenceEquals(x.ViewModel, details)) != source)
+                throw new InvalidOperationException("Diagnostic panel did not follow its originating workspace");
         }
         await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DiagnosticTextView>().Any(x => x.Text.Text == details.MarkdownRendererViewModel.Contents), "Native diagnostic body did not render its plain text");
-        Console.WriteLine("PASS: visible native details panel clears resolved diagnostics, restores recurring reports, hides FNV details in Skyrim and refreshes on return through profile spine");
+        Console.WriteLine("PASS: visible native details panel clears resolved diagnostics, restores recurring reports, keeps FNV details in their workspace and refreshes on return through profile spine");
     }
 
     private static async Task VerifyHealth(Mo2LiveWorkspace live, Window window)
@@ -715,13 +767,17 @@ public partial class MockApp : Application
                 var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
                 var target = entry.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
                 await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + directory + ")").Click.Execute();
-                await WaitFor(() => page.HasResult && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == target.Directory,
-                    "Existing Health Check page did not refresh for the selected game", seconds: 110);
+                await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>()
+                    .Any(x => x.ViewModel is Mo2HealthPage { HasResult: true }), "Selected profile's Health Check did not refresh", seconds: 110);
+                var selectedHealth = (Mo2HealthPage)window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticListView>().Single().ViewModel!;
+                if (ReferenceEquals(selectedHealth, page) != directory.EndsWith("mo2-fnv-host"))
+                    throw new InvalidOperationException("Health Check did not retain its per-profile page");
                 var reports = await live.Profile.ReadHealth();
-                if (!reports.SequenceEqual(page.DiagnosticEntries.Select(x => (x.Title, x.Summary))))
+                if (!reports.SequenceEqual(selectedHealth.DiagnosticEntries.Select(x => (x.Title, x.Summary))))
                     throw new InvalidOperationException("Health Check retained diagnostics from the previous game");
             }
-            Console.WriteLine("PASS: existing native Health Check follows FNV to Skyrim and back without reopening the page");
+            Console.WriteLine("PASS: native Health Check belongs to each profile workspace and restores the FNV page on return");
         }
         Console.WriteLine($"PASS: native Health Check matches {expected.Length} MO2 notification reports; details verified={expected.Length > 0}; profile/mod/plugin state preserved");
     }

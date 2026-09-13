@@ -16,6 +16,10 @@ NMA views. My Games → View → profile switches the connected game. My Loadout
 shows real profiles grouped by game across registered MO2 instances. Each
 instance has a native Create new loadout card that opens MO2’s Create Profile
 dialog. Selection uses each running host.
+Each MO2 instance/profile pair has its own native workspace. Switching away and
+back restores its open panels, tabs and mod search during the current session.
+A newly visited profile starts with mods on the left and plugins on the right.
+Layouts are not yet saved across frontend restarts.
 **Create Copy**, **Rename** and **Delete** on each card open MO2’s original
 prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.

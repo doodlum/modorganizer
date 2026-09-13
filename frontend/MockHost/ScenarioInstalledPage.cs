@@ -60,6 +60,9 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandChangeVisibility { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
 
+    public string Mo2SearchText { get; set; } = "";
+    public bool Mo2SearchExpanded { get; set; }
+
     public ScenarioInstalledPage(IServiceProvider services, IWindowManager windows, IInstalledModsSource mods, NexusMods.Abstractions.Games.ISortOrderVariety order,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false, Action? openDownloads = null) : base(windows)
     {

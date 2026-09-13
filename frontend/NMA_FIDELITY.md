@@ -203,3 +203,40 @@ its plain-text model and its screenshot was inspected. Evidence:
 `/tmp/mo2-health-details-profile.log`, `artifacts/health-details-profile.png`.
 The build passed with the existing upstream OpenTelemetry advisory. This proves
 detail-panel invalidation, not separate per-profile workspace/layout persistence.
+
+## Separate native workspaces per MO2 profile
+
+The live shell now retains one native workspace and contextual sidebar per
+MO2 endpoint/profile-path pair. First visits start with mods and plugins side
+by side; subsequent visits restore the existing workspace instead of selecting
+or recreating the mods tab. Profile changes observed from MO2 also update the
+active workspace. Panel actions are disabled while profile selection is pending.
+Home remains separate. All pages still obtain their mod/plugin/download state
+from the connected MO2 host; the workspace cache stores presentation state.
+
+NMA recreates the mods search control when a dormant view returns, so the live
+mods page now retains its search text and expanded state. The first verification
+run exposed search loss; the repeat passed with preserved text.
+
+`MO2_VERIFY_PROFILE_WORKSPACES=1` with catalog startup passed FNV → Skyrim →
+FNV → Skyrim → FNV → another FNV profile → FNV. It checked distinct workspace
+IDs, independent two/three-panel layouts, bounds, tabs, selected tabs and native
+search values, with unchanged FNV mod/plugin state. Evidence:
+`/tmp/mo2-profile-workspaces.log`, `artifacts/profile-workspaces.png`.
+
+A separate regression run passed native profile navigation, sidebar launch
+selection, Home Back/Forward history and independent host comparisons for
+Skyrim's 151 mod rows and 150 plugins, returning to FNV. Evidence:
+`/tmp/mo2-profile-workspaces-regression.log` and
+`artifacts/profile-workspaces-regression.png`.
+
+This implements in-session restoration. Saving layouts across frontend restarts
+remains unfinished; the older untracked layout-storage prototype is not wired in.
+
+Health regressions also passed with the temporary original MO2 diagnostic
+extension: each profile retained its own health-list page; the FNV detail panel
+was absent from Skyrim's workspace and refreshed when returning to FNV.
+Resolved/recurring reports still cleared/restored in the native detail panel.
+Evidence: `/tmp/mo2-profile-workspaces-health.log` and
+`artifacts/profile-workspaces-health.png`. The fixture and marker were removed
+after both MO2 hosts exited.
