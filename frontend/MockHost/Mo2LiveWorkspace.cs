@@ -106,7 +106,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         _profilesPage = profiles.Data;
         var health = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82108", "Health Check", IconValues.Cardiology,
             () => new Mo2HealthPage(windows, this));
-        _healthDetailsFactory = new Mo2HealthDetailsFactory(windows);
+        _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
         services.Add(new PageFactoryController([health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
@@ -138,9 +138,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public void OpenConnections() => OpenHomePage(_connectionsPage);
     public void OpenProfiles() => OpenLoadouts(null);
     public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
-    public void OpenHealthDetails(NexusMods.Abstractions.Diagnostics.Diagnostic diagnostic, NavigationInformation info)
+    public void OpenHealthDetails(Mo2HealthDetailsContext context, NavigationInformation info)
     {
-        var page = new PageData { FactoryId = _healthDetailsFactory.Id, Context = new Mo2HealthDetailsContext(diagnostic) };
+        var page = new PageData { FactoryId = _healthDetailsFactory.Id, Context = context };
         WorkspaceController.OpenPage(_profileWorkspace, page, WorkspaceController.GetOpenPageBehavior(page, info));
     }
     public void ShowProfile()

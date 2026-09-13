@@ -178,3 +178,28 @@ Launcher checks passed (3), including direct executable arguments, spaced
 paths, working directory, Qt environment and frontend-host flag. Bridge contract
 checks passed (15). This run did not launch either game or retest intentional
 installer dialogs; existing gameplay evidence is recorded separately.
+
+## Diagnostic detail panel lifetime
+
+Health detail contexts now capture the originating MO2 endpoint and profile at
+entry creation, so a retained entry or navigation-history context cannot be
+reassigned to whichever game is selected later. Activated detail pages query
+MO2 again and refresh every ten seconds. They clear a resolved report, restore
+a recurring report, and suppress its contents during disconnection or selection
+of another profile. Ambiguous changed reports send the reader back to Health
+Check instead of choosing an arbitrary matching title.
+
+The NMA diagnostic page and panel remain native. Its body uses a selectable
+plain-text view for MO2 descriptions, preserving punctuation and filenames
+without Markdown parsing. The initial screenshot exposed literal backslashes
+from the previous escaping approach; direct text rendering removes those.
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_HEALTH_DETAILS=1` passed using a temporary
+original MO2 diagnostic extension in the isolated FNV host. The native entry
+opened a new panel; its visible details cleared and returned when the report
+was removed and restored. Actual profile-spine commands switched to Skyrim
+and back while the same detail panel remained visible. The final body matched
+its plain-text model and its screenshot was inspected. Evidence:
+`/tmp/mo2-health-details-profile.log`, `artifacts/health-details-profile.png`.
+The build passed with the existing upstream OpenTelemetry advisory. This proves
+detail-panel invalidation, not separate per-profile workspace/layout persistence.

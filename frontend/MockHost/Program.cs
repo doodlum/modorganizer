@@ -108,6 +108,7 @@ internal sealed class FixtureViewLocator : IViewLocator
             cardView.FindControl<DockPanel>("ActionsDock")!.Children.Insert(1, rename);
             return cardView;
         }
+        if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
@@ -167,6 +168,7 @@ public partial class MockApp : Application
                             await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + target.Name + " (" + entry.Registration.Directory + ")").Click.Execute();
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH") == "1") await VerifyHealth(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_DETAILS") == "1") await VerifyHealthDetails(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_MODS") == "1") await VerifyNativeMods(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_REORDER_GUARDS") == "1") await VerifyReorderGuards(live);
@@ -607,6 +609,43 @@ public partial class MockApp : Application
         var priorities = live.ModsPage.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
         if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Default mod rows do not follow MO2 priority");
         Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite restrictions and Rules tab use MO2 state; original state restored");
+    }
+
+    private static async Task VerifyHealthDetails(Mo2LiveWorkspace live, Window window)
+    {
+        const string marker = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host/plugins/data/frontend-health-fixture-active";
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/") || !File.Exists(marker))
+            throw new InvalidOperationException("Health details check requires the isolated diagnostic fixture");
+        await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>()
+            .Any(x => x.ViewModel?.Title == "Frontend diagnostic verification"), "Diagnostic fixture did not render");
+        var entry = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>()
+            .Single(x => x.ViewModel?.Title == "Frontend diagnostic verification");
+        var button = entry.FindControl<NavigationControl>("EntryButton")!;
+        button.Command!.Execute(NavigationInformation.From(OpenPageBehaviorType.NewPanel));
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(), "Details panel did not open");
+        var details = (Mo2HealthDetails)window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Single().ViewModel!;
+        await WaitFor(() => details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("original MO2 diagnostic extension"), "Details did not read the live MO2 report");
+        try {
+            File.Delete(marker);
+            await WaitFor(() => details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("no longer reports"), "Open details retained a resolved diagnostic", seconds: 30);
+        } finally { File.WriteAllText(marker, ""); }
+        await WaitFor(() => details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("original MO2 diagnostic extension"), "Open details did not restore the current report", seconds: 30);
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        foreach (var directory in new[] { "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" }) {
+            var catalog = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
+            var target = catalog.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
+            await spine.LoadoutSpineItems.Single(x => x.Name == catalog.Instance.Game + " — " + target.Name + " (" + directory + ")").Click.Execute();
+            var source = directory.EndsWith("mo2-fnv-host");
+            await WaitFor(() => Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == target.Directory &&
+                (source ? details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("original MO2 diagnostic extension") :
+                    !details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("another or disconnected MO2 profile")),
+                "Diagnostic details did not respect its source profile", seconds: 110);
+            if (!window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(x => ReferenceEquals(x.ViewModel, details)))
+                throw new InvalidOperationException("Details profile test lost the visible panel");
+        }
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DiagnosticTextView>().Any(x => x.Text.Text == details.MarkdownRendererViewModel.Contents), "Native diagnostic body did not render its plain text");
+        Console.WriteLine("PASS: visible native details panel clears resolved diagnostics, restores recurring reports, hides FNV details in Skyrim and refreshes on return through profile spine");
     }
 
     private static async Task VerifyHealth(Mo2LiveWorkspace live, Window window)

@@ -97,29 +97,78 @@ internal sealed class Mo2HealthEntry : AViewModel<IDiagnosticEntryViewModel>, ID
         Summary = details;
         Diagnostic = new Diagnostic { Id = new DiagnosticId("MO2", 1), Title = title, Severity = severity,
             Summary = DiagnosticMessage.From(details), Details = DiagnosticMessage.From(details), DataReferences = [] };
+        var context = new Mo2HealthDetailsContext(Diagnostic, shell.Profile.Endpoint, shell.Profile.ProfilePath);
         SeeDetailsCommand = ReactiveCommand.Create<NavigationInformation, (Diagnostic, NavigationInformation)>(info => {
-            shell.OpenHealthDetails(Diagnostic, info); return (Diagnostic, info);
+            shell.OpenHealthDetails(context, info); return (Diagnostic, info);
         });
     }
 }
-internal sealed record Mo2HealthDetailsContext(Diagnostic Diagnostic) : IPageFactoryContext;
-internal sealed class Mo2HealthDetailsFactory(IWindowManager windows) : IPageFactory
+internal sealed record Mo2HealthDetailsContext(Diagnostic Diagnostic, string Endpoint, string ProfilePath) : IPageFactoryContext;
+internal sealed class Mo2HealthDetailsFactory(IWindowManager windows, Mo2LiveWorkspace shell) : IPageFactory
 {
     public PageFactoryId Id { get; } = PageFactoryId.From(Guid.Parse("bcde2778-955d-4b57-a14e-85a878b82109"));
     public DynamicData.Kernel.Optional<OpenPageBehaviorType> DefaultOpenPageBehavior => default;
     public Page Create(IPageFactoryContext context) => new() { PageData = new() { FactoryId = Id, Context = context },
-        ViewModel = new Mo2HealthDetails(windows, ((Mo2HealthDetailsContext)context).Diagnostic) };
+        ViewModel = new Mo2HealthDetails(windows, shell.Profile, (Mo2HealthDetailsContext)context) };
     public IEnumerable<PageDiscoveryDetails?> GetDiscoveryDetails(IWorkspaceContext context) => [];
 }
 internal sealed class Mo2HealthDetails : APageViewModel<IDiagnosticDetailsViewModel>, IDiagnosticDetailsViewModel
 {
     public DiagnosticSeverity Severity { get; }
     public IMarkdownRendererViewModel MarkdownRendererViewModel { get; }
-    public Mo2HealthDetails(IWindowManager windows, Diagnostic diagnostic) : base(windows)
+    private readonly Mo2LiveProfile _profile;
+    private readonly Mo2HealthDetailsContext _context;
+    private bool _refreshing;
+    public bool HasResult { get; private set; }
+    private bool IsSourceProfile => _profile.IsConnected && !_profile.SelectingProfile &&
+        _profile.Endpoint == _context.Endpoint && _profile.ProfilePath == _context.ProfilePath;
+
+    public Mo2HealthDetails(IWindowManager windows, Mo2LiveProfile profile, Mo2HealthDetailsContext context) : base(windows)
     {
-        TabTitle = diagnostic.Title; TabIcon = IconValues.Cardiology; Severity = diagnostic.Severity;
-        // MO2 descriptions are plain text, not executable Markdown or remote image references.
-        var escaped = System.Text.RegularExpressions.Regex.Replace(diagnostic.Details.Value, @"([\\`*_{}\[\]<>()#+.!|~-])", @"\$1");
-        MarkdownRendererViewModel = new MarkdownRendererViewModel { Contents = escaped };
+        _profile = profile; _context = context;
+        TabTitle = context.Diagnostic.Title; TabIcon = IconValues.Cardiology; Severity = context.Diagnostic.Severity;
+        MarkdownRendererViewModel = new Mo2DiagnosticText();
+        Set("Checking this diagnostic with MO2.");
+        this.WhenActivated(d => {
+            void Changed() {
+                if (!IsSourceProfile) ShowUnavailable();
+                _ = Refresh();
+            }
+            profile.Changed += Changed;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            timer.Tick += (_, _) => _ = Refresh(); timer.Start();
+            Disposable.Create(() => { timer.Stop(); profile.Changed -= Changed; }).DisposeWith(d);
+            Changed();
+        });
+    }
+    private void Set(string text)
+    {
+        MarkdownRendererViewModel.Contents = text;
+    }
+    private void ShowUnavailable()
+    {
+        HasResult = false;
+        Set("This diagnostic belongs to another or disconnected MO2 profile. Select its original profile to check it again.");
+    }
+    public async Task Refresh()
+    {
+        if (!IsSourceProfile) { ShowUnavailable(); return; }
+        if (_refreshing) return;
+        _refreshing = true;
+        try {
+            var reports = await _profile.ReadHealth();
+            if (!IsSourceProfile) { ShowUnavailable(); return; }
+            var matches = reports.Where(x => x.Title == _context.Diagnostic.Title).ToArray();
+            var exact = matches.Where(x => x.Details == _context.Diagnostic.Details.Value).ToArray();
+            if (exact.Length > 0) Set(exact[0].Details);
+            else if (matches.Length == 1) Set(matches[0].Details);
+            else Set(matches.Length == 0 ? "MO2 no longer reports this diagnostic. Open Health Check for the current reports." :
+                "This diagnostic has changed. Open Health Check to select the current report.");
+            HasResult = true;
+        } catch (Exception error) {
+            HasResult = false;
+            if (!IsSourceProfile) ShowUnavailable();
+            else Set("Health check unavailable: " + error.Message);
+        } finally { _refreshing = false; }
     }
 }
