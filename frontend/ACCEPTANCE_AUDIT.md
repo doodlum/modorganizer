@@ -85,3 +85,19 @@ restored the profile INIs; see the extension compatibility and FNV records. The
 subsequent extension-rule and final page checks close the two remaining audit
 items. No requested local integration work remains in this audit; the coverage
 limits above are not claims of additional completed tests.
+
+
+## September 13 UI follow-up
+
+Added Overwrite and live Logs game panels, native tool icons and pinned footer
+shortcuts; separated Home/game page choices and fixed the disabled-workspace
+input path. Mods/Plugins game icons share proportional foregrounds with blurred
+rectangular backgrounds. The sidebar/panel label is now Mods. The NMA top bar,
+Home logo and Downloads icon are retained without a second window title bar.
+
+The real-pointer check passed for panel selection/highlighting, plugin toggle
+and restoration, game-scoped Profiles, tool pins, Logs and Overwrite navigation.
+It also passed stopped-host detection and FNV/Skyrim switching. Original native
+Overwrite create/move/clear prompts were cancelled without changing the isolated
+marker; sync and complete destructive outcomes are not claimed as tested.
+See the final section of NMA_FIDELITY.md for evidence and coverage details.

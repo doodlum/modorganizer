@@ -492,3 +492,54 @@ Logs: `/tmp/mo2-health-restart-write.log` and
 `/tmp/mo2-health-restart-read.log`. Build passed. The installed fixture and marker
 were removed after stopping the host; `modlist.txt`, `plugins.txt` and
 `loadorder.txt` retained their original hashes across the full check.
+
+
+## Overwrite, Logs, navigation and icon follow-up
+
+The game workspace has Mods, Plugins and Overwrite under Installed, with Tools,
+Health Check and Logs under Utilities. Home-only page choices are excluded from
+game workspaces; restored Home pages in a game layout are replaced with that
+game's Profiles page. Profiles labels omit internal instance folder names.
+Connections replaces the old MO2 instances heading. The native NMA top bar is
+retained without a second OS title bar; Home uses the NMA logo and Downloads uses
+the download-arrow icon.
+
+Opening an MO2 dialog no longer disables frontend panel/tab navigation. A stopped
+native host is detected while awaiting a bridge response, releasing the busy
+state instead of waiting for the full dialog timeout. Unknown command outcomes
+remain explicit and are never automatically retried.
+
+Overwrite lists generated paths/sizes through MO2's overwritePath API. Create,
+move, sync and clear invoke the original MO2 context-menu actions, retaining
+native prompts and conflict handling. Open files invokes MO2's existing Overwrite
+dialog. These actions cover the whole folder, as stated in the page. Listing does
+not follow symlinks or read file contents. The original Create Mod, Move to Mod and Clear Overwrite prompts were
+opened and cancelled with an isolated marker; the marker was retained and then
+removed by each check. This is prompt/routing verification, not a claim that all
+move, sync and clear outcomes were exercised.
+
+Logs displays the native instance's log files with live tailing, file selection,
+severity and text filters. It bounds reads to 256 KiB / 2,000 lines and hides
+account headers and URL query strings. Logs remain inside the game workspace.
+
+Tools use the original executable and extension QAction icons. Pinned tools also
+appear directly above the native Play button and retain the MO2 launch route.
+Base-game/DLC thumbnails use the installed game's icon in both lists, with a
+complete proportional foreground over a blurred fill. Both use the same cached
+46×26 composition; the foreground is not cropped or stretched. The panel and
+sidebar use the label Mods.
+
+`MO2_VERIFY_WORKSPACE_INPUT=1` exercises actual pointer selection/navigation and
+plugin activation with restoration, scoped Profiles, tool pins, Overwrite and
+Logs discovery, stopped-host detection and FNV/Skyrim switching. It requires the
+existing isolated FNV test profiles and the pointer helper under artifacts.
+`tools/check_bridge.py` now includes a generated-file symlink boundary test.
+
+The full pointer check passed on 2026-09-13, including Logs discovery, stopped-host
+detection, separated page choices and FNV → Skyrim → FNV switching. Plugin state,
+original profile selection and existing tool-pin preferences were restored.
+Evidence: `/tmp/mo2-workspace-input-check.log`,
+`artifacts/workspace-input-check.png`, and the three
+`/tmp/mo2-overwrite-*-check.log` prompt checks. Build passed; 19 bridge contracts,
+3 download contracts and the profile reader check passed. The pinned upstream
+source remains unchanged.

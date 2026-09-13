@@ -14,7 +14,7 @@ using System.Text.Json;
 
 namespace Mo2.Frontend;
 
-internal sealed record Mo2Tool(string[] Id, string Name, string Group, string Description, bool Enabled);
+internal sealed record Mo2Tool(string[] Id, string Name, string Group, string Description, bool Enabled, string Icon = "");
 internal interface IMo2ToolsPage : IPageViewModelInterface { }
 internal sealed class Mo2ToolsPage : APageViewModel<IMo2ToolsPage>, IMo2ToolsPage
 {
@@ -34,7 +34,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
     private bool _loading;
     private string _executablesKey = "";
     private readonly List<string> _pins = [];
-    private string PinsPath => Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mo2-nexus-frontend", "tool-pins.json");
+    private string PinsPath => Mo2ToolPins.Path;
     public Mo2ToolsView()
     {
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
@@ -57,7 +57,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         };
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
-            try { _pins.Clear(); if (File.Exists(PinsPath)) _pins.AddRange(JsonSerializer.Deserialize<string[]>(File.ReadAllText(PinsPath)) ?? []); }
+            try { _pins.Clear(); _pins.AddRange(Mo2ToolPins.Read()); }
             catch { _status.Text = "Saved tool pins could not be read."; }
             void Changed() {
                 manage.IsEnabled = model.Profile.CanChangeOriginalUi;
@@ -68,6 +68,9 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
             }
             model.Profile.Changed += Changed;
             Disposable.Create(() => model.Profile.Changed -= Changed).DisposeWith(d);
+            void PinsChanged() { _pins.Clear(); _pins.AddRange(Mo2ToolPins.Read()); Render(); }
+            Mo2ToolPins.Changed += PinsChanged;
+            Disposable.Create(() => Mo2ToolPins.Changed -= PinsChanged).DisposeWith(d);
             _ = Refresh(); Changed();
         });
     }
@@ -87,8 +90,8 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         var profile = model.Profile; var target = profile.CurrentTarget;
         _executablesKey = string.Join("|", profile.Executables.Prepend(profile.SelectedExecutable));
         if (target != _target || !profile.IsConnected) return;
-        var all = profile.Executables.Select(name => (Key: "exe:" + name, Name: name, Description: "Launch with this profile’s mods", Enabled: true, Run: (Func<Task>)(() => profile.CurrentTarget == target ? profile.Launch(name) : Task.CompletedTask)))
-            .Concat(_tools.Select(tool => (Key: "tool:" + JsonSerializer.Serialize(tool.Id), Name: tool.Name, Description: tool.Description.Length > 0 ? tool.Description : tool.Group.Length > 0 ? tool.Group : "MO2 extension tool", Enabled: tool.Enabled, Run: (Func<Task>)(() => profile.RunTool(tool, target))))).ToArray();
+        var all = profile.Executables.Select(name => (Key: "exe:" + name, Name: name, Description: "Launch with this profile’s mods", Enabled: true, Icon: profile.ExecutableIcons.GetValueOrDefault(name) ?? "", Run: (Func<Task>)(() => profile.CurrentTarget == target ? profile.Launch(name) : Task.CompletedTask)))
+            .Concat(_tools.Select(tool => (Key: "tool:" + JsonSerializer.Serialize(tool.Id), Name: tool.Name, Description: tool.Description.Length > 0 ? tool.Description : tool.Group.Length > 0 ? tool.Group : "MO2 extension tool", Enabled: tool.Enabled, Icon: tool.Icon, Run: (Func<Task>)(() => profile.RunTool(tool, target))))).ToArray();
         string PinKey(string key) => target.Endpoint + "|" + key;
         var selected = "exe:" + profile.SelectedExecutable;
         var sections = new[] { "Default launcher", "Pinned tools", "Tools" };
@@ -100,7 +103,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
             _rows.Children.Add(new TextBlock { Text = section, Opacity = .65, Margin = new Thickness(0,14,0,2) });
             foreach (var entry in items) {
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*,Auto,Auto,Auto"), MinHeight = 52, Margin = new Thickness(8,4) };
-                row.Children.Add(new TextBlock { Text = entry.Name[..1], FontSize = 20, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
+                row.Children.Add(Mo2ToolIcons.Create(entry.Icon, 32));
                 var label = new TextBlock { Text = entry.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8,0) };
                 ToolTip.SetTip(label, entry.Name + "\n" + entry.Description); Grid.SetColumn(label,1); row.Children.Add(label);
                 if (section == "Pinned tools") {
@@ -118,5 +121,5 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
             }
         }
     }
-    private void SavePins() { try { Directory.CreateDirectory(Path.GetDirectoryName(PinsPath)!); File.WriteAllText(PinsPath, JsonSerializer.Serialize(_pins)); } catch (Exception error) { _status.Text = "Could not save tool pins: " + error.Message; } }
+    private void SavePins() { try { Directory.CreateDirectory(Path.GetDirectoryName(PinsPath)!); Mo2ToolPins.Save(_pins); } catch (Exception error) { _status.Text = "Could not save tool pins: " + error.Message; } }
 }

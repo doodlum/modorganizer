@@ -18,7 +18,7 @@ internal sealed class Mo2ProfilesPage : APageViewModel<IMo2ProfilesPage>, IMo2Pr
     public Mo2LiveProfile Profile { get; }
     public Action ShowProfile { get; }
     public Mo2ProfilesPage(IWindowManager windows, Mo2InstanceCatalog catalog, Mo2LiveProfile profile, Action showProfile) : base(windows)
-    { Catalog = catalog; Profile = profile; ShowProfile = showProfile; TabTitle = "MO2 instances"; TabIcon = IconValues.Package; }
+    { Catalog = catalog; Profile = profile; ShowProfile = showProfile; TabTitle = "Connections"; TabIcon = IconValues.Package; }
 }
 
 internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
@@ -27,7 +27,7 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
     {
         var layout = new DockPanel { Margin = new Thickness(16) };
         var header = new StackPanel { Spacing = 10 };
-        header.Children.Add(new TextBlock { Text = "MO2 instances", FontSize = 22 });
+        header.Children.Add(new TextBlock { Text = "Connections", FontSize = 22 });
         header.Children.Add(new TextBlock { Text = "MO2 profiles across your game instances", TextWrapping = TextWrapping.Wrap });
         var actions = new WrapPanel();
         var add = new Button { Content = "Add MO2 instance…", Margin = new Thickness(0, 0, 8, 8) };

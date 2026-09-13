@@ -60,6 +60,21 @@ internal sealed class Mo2GameCard : AViewModel<IGameWidgetViewModel>, IGameWidge
 }
 internal static class Mo2GameArt
 {
+    private static readonly Dictionary<string,Bitmap> Thumbnails = new();
+    public static Bitmap Thumbnail(string game) {
+        if (Thumbnails.TryGetValue(game,out var ready)) return ready;
+        using var icon = Icon(game);
+        // Match NMA's 46×26 thumbnail rectangle. Only the blurred background
+        // fills/crops; the foreground always retains the complete square icon.
+        var grid = new Avalonia.Controls.Grid { Width = 184, Height = 104, ClipToBounds = true,
+            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#38383A")) };
+        grid.Children.Add(new Avalonia.Controls.Image { Source = icon, Stretch = Avalonia.Media.Stretch.UniformToFill,
+            Effect = new Avalonia.Media.BlurEffect { Radius = 16 } });
+        grid.Children.Add(new Avalonia.Controls.Image { Source = icon, Stretch = Avalonia.Media.Stretch.Uniform });
+        grid.Measure(new Avalonia.Size(184,104)); grid.Arrange(new Avalonia.Rect(0,0,184,104));
+        var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new Avalonia.PixelSize(184,104)); bitmap.Render(grid);
+        return Thumbnails[game] = bitmap;
+    }
     public static Bitmap Icon(string game)
     {
         var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830"
@@ -82,10 +97,11 @@ internal static class Mo2GameArt
 }
 internal sealed class Mo2LoadoutsPage : APageViewModel<IMyLoadoutsViewModel>, IMyLoadoutsViewModel
 {
+    public string? Game { get; }
     public ReadOnlyObservableCollection<IGameLoadoutsSectionEntryViewModel> GameSectionViewModels { get; }
     public Mo2LoadoutsPage(IWindowManager windows, Mo2LiveWorkspace shell, string? game) : base(windows)
     {
-        TabTitle = "My Loadouts"; TabIcon = IconValues.Package;
+        Game = game; TabTitle = game is null ? "My Loadouts" : "Profiles"; TabIcon = IconValues.Package;
         var sections = new ObservableCollection<IGameLoadoutsSectionEntryViewModel>();
         GameSectionViewModels = new(sections);
         void Refresh() {
@@ -107,7 +123,7 @@ internal sealed class Mo2LoadoutsSection : AViewModel<IGameLoadoutsSectionEntryV
     public ReadOnlyObservableCollection<IViewModelInterface> CardViewModels { get; }
     public Mo2LoadoutsSection(Mo2LiveWorkspace shell, string game, IEnumerable<Mo2CatalogEntry> entries)
     {
-        HeadingText = game + " Loadouts";
+        HeadingText = game + " profiles";
         CardViewModels = new(new ObservableCollection<IViewModelInterface>(entries.SelectMany(entry =>
             (entry.Instance!.Profiles.Length > 0 ? new IViewModelInterface[] { new Mo2CreateProfileCard(shell, entry) } : [])
                 .Concat(entry.Instance.Profiles.Select((profile, index) => new Mo2LoadoutCard(shell, entry, profile, index + 1))))));
@@ -116,12 +132,12 @@ internal sealed class Mo2LoadoutsSection : AViewModel<IGameLoadoutsSectionEntryV
 internal sealed class Mo2CreateProfileCard : AViewModel<ICreateNewLoadoutCardViewModel>, ICreateNewLoadoutCardViewModel
 {
     public Mo2Registration Registration { get; }
-    public string InstanceLabel => Path.GetFileName(Registration.Directory) == "modorganizer2"
-        ? Path.GetFileName(Path.GetDirectoryName(Registration.Directory)) ?? "MO2" : Path.GetFileName(Registration.Directory);
+    public string InstanceLabel { get; }
     public ReactiveCommand<Unit, Unit> AddLoadoutCommand { get; }
     public Mo2CreateProfileCard(Mo2LiveWorkspace shell, Mo2CatalogEntry entry)
     {
         Registration = entry.Registration;
+        InstanceLabel = Mo2ProfileLabels.Instance(shell, entry);
         var target = entry.Instance!.Profiles.FirstOrDefault(x => x.Name == entry.Instance.SelectedProfile) ?? entry.Instance.Profiles.First();
         AddLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, target, "create"));
     }
@@ -135,8 +151,7 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
     public IImage LoadoutImage { get; }
     public bool IsLoadoutApplied => false;
     public string HumanizedLoadoutLastApplyTime => "";
-    public string HumanizedLoadoutCreationTime => Path.GetFileName(Registration.Directory) == "modorganizer2"
-        ? Path.GetFileName(Path.GetDirectoryName(Registration.Directory)) ?? "MO2" : Path.GetFileName(Registration.Directory);
+    public string HumanizedLoadoutCreationTime { get; }
     public string LoadoutModCount => $"Mods {Profile.ModEntries.Count(x => x.Enabled)} enabled / {Profile.ModEntries.Length}";
     public bool IsDeleting => false;
     public bool IsSkeleton => false;
@@ -148,6 +163,7 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
     public Mo2LoadoutCard(Mo2LiveWorkspace shell, Mo2CatalogEntry entry, Mo2ProfileSnapshot profile, int number)
     {
         Registration = entry.Registration; Profile = profile;
+        HumanizedLoadoutCreationTime = Mo2ProfileLabels.Instance(shell, entry);
         IsLastLoadout = entry.Instance!.Profiles.Length <= 1;
         RenameProfileCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "rename"),
             Observable.Return(entry.Instance.SelectedProfile != profile.Name));
@@ -172,5 +188,19 @@ internal sealed class Mo2GameLoadoutsFactory(IWindowManager windows, Mo2LiveWork
         ViewModel = new Mo2LoadoutsPage(windows, shell, ((Mo2GamePageContext)context).Game),
         PageData = new PageData { FactoryId = Id, Context = context }
     };
-    public IEnumerable<PageDiscoveryDetails?> GetDiscoveryDetails(IWorkspaceContext context) => [];
+    public IEnumerable<PageDiscoveryDetails?> GetDiscoveryDetails(IWorkspaceContext context) {
+        if (context is not Mo2WorkspaceContext gameContext) yield break;
+        var game = shell.CatalogEntries.FirstOrDefault(x => x.Registration.Endpoint == gameContext.Endpoint)?.Instance?.Game;
+        if (game is not null) yield return new PageDiscoveryDetails { SectionName = "Game", ItemName = "Profiles", Icon = IconValues.Package,
+            PageData = Data with { Context = new Mo2GamePageContext(Id,game) } };
+    }
+}
+
+internal static class Mo2ProfileLabels
+{
+    public static string Instance(Mo2LiveWorkspace shell, Mo2CatalogEntry entry)
+    {
+        var entries = shell.CatalogEntries.Where(x => x.Instance?.Game == entry.Instance?.Game).ToArray();
+        return entries.Length == 1 ? "" : "Instance " + (Array.FindIndex(entries, x => x.Registration == entry.Registration) + 1);
+    }
 }

@@ -40,6 +40,7 @@ class Bridge:
         mods = organizer.modList()
         plugins = organizer.pluginList()
         return {
+            'executableIcons': self.executables.icons() if self.executables is not None else {},
             'selectedExecutable': self.executables.selector().currentText() if self.executables is not None else '',
             'executables': self.executables.snapshot() if self.executables is not None else [],
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
@@ -83,6 +84,11 @@ class Bridge:
             if self.mod_actions is None:
                 raise ValueError('MO2 tools are unavailable')
             return self.mod_actions.list_tools() if action == 'listTools' else self.mod_actions.run_tool(request.get('tool'))
+        if action in ('readOverwrite', 'overwriteAction'):
+            if self.mod_actions is None: raise ValueError('MO2 Overwrite is unavailable')
+            from .overwrite import Overwrite
+            overwrite = Overwrite(self.organizer, self.mod_actions.window)
+            return overwrite.read() if action == 'readOverwrite' else overwrite.action(request.get('operation'))
         if action == 'healthCheck':
             if self.mod_actions is None:
                 raise ValueError('MO2 health checks are unavailable')

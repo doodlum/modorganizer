@@ -24,6 +24,7 @@ internal sealed class ScenarioPlugin : ReactiveObject, IReactiveSortItem
     public bool CanMove { get; init; } = true;
     public string Diagnostics { get; init; } = "";
     public bool HasWarning { get; init; }
+    public string GameArt { get; init; } = "";
     public string ModIndex { get; init; } = "";
     public ISortItemLoadoutData? LoadoutData { get; set; }
     public ScenarioPlugin(string name, string mod, int index, params string[] masters)

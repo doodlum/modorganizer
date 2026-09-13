@@ -35,6 +35,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
     public bool ManagingMod { get; private set; }
+    public IReadOnlyDictionary<string,string> ExecutableIcons { get; private set; } = new Dictionary<string,string>();
+    public IReadOnlyList<Mo2Tool> Tools { get; private set; } = [];
     public string SelectedExecutable { get; private set; } = "";
     public IReadOnlyList<string> Executables { get; private set; } = [];
     public string ProfilePath { get; private set; } = "";
@@ -68,6 +70,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var raw = snapshot.GetRawText();
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
+        ExecutableIcons = snapshot.TryGetProperty("executableIcons", out var icons) ? icons.EnumerateObject().ToDictionary(x => x.Name,x => x.Value.GetString() ?? "") : new Dictionary<string,string>();
         SelectedExecutable = snapshot.TryGetProperty("selectedExecutable", out var selectedExecutable) ? selectedExecutable.GetString() ?? "" : "";
         Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
         LogsDirectory = snapshot.GetProperty("instance").TryGetProperty("logsPath", out var logs) && logs.GetString() is { } logsPath ? Mo2InstanceCatalog.LocalPath(logsPath) : null;
@@ -99,6 +102,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         Order.Replace(snapshot.GetProperty("plugins").EnumerateArray().Select(plugin => new ScenarioPlugin(
             plugin.GetProperty("name").GetString()!, plugin.GetProperty("origin").GetString()!, plugin.GetProperty("priority").GetInt32(),
             plugin.GetProperty("masters").EnumerateArray().Select(x => x.GetString()!).ToArray()) {
+                GameArt = plugin.GetProperty("origin").GetString() is { } origin && (origin == "data" || origin.StartsWith("DLC:")) ? GameName : "",
                 IsActive = plugin.GetProperty("state").GetInt32() == 2,
                 HasWarning = plugin.TryGetProperty("hasWarning", out var warning) && warning.GetBoolean(),
                 CanToggle = !plugin.TryGetProperty("canToggle", out var toggle) || toggle.GetBoolean(),
@@ -136,10 +140,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to view tools.");
             var result = await Client.SendAsync("listTools", new() { ["profilePath"] = target.ProfilePath });
-            return result.GetProperty("tools").EnumerateArray().Select(x => new Mo2Tool(
+            var tools = result.GetProperty("tools").EnumerateArray().Select(x => new Mo2Tool(
                 x.GetProperty("id").EnumerateArray().Select(y => y.GetString()!).ToArray(),
                 x.GetProperty("name").GetString()!, x.GetProperty("group").GetString()!,
-                x.GetProperty("description").GetString()!, x.GetProperty("enabled").GetBoolean())).ToArray();
+                x.GetProperty("description").GetString()!, x.GetProperty("enabled").GetBoolean(), x.TryGetProperty("icon", out var icon) ? icon.GetString() ?? "" : "")).ToArray();
+            Tools = tools; Changed?.Invoke(); return tools;
         } finally { _commands.Release(); }
     }
     public async Task RunTool(Mo2Tool tool, Mo2ProfileTarget target, bool manageExecutables = false)
@@ -150,6 +155,27 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("The profile changed. Refresh Tools before opening a tool.");
             await Client.SendAsync(manageExecutables ? "manageExecutables" : "runTool", new() { ["profilePath"] = target.ProfilePath, ["tool"] = tool.Id }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    public async Task<Mo2OverwriteFile[]> ReadOverwrite(Mo2ProfileTarget target)
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to view Overwrite.");
+            var result = await Client.SendAsync("readOverwrite", new() { ["profilePath"] = target.ProfilePath });
+            return result.GetProperty("files").EnumerateArray().Select(x => new Mo2OverwriteFile(x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64())).ToArray();
+        } finally { _commands.Release(); }
+    }
+    public async Task OverwriteAction(string operation, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction) return;
+        ManagingMod = true; Status = "Opening MO2 Overwrite action…"; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("The profile changed. Reopen Overwrite before continuing.");
+            await Client.SendAsync("overwriteAction", new() { ["profilePath"] = target.ProfilePath, ["operation"] = operation }, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
@@ -232,6 +258,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 snapshot = await client.SendAsync("selectProfile", new() { ["profilePath"] = current.GetProperty("path").GetString(), ["name"] = selected.Name }, timeout: TimeSpan.FromMinutes(2));
             if (Mo2InstanceCatalog.LocalPath(snapshot.GetProperty("profile").GetProperty("path").GetString()!) != Path.GetFullPath(selected.Directory))
                 throw new InvalidOperationException("MO2 did not finish selecting the requested profile");
+            if (Endpoint != registration.Endpoint) Tools = [];
             _client = client; Endpoint = registration.Endpoint;
             _lastSnapshot = null; Apply(snapshot);
             return true;

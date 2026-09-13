@@ -107,8 +107,9 @@ internal sealed class FixtureViewLocator : IViewLocator
         }
         if (viewModel is Mo2LoadoutsPage loadouts) {
             var loadoutsView = new MyLoadoutsView { ViewModel = loadouts };
-            loadoutsView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single().Description =
-                "Your MO2 profiles across all games. Select a profile to manage its mods and plugin load order.";
+            var profileHeader = loadoutsView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single();
+            profileHeader.Title = loadouts.Game is null ? "My Loadouts" : "Profiles";
+            profileHeader.Description = loadouts.Game is null ? "Your MO2 profiles across all games." : "Profiles for " + loadouts.Game + ".";
             var emptyLoadouts = loadoutsView.FindControl<EmptyState>("MyLoadoutsEmptyState")!;
             emptyLoadouts.Header = "No MO2 profiles found";
             emptyLoadouts.Subtitle = "Add an MO2 instance from Settings to see its profiles here.";
@@ -118,7 +119,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (viewModel is Mo2CreateProfileCard create) {
             var createView = new NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView { ViewModel = create };
             var text = createView.FindControl<TextBlock>("CreateNewLoadoutTextBlock")!;
-            text.Text = "Create new loadout\n" + create.InstanceLabel;
+            text.Text = "Create profile" + (create.InstanceLabel.Length > 0 ? "\n" + create.InstanceLabel : "");
             text.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
             ToolTip.SetTip(createView, "Create an MO2 profile in " + create.Registration.Directory);
             return createView;
@@ -134,6 +135,8 @@ internal sealed class FixtureViewLocator : IViewLocator
         }
         if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
+        if (viewModel is Mo2LogsPage logs) return new Mo2LogsView { ViewModel = logs };
+        if (viewModel is Mo2OverwritePage overwrite) return new Mo2OverwriteView { ViewModel = overwrite };
         if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
@@ -144,6 +147,10 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (viewType is null) throw new InvalidOperationException($"No upstream view for {vm.ViewModelInterface}");
         var view = (IViewFor)Activator.CreateInstance(viewType)!;
         if (view is IViewContract vc && contract is not null) vc.ViewContract = contract;
+        if (view is NexusMods.App.UI.Controls.Spine.Buttons.Icon.IconButton homeIcon && contract == "Home")
+            homeIcon.AttachedToVisualTree += (_,_) => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                foreach (var icon in homeIcon.GetVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>()) icon.Value = NexusMods.UI.Sdk.Icons.IconValues.NexusColor;
+            });
         return view;
     }
 }
@@ -169,6 +176,7 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_INPUT") == "1") await VerifyWorkspaceInput(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI") == "1") await VerifyNewUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_FINAL_PAGES") == "1") await VerifyFinalPages(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
@@ -564,6 +572,107 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyWorkspaceInput(Mo2LiveWorkspace live, Window window)
+    {
+        var entry = live.Catalog.Read().Single(x => x.Registration.Endpoint == live.Profile.Endpoint);
+        var original = entry.Instance!.Profiles.Single(x => Path.GetFullPath(x.Directory) == Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath));
+        var test = entry.Instance.Profiles.Single(x => x.Name == "Frontend Test");
+        try {
+        if (!await live.Profile.SelectProfile(entry.Registration,test)) throw new Exception(live.Profile.Status);
+        await Task.Delay(1500);
+        async Task Click(Control control) {
+            window.Activate();
+            var point = control.PointToScreen(new Point(Math.Min(control.Bounds.Width / 2,70),control.Bounds.Height / 2));
+            var start = new System.Diagnostics.ProcessStartInfo("python3") { UseShellExecute = false };
+            start.ArgumentList.Add("/home/deck/mo2/frontend/artifacts/pointer-check.py"); start.ArgumentList.Add(point.X.ToString()); start.ArgumentList.Add(point.Y.ToString());
+            using var process = System.Diagnostics.Process.Start(start)!; await process.WaitForExitAsync();
+            if (process.ExitCode != 0) throw new Exception("Pointer helper failed");
+        }
+        async Task Sidebar(string name) {
+            var item = window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView>()
+                .Single(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == name));
+            await Click(item);
+        }
+        await Sidebar("Mods");
+        var modsView = window.GetVisualDescendants().OfType<Mo2ModsView>().First();
+        await Click(modsView.NativeView.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == "Mods"));
+        if (!modsView.GetVisualAncestors().OfType<PanelView>().Single().ViewModel!.IsSelected) throw new Exception("Mouse did not focus Mods panel");
+        await Sidebar("Plugins");
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>().Any(), "Plugins sidebar click did not open Plugins");
+        var view = window.GetVisualDescendants().OfType<Mo2PluginsView>().First();
+        var plugin = live.Profile.Order.Plugins.First(x => x.CanToggle && x.IsActive && x.DisplayName.EndsWith(".esp",StringComparison.OrdinalIgnoreCase));
+        var table = view.GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        await Task.Delay(300);
+        foreach (var pluginScroll in table.GetVisualDescendants().OfType<ScrollViewer>())
+            pluginScroll.Offset = new Vector(0,pluginScroll.Extent.Height);
+        await WaitFor(() => table.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == plugin.DisplayName), "Plugin row not rendered");
+        var pluginLabel = table.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == plugin.DisplayName);
+        pluginLabel.BringIntoView(); await Task.Delay(250);
+        await Click(pluginLabel);
+        await WaitFor(() => view.ViewModel!.Adapter.SelectedModels.Any(x => x.Key.Equals(plugin.Key)), "Pointer plugin selection failed");
+        if (!view.GetVisualAncestors().OfType<PanelView>().Single().ViewModel!.IsSelected) throw new Exception("Plugin panel did not highlight");
+        try {
+            await Click(view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins"));
+            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin disable click failed");
+            await Click(view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "EnableSelectedPlugins"));
+            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin enable click failed");
+        } finally { await live.Profile.SetPluginsActive([plugin.DisplayName],true); }
+        await Sidebar("Profiles");
+        await WaitFor(() => window.GetVisualDescendants().OfType<MyLoadoutsView>().Any(), "Profiles click failed");
+        var profiles = window.GetVisualDescendants().OfType<MyLoadoutsView>().First().ViewModel as Mo2LoadoutsPage;
+        if (profiles?.Game is null || profiles.GameSectionViewModels.Count != 1) throw new Exception("Game Profiles is not scoped to one game");
+        await Sidebar("Tools");
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ToolsView>().Any(), "Tools click failed");
+        await Task.Delay(1200);
+        if (!live.Profile.ExecutableIcons.Values.Any(x => x.Length > 0)) throw new Exception("MO2 executable icons missing");
+        var toolsView = window.GetVisualDescendants().OfType<Mo2ToolsView>().First();
+        var pinFile = Mo2ToolPins.Path; var existed = File.Exists(pinFile); var saved = existed ? File.ReadAllBytes(pinFile) : null;
+        try {
+            var pin = toolsView.GetVisualDescendants().OfType<Button>().First(x => x.Content?.ToString() == "Pin");
+            await Click(pin);
+            await WaitFor(() => window.GetVisualDescendants().OfType<Button>().Any(x => x.Name == "PinnedToolShortcut"), "Pin did not appear above Play");
+        } finally { Mo2ToolPins.Save(existed ? System.Text.Json.JsonSerializer.Deserialize<string[]>(saved!)! : []); if (existed) File.WriteAllBytes(pinFile,saved!); else File.Delete(pinFile); }
+        await Sidebar("Overwrite");
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2OverwriteView>().Any(), "Overwrite page missing");
+        await Task.Delay(600);
+        await Sidebar("Logs");
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2LogsView>().Any(), "Logs sidebar click failed");
+        var logs = window.GetVisualDescendants().OfType<Mo2LogsView>().First();
+        await WaitFor(() => logs.GetVisualDescendants().OfType<ComboBox>().Single(x => x.Name == "Mo2LogFile").ItemCount > 0, "Native log files were not discovered");
+        if (!logs.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "Mo2LogOutput").IsReadOnly) throw new Exception("Logs should be read-only");
+        await Sidebar("Overwrite");
+        var deadRoot = Path.Combine(Path.GetTempPath(),"mo2-stopped-host-" + Guid.NewGuid());
+        try {
+            var deadEndpoint = Path.Combine(deadRoot,"plugins","data","frontend-bridge");
+            Directory.CreateDirectory(Path.Combine(deadEndpoint,"requests"));
+            Directory.CreateDirectory(Path.Combine(deadEndpoint,"responses"));
+            File.WriteAllText(Path.Combine(deadRoot,"ModOrganizer.exe"),"");
+            File.WriteAllText(Path.Combine(deadEndpoint,"endpoint.json"),"{\"protocol\":1,\"session\":\"stopped-test\"}");
+            try { await new Mo2BridgeClient(deadEndpoint).SendAsync("snapshot",timeout:TimeSpan.FromSeconds(4)); throw new Exception("Dead host was accepted"); }
+            catch (IOException error) when (error.Message.StartsWith("MO2 has stopped")) { }
+        } finally { Directory.Delete(deadRoot,true); }
+        Console.WriteLine("PASS: real pointer panel focus, Plugins navigation/selection/toggle/restore, scoped Profiles, executable icons, pinned shortcuts, Overwrite navigation");
+        Console.WriteLine("PASS: native log files discovered through Logs sidebar; stopped host detected without waiting for dialog timeout");
+        static string[] Choices(IWorkspaceViewModel workspace) {
+            var data = (PageData)workspace.GetType().GetMethod("GetDefaultPageData")!.Invoke(workspace,null)!;
+            return ((NewTabPageContext)data.Context).DiscoveryDetails.Select(x => x.ItemName).ToArray();
+        }
+        var gameChoices = Choices(live.WorkspaceController.ActiveWorkspace);
+        if (gameChoices.Contains("My Games") || gameChoices.Contains("My Loadouts") || !gameChoices.Contains("Logs") || !gameChoices.Contains("Profiles")) throw new Exception("Game page choices leaked Home pages");
+        live.ShowHome();
+        var homeChoices = Choices(live.WorkspaceController.ActiveWorkspace);
+        if (!homeChoices.Contains("My Games") || !homeChoices.Contains("My Loadouts") || homeChoices.Contains("Plugins") || homeChoices.Contains("Logs")) throw new Exception("Home page choices leaked game pages");
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        await spine.LoadoutSpineItems.Single(x => x.Name == "Skyrim Special Edition").Click.Execute();
+        await WaitFor(() => live.Profile.IsConnected && live.Profile.GameName.Contains("Skyrim") && !live.Profile.SelectingProfile,"Skyrim icon did not connect",seconds:110);
+        if (!live.Profile.ExecutableIcons.Values.Any(x => x.Length > 0)) throw new Exception("Skyrim native icons missing");
+        if (Choices(live.WorkspaceController.ActiveWorkspace).Contains("My Loadouts")) throw new Exception("Skyrim has Home page choices");
+        await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game).Click.Execute();
+        await WaitFor(() => live.Profile.Endpoint == entry.Registration.Endpoint && !live.Profile.SelectingProfile,"FNV icon did not reconnect",seconds:110);
+        Console.WriteLine("PASS: Home/game discovery separated; Skyrim and FNV icon switching; Skyrim native executable icons");
+        } finally { await live.Profile.SelectProfile(entry.Registration,original); }
     }
 
     private static async Task VerifyNewUi(Mo2LiveWorkspace live, Window window)

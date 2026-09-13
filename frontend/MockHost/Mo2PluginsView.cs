@@ -2,6 +2,7 @@ using ObservableCollections;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.ReactiveUI;
+using Avalonia.VisualTree;
 using NexusMods.App.UI.Pages.Sorting;
 using ReactiveUI;
 using R3;
@@ -30,6 +31,12 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var editor = new LoadOrderView();
         var alert = editor.FindControl<Control>("LoadOrderAlert")!;
         LayoutUpdated += (_, _) => {
+            // Use the same rectangle as Mods; NMA's order editor otherwise
+            // crops its thumbnails to a different aspect ratio.
+            foreach (var thumbnail in editor.GetVisualDescendants().OfType<Border>().Where(x => x.Name == "ParentBorder")) {
+                if (thumbnail.Width != 46) thumbnail.Width = 46;
+                if (thumbnail.Height != 26) thumbnail.Height = 26;
+            }
             // Keep the native column header and a complete plugin row visible
             // before allocating space to the optional selection details.
             var available = Bounds.Height - actions.DesiredSize.Height - alert.Bounds.Height - 112;

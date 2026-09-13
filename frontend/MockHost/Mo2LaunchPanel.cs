@@ -60,13 +60,54 @@ internal sealed class Mo2LaunchPanel : Border
         Background = (IBrush)Application.Current!.FindResource("SurfaceLowBrush")!;
         CornerRadius = new CornerRadius(8); Padding = new Thickness(12);
         var contents = new StackPanel { Spacing = 8 };
+        var pins = new WrapPanel { Name = "PinnedToolShortcuts" };
+        contents.Children.Add(pins);
         contents.Children.Add(Executable); contents.Children.Add(NativeButton); Child = contents;
         ToolTip.SetTip(Executable, "Choose an executable configured in MO2");
         Avalonia.Automation.AutomationProperties.SetName(Executable, "Executable");
         var updating = false;
+        string pinsKey = "";
+        void RefreshPins() {
+            string[] saved;
+            try { saved = Mo2ToolPins.Read().Where(x => x.StartsWith(profile.Endpoint + "|",StringComparison.Ordinal)).ToArray(); }
+            catch { saved = []; }
+            var key = string.Join("|", saved) + profile.Endpoint + string.Join("|",profile.ExecutableIcons.Values) + string.Join("|",profile.Tools.Select(x => x.Icon));
+            if (key != pinsKey) {
+                pinsKey = key; pins.Children.Clear();
+                var target = profile.CurrentTarget;
+                foreach (var pin in saved) {
+                    var value = pin[(profile.Endpoint.Length + 1)..];
+                    var executable = value.StartsWith("exe:") ? value[4..] : null;
+                    string[] id;
+                    try { id = executable is null ? System.Text.Json.JsonSerializer.Deserialize<string[]>(value[5..]) ?? [] : []; } catch { continue; }
+                    var tool = profile.Tools.FirstOrDefault(x => x.Id.SequenceEqual(id));
+                    var name = executable ?? tool?.Name ?? id.LastOrDefault() ?? "Tool";
+                    var icon = executable is not null ? profile.ExecutableIcons.GetValueOrDefault(executable) ?? "" : tool?.Icon ?? "";
+                    var button = new Button { Name = "PinnedToolShortcut", Content = Mo2ToolIcons.Create(icon,28), Padding = new Thickness(3), Margin = new Thickness(0,0,4,4) };
+                    ToolTip.SetTip(button,name);
+                    button.Click += async (_,_) => {
+                        if (profile.CurrentTarget.Endpoint != target.Endpoint) return;
+                        if (executable is not null) await profile.Launch(executable);
+                        else await profile.RunTool(tool ?? new Mo2Tool(id,name,"","",true),profile.CurrentTarget);
+                    };
+                    pins.Children.Add(button);
+                }
+            }
+            pins.IsVisible = pins.Children.Count > 0;
+            foreach (var button in pins.Children.OfType<Button>()) button.IsEnabled = profile.CanChangeOriginalUi;
+        }
+        AttachedToVisualTree += (_,_) => { Mo2ToolPins.Changed -= RefreshPins; Mo2ToolPins.Changed += RefreshPins; RefreshPins(); };
+        DetachedFromVisualTree += (_,_) => Mo2ToolPins.Changed -= RefreshPins;
+        Executable.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<string>((name,_) => {
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+            row.Children.Add(Mo2ToolIcons.Create(profile.ExecutableIcons.GetValueOrDefault(name ?? "") ?? "",22));
+            row.Children.Add(new TextBlock { Text = name, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            return row;
+        });
         Executable.SelectionChanged += (_, _) => { if (!updating) Model.SelectedExecutable = Executable.SelectedItem as string ?? ""; };
         void Refresh()
         {
+            RefreshPins();
             updating = true;
             try {
                 if (!(Executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(profile.Executables)) Executable.ItemsSource = profile.Executables;

@@ -36,8 +36,9 @@ class ModActions:
         return list(leaves(menu, []))
 
     def list_tools(self):
+        from .icons import icon_png
         return {'tools': [{'id': path, 'name': path[-1], 'group': ' / '.join(path[:-1]),
-                           'description': action.toolTip().replace('&', ''), 'enabled': action.isEnabled()}
+                           'icon': icon_png(action.icon()), 'description': action.toolTip().replace('&', ''), 'enabled': action.isEnabled()}
                           for path, action in self._tools()]}
 
     def run_tool(self, identifier):

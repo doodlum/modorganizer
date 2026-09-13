@@ -82,7 +82,7 @@ internal sealed class Mo2DownloadsPage : APageViewModel<IDownloadsPageViewModel>
         (Profile.IsConnected ? "" : "Unavailable · ") + Profile.GameName + " · " + Profile.CollectionName.Value;
     public Mo2DownloadsPage(IWindowManager windows, Mo2LiveProfile profile, IServiceProvider services) : base(windows)
     {
-        Profile = profile; TabTitle = "Downloads"; TabIcon = NexusMods.UI.Sdk.Icons.IconValues.LibraryOutline;
+        Profile = profile; TabTitle = "Downloads"; TabIcon = NexusMods.UI.Sdk.Icons.IconValues.Download;
         Adapter = new DownloadsTreeDataGridAdapter(services, Provider, DownloadsFilter.All());
         Adapter.ViewHierarchical.Value = false;
         PauseAllCommand.SubscribeAwait(async (_, _) => await Control("pause", false));

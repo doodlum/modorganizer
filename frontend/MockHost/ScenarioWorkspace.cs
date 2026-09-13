@@ -124,6 +124,7 @@ internal sealed class FixtureServices(IServiceProvider? parent = null) : IServic
 internal sealed record FixturePageContext(PageFactoryId FactoryId) : IPageFactoryContext;
 internal sealed class FixturePageFactory(string id, string title, IconValue icon, Func<IPageViewModelInterface> create) : IPageFactory
 {
+    public Func<IWorkspaceContext,bool> IsAvailable { get; set; } = _ => true;
     public PageFactoryId Id { get; } = PageFactoryId.From(Guid.Parse(id));
     public PageData Data => new() { FactoryId = Id, Context = new FixturePageContext(Id) };
     public DynamicData.Kernel.Optional<OpenPageBehaviorType> DefaultOpenPageBehavior => default;
@@ -134,7 +135,8 @@ internal sealed class FixturePageFactory(string id, string title, IconValue icon
     }
     public IEnumerable<PageDiscoveryDetails?> GetDiscoveryDetails(IWorkspaceContext workspaceContext)
     {
-        yield return new PageDiscoveryDetails { SectionName = "General", ItemName = title, Icon = icon, PageData = Data };
+        if (!IsAvailable(workspaceContext)) yield break;
+        yield return new PageDiscoveryDetails { SectionName = workspaceContext is Mo2WorkspaceContext ? "Game" : "Home", ItemName = title, Icon = icon, PageData = Data };
     }
 }
 

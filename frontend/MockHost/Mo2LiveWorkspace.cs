@@ -35,6 +35,8 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public ReactiveCommand<Unit, bool> BringWindowToFront { get; } = ReactiveCommand.Create(() => true);
     private readonly PageData _downloadsPage;
     private readonly PageData _toolsPage;
+    private readonly PageData _overwritePage;
+    private readonly PageData _logsPage;
     private readonly PageData _profilesPage;
     private readonly PageData _modsPage;
     private readonly PageData _gamesPage;
@@ -102,7 +104,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
             () => new ScenarioLoadOrderPage(services, Profile.Order) { LiveProfile = Profile });
         _pluginsPage = plugins.Data;
-        var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.LibraryOutline,
+        var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.Download,
             () => new Mo2DownloadsPage(windows, Profile, services));
         _downloadsPage = downloads.Data;
         var profiles = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82104", "My Loadouts", IconValues.Package,
@@ -112,7 +114,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var games = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82105", "My Games", IconValues.GamepadOutline,
             () => new Mo2GamesPage(windows, this));
         _gamesPage = games.Data;
-        var connections = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82106", "MO2 instances", IconValues.Folder,
+        var connections = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82106", "Connections", IconValues.Folder,
             () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile));
         _connectionsPage = connections.Data;
         _profilesPage = profiles.Data;
@@ -122,9 +124,15 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var tools = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82110", "Tools", Mo2ToolsPage.ToolIcon,
             () => new Mo2ToolsPage(windows, Profile));
         _toolsPage = tools.Data;
+        var overwrite = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82111", "Overwrite", IconValues.Folder, () => new Mo2OverwritePage(windows, Profile));
+        _overwritePage = overwrite.Data;
+        var logs = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82112", "Logs", Mo2LogsPage.LogsIcon, () => new Mo2LogsPage(windows,Profile));
+        _logsPage = logs.Data;
+        foreach (var factory in new[] { mods, plugins, downloads, health, tools, overwrite, logs }) factory.IsAvailable = context => context is Mo2WorkspaceContext;
+        foreach (var factory in new[] { games, profiles, connections }) factory.IsAvailable = context => context is HomeContext;
         _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
-        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, health.Data, tools.Data], _healthDetailsFactory.Id);
-        services.Add(new PageFactoryController([tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
+        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, health.Data, tools.Data, overwrite.Data, logs.Data], _healthDetailsFactory.Id);
+        services.Add(new PageFactoryController([logs, overwrite, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         var home = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
@@ -147,7 +155,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private IWorkspaceViewModel CreateProfileWorkspace(Mo2WorkspaceContext context)
     {
         var workspace = WorkspaceController.CreateWorkspace(context, _modsPage);
-        _profileMenus[workspace.Id] = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage);
+        _profileMenus[workspace.Id] = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _logsPage);
         WorkspaceController.OpenPage(workspace.Id, _pluginsPage, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true,
             new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)),
             new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
@@ -161,10 +169,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             var context = new Mo2WorkspaceContext(key.Endpoint, key.ProfilePath);
             if (_profileWorkspaces.Count == 0 && WorkspaceController.TryGetWorkspace(_profileWorkspace, out var initial)) {
                 initial.Context = context; id = initial.Id;
-                _profileMenus[id] = new Mo2LoadoutMenu(WorkspaceController, id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage);
+                _profileMenus[id] = new Mo2LoadoutMenu(WorkspaceController, id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _logsPage);
             } else id = CreateProfileWorkspace(context).Id;
             _profileWorkspaces.Add(key, id);
-            if (WorkspaceController.TryGetWorkspace(id, out var restored)) _layout.Restore(restored, WorkspaceController);
+            if (WorkspaceController.TryGetWorkspace(id, out var restored)) {
+                _layout.Restore(restored, WorkspaceController);
+                foreach (var panel in restored.Panels.ToArray())
+                    foreach (var tab in panel.Tabs.ToArray())
+                        if (tab.Contents.ViewModel is Mo2GamesPage or Mo2ProfilesPage or Mo2LoadoutsPage { Game: null })
+                            WorkspaceController.OpenPage(id, GameProfilesPage(context), new OpenPageBehavior.ReplaceTab(panel.Id,tab.Id));
+            }
         }
         _profileWorkspace = id;
         if (activate && WorkspaceController.ActiveWorkspaceId != id) WorkspaceController.ChangeActiveWorkspace(id);
@@ -234,8 +248,12 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var pluginsItem = profileSidebar.FindControl<Control>("ExternalChangesItem")!;
         ((Panel)pluginsItem.Parent!).Children.Remove(pluginsItem);
         installed.Children.Insert(1, pluginsItem);
+        var overwriteItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.OverwriteItem };
+        installed.Children.Insert(2, overwriteItem);
         var toolsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ToolsItem };
         ((StackPanel)profileSidebar.FindControl<Control>("HealthCheckItem")!.Parent!).Children.Add(toolsItem);
+        var logsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.LogsItem };
+        ((StackPanel)profileSidebar.FindControl<Control>("HealthCheckItem")!.Parent!).Children.Add(logsItem);
         var profilesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ProfilesItem };
         ((StackPanel)profileSidebar.FindControl<Control>("LibraryItem")!.Parent!).Children.Insert(0, profilesItem);
         var launchPanel = new Mo2LaunchPanel(Profile);
@@ -244,10 +262,19 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
         var sidebar = new ContentControl { Content = homeSidebar };
         Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); grid.Children.Add(sidebar);
-        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; profileSidebar.ViewModel = ProfileMenu; profilesItem.ViewModel = ProfileMenu.ProfilesItem; toolsItem.ViewModel = ProfileMenu.ToolsItem; sidebar.Content = workspace.Context is Mo2WorkspaceContext ? profileSidebar : homeSidebar; });
-        Profile.Changed += () => { view.IsEnabled = !Profile.Launching && !Profile.ManagingMod && !Profile.SelectingProfile; };
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; profileSidebar.ViewModel = ProfileMenu; profilesItem.ViewModel = ProfileMenu.ProfilesItem; toolsItem.ViewModel = ProfileMenu.ToolsItem; overwriteItem.ViewModel = ProfileMenu.OverwriteItem; logsItem.ViewModel = ProfileMenu.LogsItem; sidebar.Content = workspace.Context is Mo2WorkspaceContext ? profileSidebar : homeSidebar; });
+        // Native dialogs can own the host without owning frontend navigation.
+        // Keep panels, tabs and selection responsive; commands guard their targets.
+        void SyncMenu() {
+            profileSidebar.ViewModel = ProfileMenu;
+            profilesItem.ViewModel = ProfileMenu.ProfilesItem;
+            toolsItem.ViewModel = ProfileMenu.ToolsItem;
+            overwriteItem.ViewModel = ProfileMenu.OverwriteItem;
+            logsItem.ViewModel = ProfileMenu.LogsItem;
+        }
+        Profile.Changed += SyncMenu;
         Grid.SetRow(status, 2); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
-        var window = new Window { Title = "Mod Organizer — Live MO2 profile", Width = 1440, Height = 900,
+        var window = new Window { Title = "Nexus Mods", SystemDecorations = SystemDecorations.None, Width = 1280, Height = 800,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
         void UpdateStatus() => status.Text = Profile.Status + (LayoutError is { } error ? " · " + error : "");
         Profile.Changed += UpdateStatus;

@@ -64,6 +64,12 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
             var color = conflicts.Length == 0 ? "#00000000" : conflicts.Contains("Overwritten", StringComparison.OrdinalIgnoreCase) && !conflicts.Contains("Overwrites", StringComparison.OrdinalIgnoreCase) ? "#443E2026" : conflicts.Contains("Overwrites", StringComparison.OrdinalIgnoreCase) && !conflicts.Contains("Overwritten", StringComparison.OrdinalIgnoreCase) ? "#44305B3C" : "#44685527";
             var border = new Border { Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(color)), Child = label };
             ToolTip.SetTip(border, label.Text + "\n" + string.Join("\n", new[] { conflicts, flags }.Where(x => x.Length > 0)));
+            if ((label.Text ?? "").StartsWith("DLC:",StringComparison.OrdinalIgnoreCase)) {
+                var row = new DockPanel();
+                var art = new Border { Width = 46, Height = 26, Margin = new Thickness(4,0), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+                    Child = new Image { Source = Mo2GameArt.Thumbnail(_profile.GameName), Stretch = Avalonia.Media.Stretch.Uniform } };
+                DockPanel.SetDock(art,Dock.Left); row.Children.Add(art); row.Children.Add(border); return row;
+            }
             return border;
         }), width: new GridLength(1, GridUnitType.Star)),
         new TemplateColumn<CompositeItemModel<EntityId>>("", new FuncDataTemplate<CompositeItemModel<EntityId>>((item, _) => {
@@ -88,7 +94,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         native.FindControl<TabItem>("RulesTabItem")!.IsVisible = false;
         SubTabs.SelectedIndex = 0;
         var header = native.FindControl<NexusMods.App.UI.Controls.PageHeader.PageHeader>("AllPageHeader")!;
-        header.Title = "My Mods";
+        header.Title = "Mods";
         header.Description = "Installed mods in the selected MO2 profile.";
         var empty = native.FindControl<EmptyState>("EmptyState")!;
         if (empty.Subtitle is StackPanel subtitle)

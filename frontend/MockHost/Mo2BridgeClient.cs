@@ -16,7 +16,14 @@ internal sealed class Mo2BridgeClient(string directory)
         await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(request), cancellationToken);
         File.Move(path + ".tmp", path);
         var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(15));
+        var nextHostCheck = DateTime.UtcNow.AddSeconds(1);
+        var instance = Path.GetFullPath(Path.Combine(directory, "..", "..", ".."));
         while (!File.Exists(responsePath)) {
+            if (DateTime.UtcNow >= nextHostCheck) {
+                nextHostCheck = DateTime.UtcNow.AddSeconds(1);
+                if (OperatingSystem.IsLinux() && File.Exists(Path.Combine(instance, "ModOrganizer.exe")) && !Mo2HostStartup.IsRunning(new Mo2Registration(instance, directory)))
+                    throw new IOException("MO2 has stopped. Select the game icon to reconnect. The last action’s outcome is unknown; refresh before retrying.");
+            }
             cancellationToken.ThrowIfCancellationRequested();
             if (DateTime.UtcNow >= deadline)
                 throw new TimeoutException($"MO2 bridge request {id} timed out. Its outcome is unknown; refresh before retrying a change.");

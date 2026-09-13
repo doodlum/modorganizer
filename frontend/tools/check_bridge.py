@@ -49,6 +49,20 @@ class ContractTests(unittest.TestCase):
         self.bridge = module.Bridge(self.organizer, self.temp.name, {True: 2, False: 1})
     def request(self, **fields):
         return dict(protocol=1, session=self.bridge.session, profilePath=self.organizer.current, **fields)
+    def test_overwrite_listing_does_not_follow_links_or_read_contents(self):
+        spec = importlib.util.spec_from_file_location('overwrite', source.with_name('overwrite.py'))
+        overwrite = importlib.util.module_from_spec(spec); spec.loader.exec_module(overwrite)
+        root = Path(self.temp.name) / 'overwrite'; root.mkdir()
+        (root / 'nested').mkdir(); (root / 'nested' / 'generated.txt').write_bytes(b'abc')
+        outside = Path(self.temp.name) / 'outside'; outside.mkdir()
+        (outside / 'private.txt').write_bytes(b'private')
+        (root / 'linked-dir').symlink_to(outside, target_is_directory=True)
+        (root / 'linked-file').symlink_to(outside / 'private.txt')
+        self.organizer.overwritePath = lambda: str(root)
+        result = overwrite.Overwrite(self.organizer, None).read()
+        self.assertEqual(result['files'], [{'path': 'nested/generated.txt', 'bytes': 3}])
+        self.assertEqual((outside / 'private.txt').read_bytes(), b'private')
+
     def test_tools_use_original_actions_and_reject_stale_profiles(self):
         class Tools:
             def __init__(self): self.calls = []

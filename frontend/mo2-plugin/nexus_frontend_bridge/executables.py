@@ -33,6 +33,11 @@ class Executables:
         selector = self.selector()
         return [selector.itemText(index) for index in range(1, selector.count())]
 
+    def icons(self):
+        from .icons import icon_png
+        selector = self.selector()
+        return {selector.itemText(index): icon_png(selector.itemIcon(index)) for index in range(1, selector.count())}
+
     def launch(self, name):
         if not isinstance(name, str) or name not in self.snapshot():
             raise ValueError('Choose an executable configured in MO2')

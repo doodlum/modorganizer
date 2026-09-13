@@ -10,7 +10,7 @@ internal static class Mo2HostStartup
 
     // Process evidence is separate from mailbox responsiveness. A slow or modal
     // host is never considered stopped just because a snapshot timed out.
-    private static bool IsRunning(Mo2Registration registration)
+    internal static bool IsRunning(Mo2Registration registration)
     {
         if (Started.TryGetValue(registration.Directory, out var process)) {
             if (!process.HasExited) return true;
