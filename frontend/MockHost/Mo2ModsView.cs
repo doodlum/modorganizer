@@ -99,6 +99,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         SubTabs.SelectedIndex = 0;
         var header = native.FindControl<NexusMods.App.UI.Controls.PageHeader.PageHeader>("AllPageHeader")!;
         header.Title = "Mods";
+        header.Icon = IconValues.PictogramCollection3D;
         header.Description = "Installed mods in the selected MO2 profile.";
         var empty = native.FindControl<EmptyState>("EmptyState")!;
         if (empty.Subtitle is StackPanel subtitle)

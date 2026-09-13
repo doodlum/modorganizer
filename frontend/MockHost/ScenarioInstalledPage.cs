@@ -79,7 +79,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
                 fixtureMods.Rename(result.InputText.Trim());
         });
         IsCollection = isCollection;
-        TabTitle = IsMo2Profile ? "Mods" : isCollection ? "My Mods" : "All"; TabIcon = isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
+        TabTitle = IsMo2Profile ? "Mods" : isCollection ? "My Mods" : "All"; TabIcon = IsMo2Profile || isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
         SelectedSubTab = selected;
         RulesSectionViewModel = new ScenarioRules(services, order);
         var filter = new LoadoutFilter { LoadoutId = default, CollectionGroupId = default };

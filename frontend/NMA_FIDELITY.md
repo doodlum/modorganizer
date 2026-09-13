@@ -581,8 +581,9 @@ blur and the Logs/Overwrite header pictograms were inspected in the running app.
   icon is embedded and installed with `tools/install_desktop.py`; X11 reports
   `WM_CLASS=mo2-nexus-frontend` and a populated `_NET_WM_ICON`.
 - Plugins uses the native sorting editor with a flat row source, compact 40px
-  rows and proportional name columns. Up/down controls and the decorative trophy
-  rail are removed; drag handling remains attached to the original adapter.
+  rows and proportional name columns. Row up/down controls are removed; the
+  question-mark/trophy rail stays visible alongside the plugin list, including
+  when no scrollbar is needed. Drag handling remains attached to the original adapter.
   The list retains one real scrollbar, ellipsized names and full-name tooltips.
   Both lists were inspected side by side in a 1280×750 Steam Deck work area.
 - Archives is an Installed page with native archive discovery (21 FNV archives,
@@ -596,3 +597,7 @@ Validation: frontend build, 19 bridge contracts and four download contracts pass
 Native separator cleanup and both conflict directions passed independently of
 frontend rendering. Shared popup login and complete MO2 feature parity remain
 open in the active integration goal.
+
+The Mods sidebar/tab/page-picker use the FNV reference’s **My Mods**
+`CollectionsOutline` icon. Its header uses `PictogramCollection3D`, matching the
+reference’s writable-collection header while retaining the requested Mods name.

@@ -33,13 +33,9 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         DockPanel.SetDock(actions, Dock.Top); layout.Children.Add(actions);
         var editor = new LoadOrderView();
         var alert = editor.FindControl<Control>("LoadOrderAlert")!;
-        // NMA's decorative winner-gradient looks like a second scrollbar.
-        var winnerRail = editor.FindControl<Control>("TrophyBarColumnGrid")!;
-        winnerRail.IsVisible = false;
-        var help = new Button { Content = "?", Name = "PluginHelpButton" };
-        ToolTip.SetTip(help,"Plugin load order help");
-        help.Click += (_,_) => ViewModel?.ToggleAlertCommand.Execute().Subscribe();
-        actions.Children.Add(help);
+        // Keep NMA's help and winner indicator visible beside the plugin list,
+        // including when the list is short enough not to need a scrollbar.
+        editor.FindControl<Control>("TrophyBarColumnGrid")!.IsVisible = true;
         LayoutUpdated += (_, _) => {
             // Use the same rectangle as Mods; NMA's order editor otherwise
             // crops its thumbnails to a different aspect ratio.

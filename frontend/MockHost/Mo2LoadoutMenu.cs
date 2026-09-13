@@ -36,7 +36,7 @@ internal sealed class Mo2LoadoutMenu : AViewModel<ILoadoutLeftMenuViewModel>, IL
         ToolsItem = Item("Tools", Mo2ToolsPage.ToolIcon, tools);
         ProfilesItem = Item("Profiles", IconValues.Package, profiles);
         LeftMenuItemLibrary = Item("Downloads", IconValues.Download, downloads);
-        LeftMenuItemLoadout = Item("Mods", IconValues.FormatAlignJustify, mods);
+        LeftMenuItemLoadout = Item("Mods", IconValues.CollectionsOutline, mods);
         LeftMenuItemHealthCheck = Item("Health Check", IconValues.Cardiology, health);
         LeftMenuItemExternalChanges = Item("Plugins", IconValues.Package, plugins);
     }

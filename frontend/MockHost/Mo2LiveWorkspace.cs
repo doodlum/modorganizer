@@ -99,7 +99,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         services.Add<IEnumerable<ILoadOrderDataProvider>>([new ScenarioOrderProvider()]);
         services.Add(_database.GetRequiredService<NexusMods.MnemonicDB.Abstractions.IConnection>());
         services.Add<IEnumerable<ILoadoutDataProvider>>([Profile]);
-        var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "Mods", IconValues.Package,
+        var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "Mods", IconValues.CollectionsOutline,
             () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads));
         _modsPage = mods.Data;
         var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
