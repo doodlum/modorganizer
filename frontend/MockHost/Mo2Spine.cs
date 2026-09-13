@@ -57,9 +57,11 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         void RefreshSelection() {
             var home = shell.WorkspaceController.ActiveWorkspace.Context is HomeContext;
             ((IconButtonViewModel)Home).IsActive = home;
+            // Direct endpoint startup precedes the first native profile snapshot.
+            var selectedPath = shell.Profile.ProfilePath.Length == 0 ? null : Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath);
             foreach (var (item, target) in targets)
-                item.IsActive = !home && shell.Profile.Endpoint == target.Registration.Endpoint &&
-                    Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath) == target.Profile.Directory;
+                item.IsActive = !home && selectedPath is not null && shell.Profile.Endpoint == target.Registration.Endpoint &&
+                    selectedPath == target.Profile.Directory;
         }
         shell.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => RefreshSelection());
         shell.Profile.Changed += RefreshSelection;

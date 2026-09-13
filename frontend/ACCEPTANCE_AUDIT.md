@@ -50,6 +50,12 @@ the current status of workflows subsequently verified there.
   reference; Home AXAML differences are unused XML namespaces only. Original
   pinned UI sources and original MO2 extensions were not edited.
 
+The final direct-endpoint restart exposed an empty-profile-path selection crash
+before the first snapshot. The sidebar now leaves profile icons inactive until
+MO2 supplies a path. The rebuilt ordinary app started successfully through
+`MO2_BRIDGE_DIRECTORY`, connected to FNV and rendered both live lists.
+`artifacts/final-direct-startup.png` was inspected; the running app remains open.
+
 ## Coverage limits
 
 Additional LOOT categories and archive-preview file types remain broader test
