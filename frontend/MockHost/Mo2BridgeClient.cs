@@ -13,7 +13,10 @@ internal sealed class Mo2BridgeClient(string directory)
         var request = new Dictionary<string, object?>(arguments ?? []) { ["protocol"] = 1, ["session"] = session, ["action"] = action };
         var path = Path.Combine(directory, "requests", id + ".json");
         var responsePath = Path.Combine(directory, "responses", id + ".json");
-        await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(request), cancellationToken);
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Options = FileOptions.Asynchronous };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using (var stream = new FileStream(path + ".tmp", options))
+            await JsonSerializer.SerializeAsync(stream, request, cancellationToken: cancellationToken);
         File.Move(path + ".tmp", path);
         var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(15));
         var nextHostCheck = DateTime.UtcNow.AddSeconds(1);

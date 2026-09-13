@@ -125,10 +125,12 @@ class Bridge:
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')
             return self.downloads.control(request.get('path'), request.get('operation'))
-        if action in ('startNexusDownload', 'installArchive'):
+        if action in ('startNexusDownload', 'startNxmDownload', 'installArchive'):
 
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')
+            if action == 'startNxmDownload':
+                return self.downloads.start_nxm(request.get('url'))
             if action == 'startNexusDownload':
                 return self.downloads.start_nexus(request.get('modId'), request.get('fileId'), request.get('game'))
             return self.downloads.install(request.get('path'))

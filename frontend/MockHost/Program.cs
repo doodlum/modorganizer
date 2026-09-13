@@ -40,6 +40,15 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--check-nxm") { Mo2NxmCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--nxm") {
+            try {
+                if (args.Length != 2) throw new ArgumentException("Expected one NXM file link");
+                Mo2NxmRouter.Forward(args[1]).GetAwaiter().GetResult();
+                Console.WriteLine("NXM link handed to MO2");
+            } catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
+            return;
+        }
         if (args.FirstOrDefault() == "--register-mo2") {
             try {
                 if (args.Length is < 2 or > 3) throw new ArgumentException("Expected MO2 instance directory and optional launcher path");

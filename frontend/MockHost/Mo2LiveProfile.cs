@@ -261,6 +261,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if (Endpoint != registration.Endpoint) Tools = [];
             _client = client; Endpoint = registration.Endpoint;
             _lastSnapshot = null; Apply(snapshot);
+            try { Mo2NxmRouter.Remember(NexusGame,registration); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) {
+                Status = "Connected, but the NXM game route could not be saved"; Changed?.Invoke();
+            }
             return true;
         } catch (Exception error) { Report(error); return false; }
         finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
@@ -383,7 +387,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if (!CheckDownloadTarget(target)) return;
             var file = Mo2NexusLink.Parse(link);
             if (!string.Equals(file.Game, game, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Choose a Nexus file for the current game");
-            await Client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
+            if (file.NxmUri is { } nxm)
+                await Client.SendAsync("startNxmDownload", new() { ["profilePath"] = profile, ["url"] = nxm });
+            else
+                await Client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
             Status = "Download requested through MO2"; Changed?.Invoke();
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }

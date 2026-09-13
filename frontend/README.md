@@ -286,3 +286,35 @@ the pinned release's tab header implements selection and close/middle-click,
 with no tab drag/drop handlers. Panel resize uses the separate native
 `PanelResizerView` and still needs a successful pointer test. Shared-desktop focus
 changes interrupted the initial drag attempts; these are not passing checks.
+
+
+## NXM protocol routing
+
+The frontend accepts `--nxm 'nxm://game/mods/id/files/id?...'` and routes it to the
+registered native MO2 host for that game. Selecting an instance/profile in the
+frontend remembers that game's preferred instance. Ambiguous or stale routes
+fail instead of silently choosing a different instance. Only read-only startup
+snapshots are retried; a download handoff is not retried on an unknown outcome.
+
+The full signed NXM query is preserved, including free-account authorization
+parameters. MO2's own secondary-process forwarding path handles the URL; ordinary
+HTTPS file-ID links retain MO2's existing ID-based downloader. Authorization data
+is not stored in routing preferences, and bridge request files are private to
+the user on Linux.
+
+Install the Linux desktop handler:
+
+```sh
+python3 frontend/tools/install_nxm_handler.py \
+  --dotnet .tools/dotnet/dotnet \
+  --app frontend/MockHost/bin/Debug/net9.0/MockHost.dll
+```
+
+Restore the prior handler with `python3 frontend/tools/install_nxm_handler.py
+--restore` (one command). The installer preserves the prior handler and validates
+the resulting default. `--check-nxm` on MockHost tests signed-link preservation,
+malformed links and instance-route boundaries without network access.
+
+On September 13, both direct CLI and `xdg-open` handoffs for the already-downloaded
+MCM Guide reached MO2's native duplicate-download prompt, cancelled without another
+transfer. A real free-account signed transfer remains outside this runtime check.

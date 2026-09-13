@@ -3,9 +3,10 @@
 Follow-up navigation and Tools changes are documented in [NMA_FIDELITY.md](NMA_FIDELITY.md). They replace the earlier per-profile game icons and Rules tab with one icon per game, Profiles, Plugins under Installed, and Tools under Utilities. Downloads now uses NMA's native DownloadsPageView. The new live checks cover mod priority restoration, filters, original tools, downloads, and FNV/Skyrim switching. Earlier evidence below remains historical evidence for unchanged backend functionality.
 
 
-The requested local integration is verified: an MO2-owned frontend with NMA
-navigation/panels, usable interchangeably with original MO2 for the registered
-FNV and Skyrim instances. The requirement evidence below includes functional
+The earlier local integration audit verified an MO2-owned frontend with NMA
+navigation/panels for the registered FNV and Skyrim instances. It did not prove
+the full active goal: shared popup login, system NXM routing, and BSA browsing
+require the follow-up evidence below. The requirement evidence below includes functional
 checks, original extension behavior and the final fork comparison. It does not
 claim universal third-party extension compatibility or a native Linux MO2 port.
 
@@ -101,3 +102,28 @@ It also passed stopped-host detection and FNV/Skyrim switching. Original native
 Overwrite create/move/clear prompts were cancelled without changing the isolated
 marker; sync and complete destructive outcomes are not claimed as tested.
 See the final section of NMA_FIDELITY.md for evidence and coverage details.
+
+
+## Active goal re-audit: open requirements
+
+The prior goal turn made progress (commit 203934d6 and real pointer/native prompt
+checks). Completion of the broader goal remains unproven.
+
+- Shared NMA-style popup login: incomplete. The account button currently opens
+  one MO2 instance's native settings, and credential import is per Proton prefix.
+- System NXM routing: installed and exercised through `xdg-open`. The default is
+  `mo2-nexus-frontend-nxm.desktop`, with the prior Vortex handler retained. The
+  existing MCM Guide URL reached the FNV host's original Download again? prompt;
+  it was cancelled without another transfer. Signed query preservation and
+  malformed/cross-game/ambiguous/stale route rejection pass contracts. A real
+  free-account signed download has not been exercised; no broader account claim
+  follows from the Premium/duplicate-prompt handoff.
+- BSA/archive browser: original mod-file/preview extension evidence does not prove
+  a discoverable BSA browser with the expected browsing actions. Still to audit
+  and implement/test as needed.
+- Useful MO2 feature parity and responsive panel layouts: retain the verified
+  Mods, Plugins, priority/filter/conflict, profiles, downloads, tools, Overwrite,
+  Logs and Health Check work. Audit remaining original tabs/actions against the
+  actual frontend rather than treating that list as exhaustive parity.
+- FNV NMA design comparison: existing source and rendered evidence must be checked
+  for the new popup and pages as they are added.

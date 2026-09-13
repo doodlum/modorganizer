@@ -33,6 +33,14 @@ class DownloadsTests(unittest.TestCase):
         self.assertTrue(items[1]['installed'])
         self.assertNotIn('url', items[1])
         self.assertEqual(items[1]['bytes'], 7)
+    def test_signed_nxm_link_is_preserved_and_wrong_targets_are_rejected(self):
+        url = 'nxm://newvegas/mods/42507/files/1?key=synthetic%2Bvalue%2F&expires=123&user_id=456'
+        self.assertEqual(self.downloads.validate_nxm(url),url)
+        for invalid in [url.replace('newvegas','skyrimspecialedition'), url + '#fragment',
+                        url.replace('newvegas','user@newvegas'), url.replace('/1?', '/0?'),
+                        url + '\n', 'file:///tmp/mod.zip', 'nxm://newvegas:123/mods/1/files/1']:
+            with self.assertRaises(ValueError): self.downloads.validate_nxm(invalid)
+        self.assertEqual(self.organizer.calls,[])
     def test_download_uses_host_and_rejects_wrong_game(self):
         self.assertEqual(self.downloads.start_nexus(42507, 1, 'newvegas')['downloadId'], 7)
         with self.assertRaises(ValueError): self.downloads.start_nexus(42507, 1, 'skyrimspecialedition')

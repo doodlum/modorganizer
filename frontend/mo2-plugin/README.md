@@ -78,7 +78,7 @@ are excluded from snapshots.
 Paste a Nexus file URL containing `file_id` or an `nxm://game/mods/id/files/id`
 link. The host calls `IDownloadManager.startDownloadNexusFile` for the current
 game using its existing Nexus account. This ID-based path was tested with Premium
-access; it does not forward free-account authorization parameters from nxm links.
+access; NXM links now use the full-URL native handoff, preserving authorization parameters. A real free-account transfer still needs runtime verification.
 The bridge rejects links for another game. Progress currently shows downloaded
 bytes and partial/paused status; pause, resume, cancel and detailed errors still
 need the corresponding MO2 runtime integration.

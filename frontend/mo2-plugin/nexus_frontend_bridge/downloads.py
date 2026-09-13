@@ -1,5 +1,6 @@
 """MO2's download directory plus its existing downloader/installer entry points."""
 import configparser
+import re
 from pathlib import Path
 
 
@@ -75,6 +76,38 @@ class Downloads:
         if identifier < 0:
             raise ValueError('MO2 did not accept the Nexus download')
         return {'downloadId': identifier, 'queued': True}
+
+    def validate_nxm(self, url):
+        # Preserve the original query verbatim: free-account keys are signed.
+        if not isinstance(url, str) or len(url) > 8192 or any(c.isspace() or ord(c) < 32 for c in url):
+            raise ValueError('Invalid NXM file link')
+        match = re.fullmatch(r'nxm://([a-zA-Z0-9_-]+)/mods/([1-9][0-9]*)/files/([1-9][0-9]*)(?:\?[^#]*)?', url, re.IGNORECASE)
+        if match is None:
+            raise ValueError('Invalid NXM file link')
+        if match[1].casefold() != self.game_domain().casefold():
+            raise ValueError('The Nexus file belongs to a different game')
+        return url
+
+    def start_nxm(self, url):
+        url = self.validate_nxm(url)
+        from PyQt6.QtCore import QCoreApplication, QEventLoop, QProcess, QTimer
+        # MO2's secondary process forwards the exact URL to its primary process.
+        # This retains addNXMDownload's account checks and signed-link handling.
+        process = QProcess()
+        process.setProgram(QCoreApplication.applicationFilePath())
+        process.setArguments([url])
+        process.setStandardOutputFile(QProcess.nullDevice())
+        process.setStandardErrorFile(QProcess.nullDevice())
+        loop = QEventLoop(); timer = QTimer(); timer.setSingleShot(True)
+        process.finished.connect(loop.quit); process.errorOccurred.connect(loop.quit)
+        timer.timeout.connect(loop.quit)
+        process.start(); timer.start(10000); loop.exec(); timer.stop()
+        if process.state() != QProcess.ProcessState.NotRunning:
+            process.kill(); process.waitForFinished(1000)
+            raise ValueError('MO2 NXM handoff timed out; outcome unknown. Check Downloads before retrying.')
+        if process.exitStatus() != QProcess.ExitStatus.NormalExit or process.exitCode() != 0 or process.error() == QProcess.ProcessError.FailedToStart:
+            raise ValueError('MO2 could not accept the NXM handoff')
+        return {'forwarded': True}
 
     def install(self, filename):
         if not isinstance(filename, str) or not Path(filename).is_file():
