@@ -146,6 +146,7 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_OPTIONS") is { } options) await VerifyLayoutOptions(live, liveWindow, options);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_RESTORE") == "1") await VerifyLayoutRestore(live, liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_RESTART") is { } healthRestart) await VerifyHealthRestart(live, liveWindow, healthRestart);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATALOG") == "1") {
                             if (endpoint.Length != 0 || live.Profile.Mods.Count != 0 || live.Profile.Order.Plugins.Count != 0)
                                 throw new InvalidOperationException("Default startup must have no fixture or assumed active profile data");
@@ -967,6 +968,50 @@ public partial class MockApp : Application
         live.SaveLayouts();
         if (live.LayoutError is { } layoutFailure) throw new InvalidOperationException(layoutFailure);
         Console.WriteLine("PASS: profile spine restores separate FNV/Skyrim workspace IDs, panel bounds, tabs, selected tabs and native searches; sidebar targets current workspace; MO2 state preserved");
+    }
+
+    private static async Task VerifyHealthRestart(Mo2LiveWorkspace live, Window window, string mode)
+    {
+        const string marker = "/home/deck/mo2/frontend/artifacts/mo2-fnv-host/plugins/data/frontend-health-restart.txt";
+        const string title = "Frontend diagnostic restart verification";
+        var layout = Environment.GetEnvironmentVariable("MO2_FRONTEND_LAYOUT");
+        if (mode is not ("write" or "read") || layout is null || !Path.GetFullPath(layout).StartsWith("/home/deck/mo2/frontend/artifacts/") || !File.Exists(marker))
+            throw new InvalidOperationException("Health restart requires an isolated layout and native diagnostic fixture");
+        if (live.Profile.ProfilePath.Length != 0) throw new InvalidOperationException("Restart must begin disconnected at Home");
+        var expected = mode == "write" ? "phase-one-live-report" : "phase-two-live-report";
+        if (File.ReadAllText(marker).Trim() != expected) throw new InvalidOperationException("Native report marker has wrong phase");
+        var entry = live.CatalogEntries.Single(x => x.Registration.Directory.EndsWith("/frontend/artifacts/mo2-fnv-host"));
+        var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
+        await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance!.Game + " — Frontend Test (" + entry.Registration.Directory + ")").Click.Execute();
+        await WaitFor(() => live.Profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") && !live.Profile.SelectingProfile, "FNV did not connect", seconds: 110);
+        var plugins = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
+        var mods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
+        if (mode == "write") {
+            await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(OpenPageBehaviorType.NewTab));
+            await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>().Any(x => x.ViewModel?.Title == title), "Native fixture report not listed");
+            var report = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Diagnostics.DiagnosticEntryView>().Single(x => x.ViewModel?.Title == title);
+            report.FindControl<NavigationControl>("EntryButton")!.Command!.Execute(NavigationInformation.From(OpenPageBehaviorType.NewPanel));
+        }
+        await WaitFor(() => window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Any(x => x.ViewModel is Mo2HealthDetails d && d.HasResult && d.MarkdownRendererViewModel.Contents.Contains(expected)), "Restored details did not read current native report", seconds: 30);
+        var details = (Mo2HealthDetails)window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Diagnostics.DiagnosticDetailsView>().Single().ViewModel!;
+        if (live.WorkspaceController.ActiveWorkspace.Panels.Count != 3 || details.TabTitle != title)
+            throw new InvalidOperationException("Diagnostic panel identity or layout did not restore");
+        if (mode == "read") {
+            try {
+                File.Delete(marker);
+                await WaitFor(() => details.HasResult && details.MarkdownRendererViewModel.Contents.Contains("no longer reports"), "Restored details kept a resolved report", seconds: 30);
+            } finally { File.WriteAllText(marker, expected); }
+            await WaitFor(() => details.HasResult && details.MarkdownRendererViewModel.Contents.Contains(expected), "Restored details did not refresh recurring report", seconds: 30);
+        }
+        live.SaveLayouts();
+        if (live.LayoutError is { } error) throw new InvalidOperationException(error);
+        var saved = File.ReadAllText(layout);
+        if (!saved.Contains(title) || saved.Contains("phase-one-live-report") || saved.Contains("phase-two-live-report"))
+            throw new InvalidOperationException("Layout did not save diagnostic identity independently of report contents");
+        await live.Profile.Refresh();
+        if (!plugins.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))) || !mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))))
+            throw new InvalidOperationException("Diagnostic restart check changed MO2 state");
+        Console.WriteLine("PASS: health restart " + mode + " uses native diagnostic text, three-panel context and identity-only persistence; MO2 state unchanged");
     }
 
     private static async Task VerifyHealthDetails(Mo2LiveWorkspace live, Window window)

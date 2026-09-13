@@ -398,3 +398,37 @@ Evidence: `/tmp/mo2-panel-drag.log`,
 [final two panels](artifacts/panel-drag.png).
 The combined run and frontend exited with code 0; all 14 plugin metadata checks
 passed. Build passed with the existing upstream OpenTelemetry warning.
+
+## Diagnostic details across a frontend restart
+
+Two fresh frontend processes passed the native diagnostic restart check. The
+first opened Health Check through NMA navigation and opened the temporary MO2
+diagnostic extension's entry in a third panel. It saved the layout while the
+report contained `phase-one-live-report`. Before the second process started,
+the extension's marker changed to `phase-two-live-report`.
+
+The second process started disconnected at Home. Selecting FNV restored the
+three-panel workspace and existing diagnostic details tab without navigating to
+or opening another report. The tab displayed the new native report. Removing
+the marker cleared the report in the restored tab; recreating it refreshed the
+tab again. The layout contains the diagnostic title and source identity, but
+neither report body. No cached report text substitutes for MO2's result.
+
+`MO2_VERIFY_HEALTH_RESTART=write` and `=read` exercise this with an explicit
+`MO2_FRONTEND_LAYOUT` path under `frontend/artifacts` and `MO2_SCREENSHOT`.
+The temporary original-API extension is
+[`tools/fixtures/health_restart.py`](tools/fixtures/health_restart.py).
+With the isolated FNV host stopped, copy it to that host's plugins directory as
+`frontend_health_restart.py`, and create
+`plugins/data/frontend-health-restart.txt` with the appropriate phase text.
+Use a fresh layout file for the write run, retain it for read, and change the
+marker only after the write process exits. After testing, stop the host and
+remove the installed extension and marker; leave the tracked fixture source.
+
+Both processes exited with code 0. Screenshots were inspected:
+[before restart](artifacts/health-restart-write.png),
+[after restart](artifacts/health-restart-read.png).
+Logs: `/tmp/mo2-health-restart-write.log` and
+`/tmp/mo2-health-restart-read.log`. Build passed. The installed fixture and marker
+were removed after stopping the host; `modlist.txt`, `plugins.txt` and
+`loadorder.txt` retained their original hashes across the full check.

@@ -140,7 +140,7 @@ acceptance and switching between the registered FNV and Skyrim hosts pass.
 Remaining work includes:
 
 - Expand verification of other native LOOT message categories. Missing-master text and the native warning flag have passed an isolated install/activate/remove check.
-- Verify restoring a diagnostic detail tab across a restart with a live extension. Real Ctrl-click selection and activation, two-plugin pointer dragging, horizontal and vertical panel-divider gestures, native history, per-profile workspaces and layout restoration across restarts have passed.
+- Complete the remaining page-state review. Diagnostic detail tabs now also have a live-extension restart check: restored tabs query MO2 again and follow resolved/recurring reports. Real Ctrl-click selection and activation, two-plugin pointer dragging, panel-divider gestures, native history and per-profile layout restoration have passed.
 - Review remaining page states and visual layout against NMA.
 - Publish the branch to the requested GitHub remote when authentication is available.
 
