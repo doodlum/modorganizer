@@ -9,6 +9,29 @@ from MO2 and the next running game; restoring it restored the in-game menu.
 This verifies the FNV acceptance run. It does not establish full MO2 feature
 parity or Skyrim gameplay.
 
+## Original MO2 Run path recheck — 2026-09-13
+
+After changing the bridge to use MO2's original Run slot, the real catalog and
+sidebar PLAY command launched configured NVSE again. The test save loaded,
+xNVSE 6.4.8 was present, forward movement changed the view and the gameplay HUD
+appeared. The pause menu contained Mod Configuration. Console checks matched
+MO2's current order for The Mod Configuration Menu.esp (`0D`) and
+MCM Example Menu3.esp (`0A`). An initial query with an extra space in that example
+filename returned `FF`; querying the exact installed filename returned `0A`.
+This run did not repeat every index or open MCM's contents.
+
+The console `qqq` command exited normally. The frontend reported
+`NVSE exited (code 0)` and returned to PLAY with 12 mod rows and 14 plugin rows.
+The verifier exited successfully. After host exit the temporary controller
+preference was removed by restoring the original INIs; all backed-up profile
+files and the test save matched their pre-test bytes.
+
+Evidence: `artifacts/fnv-native-run-loaded.png`, `fnv-native-run-mods.png`,
+`fnv-native-run-gameplay.png`, `fnv-native-run-pause.png`,
+`fnv-native-run-return.png`, `native-run-restoration.json` and
+`/tmp/mo2-fnv-native-run.log`. Launcher callback identity and force-unlock results
+are recorded separately in `EXTENSION_COMPATIBILITY.md`.
+
 ## Current sidebar PLAY recheck — 2026-09-13
 
 Rechecked the native sidebar PLAY command and direct Proton launcher on frontend

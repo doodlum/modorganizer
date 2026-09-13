@@ -218,12 +218,11 @@ probe binary, and onFinishedRun ran, but its binary argument was empty. In the
 MO2 2.5.2 source, OrganizerProxy.startApplication starts one ProcessRunner and
 returns its handle; waitForApplication attaches a new ProcessRunner to that
 handle without its original spawn metadata. That runner calls afterRun with an
-empty binary. The frontend's current Executables.launch uses this same pair.
+empty binary. The frontend previously used this same pair.
 Extensions that identify the completed executable can therefore behave differently
 than under MO2's original Run button. That original slot keeps one configured
-runner through execution and completion. Correcting the frontend launch path and
-verifying callback identity is outstanding; a successful mapping result does not
-close this separate issue.
+runner through execution and completion. The correction and separate callback
+verification are recorded below.
 
 The temporary verifier is [file_mapper.py](tools/fixtures/file_mapper.py), with
 [mapped_ini_probe.py](tools/fixtures/mapped_ini_probe.py) as the child process.
@@ -239,3 +238,31 @@ and remove the installed fixture and request/child files afterward.
 Result: `artifacts/native-file-mapper-result.json` (mapping passed; completion
 binary empty). The temporary fixture was removed after the host exited. This
 checks native INI mapping, not every mapper or the plugin-disabled contrast case.
+
+### Native Run callback identity and Unlock — 2026-09-13
+
+The bridge now selects the configured executable in MO2 and invokes the original
+Run slot. This retains the original ProcessRunner, USVFS, launch hooks and
+completion metadata. It waits for the ensuing native refresh before publishing
+new mod/plugin models. Missing or ambiguous completion callbacks are reported as
+MO2 having stopped waiting. Windows STILL_ACTIVE (259) and the unset DWORD value
+also cannot establish completion; a process that actually exits with 259 is
+conservatively treated the same way.
+
+A temporary original IPluginTool, [launch_callbacks.py](tools/fixtures/launch_callbacks.py),
+observed both callbacks while the real sidebar PLAY command ran the configured
+FalloutNVLauncher.exe. Normal exit preserved the binary in both callbacks and
+reported code 0. A second launch used MO2's actual Unlock button while the
+launcher remained open: its callback preserved the binary and returned 259;
+the frontend correctly reported that MO2 stopped waiting and restored PLAY.
+The fixture then clicked the launcher's own Exit menu. MO2's main window remained
+suppressed in both runs. The native read-only fallout.ini prompt was handled
+with “Allow the write once”, leaving MO2 responsible for the write policy.
+
+Evidence: `artifacts/native-launch-normal.json`,
+`artifacts/native-launch-unlock.json`, `artifacts/native-launch-return.png` and
+`/tmp/mo2-native-launch-fixed.log`. The 17 bridge contracts and frontend build
+passed. The launcher changed two profile INIs; both were restored from the
+pre-test backup after host exit, and every backed-up profile file matched again.
+The installed fixture and its cache were removed. This checks the configured
+native Run path; it does not repair MO2's separate public start/wait API pair.

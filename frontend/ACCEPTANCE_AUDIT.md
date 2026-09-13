@@ -17,9 +17,9 @@ It does not claim universal third-party extension compatibility.
 | No independent NMA Library or deployment authority | Live pages use MO2 adapters. Library-style membership is the MO2 downloads folder. Collection/Apply controls are hidden or disabled; the native UI's database service is in-memory presentation infrastructure. Persistent frontend files contain registrations and workspace presentation only. | Source review supports the ownership boundary. |
 | Sidebar, game icons and panel behavior match the reference | Live Home and profile sidebars use native views; Home items leave the game workspace. Spine/loadout art uses square game icons and My Games uses covers. Native divider dragging, tab/panel actions, history and per-profile layout restoration have runtime evidence. | Main requested paths verified; final page-state comparison remains below. |
 | Health Check reports MO2 diagnostics | Native Notifications refreshes enabled diagnostic extensions; list/details show the host's reports. Unavailable, zero-report, populated, resolved/recurring, cross-game and restored-detail states have passed. `health-restart-read.png` remains available. | Implemented and exercised, including a real original-API diagnostic extension. |
-| Preserve original extensions with minimal changes | The original MO2/Qt/Python host remains intact under Proton. Existing game, installer, tool and DDS-preview extensions work; original DDS settings survive restart and restore through MO2. `preview-settings-result.json` is `done`, with original RGBA restored. | INI mapping now has effective hooked-process evidence; completion-callback identity and enable/requirement-rule coverage remain incomplete. |
+| Preserve original extensions with minimal changes | The original MO2/Qt/Python host remains intact under Proton. Existing game, installer, tool and DDS-preview extensions work; original DDS settings survive restart and restore through MO2. `preview-settings-result.json` is `done`, with original RGBA restored. | INI mapping now has effective hooked-process evidence; native Run callback identity and Unlock now pass; enable/requirement-rule coverage remains incomplete. |
 | Keep unsolicited MO2 UI hidden | Hidden-host startup suppresses main/splash/toast windows. Explicit original UI and native tool/preview dialogs remain usable. Hidden-versus-normal INI Editor reports agree on dialog structure. | Implemented with runtime evidence; temporary verifier plugins are removed after checks. |
-| Successfully load FNV with mods | `FNV_ACCEPTANCE.md` records actual gameplay, MCM menus, enabled/disabled launches and all 14 in-game plugin indices. Current-sidebar PLAY evidence includes loaded gameplay, movement, pause menu and normal return to PLAY. The corresponding artifacts remain present. | Gameplay acceptance has passed; recent action-queue checks do not substitute for that game evidence. |
+| Successfully load FNV with mods | `FNV_ACCEPTANCE.md` records actual gameplay, MCM menus, enabled/disabled launches and all 14 in-game plugin indices. Current-sidebar PLAY evidence includes loaded gameplay, movement, pause menu and normal return to PLAY. The corresponding artifacts remain present. | Gameplay acceptance has passed; the updated original Run path also loaded the save with xNVSE/MCM, accepted movement and exited normally with code 0. |
 | Do not lose actions during polling or cross profile boundaries | Thirteen controlled transport cases cover dialogs, PLAY and profile-card requests, duplicate suppression, stale/unavailable targets and missing card profiles. Real-host validation and native preview checks also passed. | Current command changes verified at transport and native integration boundaries. |
 
 Evidence details and test limitations are in [MO2 integration](MO2_INTEGRATION.md),
@@ -30,19 +30,11 @@ the current status of workflows subsequently verified there.
 
 ## Remaining acceptance work
 
-1. **Completion callback identity.** Native INI mapping now passes a hooked-process
-   check: all five game INIs match the selected profile and differ from unhooked
-   files. However, the current startApplication/waitForApplication path reports
-   an empty binary to onFinishedRun, unlike original MO2's Run-button path. The
-   frontend uses that same pair. Preserve the configured runner's completion
-   identity and verify an original extension's callback behavior before closing
-   this compatibility gap. See the new file-mapping evidence and source trace in
-   `EXTENSION_COMPATIBILITY.md`.
-2. **Original extension enable/master/requirement rules.** The original container
+1. **Original extension enable/master/requirement rules.** The original container
    retains these rules, but their runtime behavior with the alternate frontend
    needs a bounded original-extension check. Successful loading of the bridge
    and DDS preview alone does not establish these cases.
-3. **Final page-state comparison.** Revisit the actual FNV fork and current live
+2. **Final page-state comparison.** Revisit the actual FNV fork and current live
    frontend for the remaining page states, recording intentional MO2 mappings
    separately from unexplained visual or behavioral differences. Main sidebar,
    mods, health and panel paths already have detailed comparison evidence; this
@@ -66,6 +58,7 @@ claim that the branch was published.
   were checked for presence; structured DDS-setting evidence confirms completion
   and restoration. Presence alone is not treated as a new runtime test.
 
-No new mod/profile writes, game launch, extension installation or remote
-publication was performed by this audit. Overall integration acceptance remains
-open for the concrete gaps above.
+The initial audit only reviewed evidence and repeated read-only checks. Subsequent
+Run-path verification launched the native FNV launcher and modded game, then
+restored the profile INIs; see the extension compatibility and FNV records. Overall integration
+acceptance remains open for the concrete gaps above.

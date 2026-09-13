@@ -145,8 +145,8 @@ The live frontend uses the native NMA navigation and panels with real MO2
 games, profiles, mod/plugin lists, downloads and original dialogs. FNV in-game
 acceptance and switching between the registered FNV and Skyrim hosts pass.
 The [current acceptance audit](ACCEPTANCE_AUDIT.md) maps the requirements to
-implementation and runtime evidence. Its concrete remaining checks are completion-callback
-identity, extension enable/requirement rules and the final page-state
+implementation and runtime evidence. Its concrete remaining checks are
+extension enable/requirement rules and the final page-state
 comparison against the FNV-enabled reference fork. It also distinguishes broader
 coverage items and unverified remote publication from completed workflows.
 

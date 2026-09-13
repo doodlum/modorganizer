@@ -165,6 +165,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_LAUNCH") == "1") await VerifyNativeLaunch(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ACTION_GUARDS") == "1") await VerifyActionGuards(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PREVIEW") == "1") await VerifyPreview(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_PROFILE") == "1") await VerifyExternalProfile(live, liveWindow);
@@ -536,6 +537,37 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyNativeLaunch(Mo2LiveWorkspace live, Window window)
+    {
+        const string root = "/home/deck/mo2/frontend/artifacts/";
+        var report = root + "native-launch-callbacks.json";
+        if (!live.Profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Native launch check requires isolated FNV");
+        var executable = live.Profile.Executables.Single(x => x.Contains("Launcher", StringComparison.OrdinalIgnoreCase));
+        var panel = window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Single();
+        foreach (var mode in new[] { "normal", "unlock" }) {
+            if (File.Exists(report)) File.Delete(report);
+            File.WriteAllText(root + "native-launch-mode.txt", mode);
+            panel.Executable.SelectedItem = executable;
+            if (!panel.Model.CanLaunch) throw new InvalidOperationException("Native PLAY action is unavailable");
+            await panel.Model.Command.Execute();
+            var launchStatus = live.Profile.Status;
+            await WaitFor(() => File.Exists(report) && File.ReadAllText(report).Contains("closeRequested"), "Launcher fixture did not close its own window", seconds: 20);
+            using var data = System.Text.Json.JsonDocument.Parse(File.ReadAllText(report));
+            var result = data.RootElement;
+            if (result.GetProperty("startedName").GetString() != "FalloutNVLauncher.exe" || result.GetProperty("finishedName").GetString() != "FalloutNVLauncher.exe" ||
+                !result.GetProperty("mainSuppressed").GetBoolean() || !result.GetProperty("closeRequested").GetBoolean() || live.Profile.Launching || !panel.Model.CanLaunch)
+                throw new InvalidOperationException("Native launch lost callback identity, visibility suppression or PLAY recovery");
+            if (mode == "normal" && (result.GetProperty("exitCode").GetInt64() != 0 || !launchStatus.Contains("exited (code 0)")))
+                throw new InvalidOperationException("Normal native launch did not report its successful exit: " + launchStatus);
+            if (mode == "unlock" && (!result.GetProperty("unlocked").GetBoolean() || !launchStatus.Contains("MO2 stopped waiting")))
+                throw new InvalidOperationException("Native Unlock was reported as a completed process: " + launchStatus);
+            File.Copy(report, root + "native-launch-" + mode + ".json", overwrite: true);
+            Console.WriteLine("PASS: native PLAY launcher " + mode + " preserves executable identity in both callbacks, main-window suppression and accurate completion/Unlock result");
+            await Task.Delay(1500);
+        }
     }
 
     private static async Task VerifyActionGuards(Mo2LiveWorkspace live)
