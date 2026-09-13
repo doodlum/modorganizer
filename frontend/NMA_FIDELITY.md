@@ -153,3 +153,28 @@ also restored. Evidence: `/tmp/mo2-sidebar-launch.log` and
 `artifacts/sidebar-launch.png`. These checks verify UI selection/binding; they
 did not launch a game. Existing FNV gameplay evidence covers the unchanged MO2
 runner. `MO2_VERIFY_LAUNCH` now invokes the sidebar command for future launch checks.
+
+## Frontend-host startup windows
+
+The Proton launcher now invokes `ModOrganizer.exe` directly from its instance
+folder, with the Qt workaround and frontend-host flag applied inside the Steam
+runtime. This removes the batch command window. The bridge installs a Qt event
+filter during extension initialization, before MO2 constructs its splash. In
+frontend-host mode, the splash, main window and informational `MessageDialog`
+toasts receive `WA_DontShowOnScreen` before showing. Other dialog classes are
+unaffected; ordinary MO2 launches without the flag retain the original UI.
+
+A cold-start catalog → FNV → Skyrim → FNV run passed the native sidebar launch
+checks and independent host comparisons (Skyrim: 151 mod rows, 150 plugins).
+An external X11 monitor sampled visible windows 715 times at roughly 50 ms
+intervals, recording both the reference and frontend windows but no MO2 or
+console windows, including Steam application classes 22380 and 489830. The
+first run exposed a transient MO2 informational toast; the repeat run after
+adding `MessageDialog` suppression recorded none. Polling cannot exclude a
+window lasting less than a sample interval. Evidence: `/tmp/mo2-quiet-startup.log`,
+`/tmp/mo2-startup-windows.log`, and `artifacts/quiet-startup.png`.
+
+Launcher checks passed (3), including direct executable arguments, spaced
+paths, working directory, Qt environment and frontend-host flag. Bridge contract
+checks passed (15). This run did not launch either game or retest intentional
+installer dialogs; existing gameplay evidence is recorded separately.

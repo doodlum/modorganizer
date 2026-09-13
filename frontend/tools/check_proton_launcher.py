@@ -17,7 +17,9 @@ class LauncherTests(unittest.TestCase):
         for name in ('ModOrganizer.exe', 'ModOrganizer.ini'):
             (self.instance / name).touch()
         self.proton = self.root / 'proton'
-        self.proton.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$STEAM_COMPAT_DATA_PATH/arguments"\n')
+        self.proton.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$@" > "$STEAM_COMPAT_DATA_PATH/arguments"\n'
+            'printf "%s\\n" "$PWD" "$QT_QPA_PLATFORM" "$MO2_FRONTEND_HOST" > "$STEAM_COMPAT_DATA_PATH/context"\n')
         self.proton.chmod(0o755)
         (self.root / 'toolmanifest.vdf').write_text('"require_tool_appid" "1628350"\n')
         self.steam = self.root / 'Steam'
@@ -40,7 +42,8 @@ class LauncherTests(unittest.TestCase):
         result = self.run_launcher()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.prefix / 'runtime-used').exists())
-        self.assertEqual((self.prefix / 'arguments').read_text().splitlines(), ['run', 'cmd', '/c', 'Z:' + str(self.prefix / 'mo2-frontend-launch.cmd')])
+        self.assertEqual((self.prefix / 'arguments').read_text().splitlines(), ['run', str(self.instance / 'ModOrganizer.exe')])
+        self.assertEqual((self.prefix / 'context').read_text().splitlines(), [str(self.instance), 'windows:nowmpointer', '1'])
 
     def test_missing_runtime_does_not_start_proton(self):
         self.runtime.unlink()

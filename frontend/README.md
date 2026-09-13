@@ -70,6 +70,11 @@ Steam Deck. Use a separate Proton prefix for each instance. Put that invocation
 in an executable script and choose it as the instance launcher. A prefix lock
 prevents concurrent invocations during startup; the script does not copy mods,
 create profiles or replace MO2 configuration.
+It starts the GUI executable directly, avoiding a command window, and sets
+`MO2_FRONTEND_HOST=1`. In that mode the bridge hides MO2’s main window, splash
+and informational notification toasts before they appear. Explicit installer,
+tool and actionable error dialogs remain available. Launching MO2 normally
+without that variable retains its original UI.
 The launcher reads Proton's `require_tool_appid` and uses that installed Steam
 runtime's `run` script. This supplies the matching multimedia libraries needed
 by games even when MO2 itself starts without them. If the runtime is installed

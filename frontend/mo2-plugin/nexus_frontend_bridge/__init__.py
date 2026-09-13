@@ -2,15 +2,23 @@
 from pathlib import Path
 import os
 import mobase
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from .core import Bridge
 from .credentials import NexusCredentials
 from .downloads import Downloads
 from .profiles import Profiles
 from .executables import Executables
 from .mod_actions import ModActions
+
+
+class FrontendVisibility(QObject):
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Polish and (
+                isinstance(watched, QSplashScreen) or watched.metaObject().className() in ('MainWindow', 'MessageDialog')):
+            watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        return False
 
 
 class NexusFrontendBridge(mobase.IPluginTool):
@@ -21,6 +29,12 @@ class NexusFrontendBridge(mobase.IPluginTool):
         self.bridge = None
 
     def init(self, organizer):
+        if os.environ.get('MO2_FRONTEND_HOST') == '1':
+            # MO2 loads extensions before constructing its splash and main window.
+            # Suppress main-window notification toasts too; explicitly requested
+            # installer/tool dialogs and actionable error dialogs remain visible.
+            self.visibility = FrontendVisibility()
+            QApplication.instance().installEventFilter(self.visibility)
         states = mobase.PluginState
         active = getattr(states, 'ACTIVE', None)
         inactive = getattr(states, 'INACTIVE', None)
