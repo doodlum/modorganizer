@@ -102,6 +102,29 @@ still pass; both profiles' mod/plugin snapshots remain unchanged. Evidence:
 `/tmp/mo2-download-availability.log` and `artifacts/download-availability.png`.
 Build passed with the existing NU1902 warning.
 
+## Dialog requests during a background refresh
+
+Mod details and Nexus settings now wait for a pending bridge refresh instead
+of dropping the click when it holds the command lock. They mark the UI busy
+before waiting, so repeated clicks do not queue duplicate dialogs. After the
+refresh, they require the same connected endpoint/profile; a profile change
+reports that the dialog should be opened again, and a failed refresh preserves
+its connection error without opening a dialog.
+
+`MO2_VERIFY_DIALOG_QUEUE=1` with `MO2_SCREENSHOT` runs six deterministic transport
+cases in a temporary bridge directory: each action waits through a successful,
+profile-changing or failing refresh. The check verifies duplicate suppression,
+request target identity, stale/unavailable rejection and the busy-state cleanup.
+This test does not open or read native account dialogs.
+
+The same build passed `MO2_VERIFY_CATALOG=1 MO2_VERIFY_PREVIEW=1` against the
+isolated FNV host: the actual mod-details action opened the original DDS preview,
+rendered with a valid OpenGL widget and returned normally. All mod/profile hashes
+remained unchanged. The temporary native preview fixture was removed after host
+exit. Evidence: `/tmp/mo2-dialog-queue-native.log` and
+`artifacts/dialog-queue-native-return.png`. Build passed with the existing NU1902
+warning. The queue check is in `MockHost/Mo2DialogQueueCheck.cs`.
+
 ## Implementation history
 
 ### Download action profile boundaries

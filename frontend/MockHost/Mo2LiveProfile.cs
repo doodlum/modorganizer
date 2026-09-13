@@ -52,7 +52,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     private string? _lastSnapshot;
     public bool IsConnected => _lastSnapshot is not null;
     public Mo2ProfileTarget CurrentTarget => new(Endpoint, ProfilePath);
-    public bool CanUseDownloads => IsConnected && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
+    private bool CanStartHostAction => IsConnected && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
+    public bool CanUseDownloads => CanStartHostAction;
     private bool CheckDownloadTarget(Mo2ProfileTarget target)
     {
         if (target != CurrentTarget) Status = "The MO2 profile changed. Choose the archive or download action again.";
@@ -236,10 +237,15 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task ManageNexusAccount()
     {
-        var profile = ProfilePath;
-        if (profile.Length == 0 || !await _commands.WaitAsync(0)) return;
+        if (!CanStartHostAction) return;
+        var target = CurrentTarget;
+        var profile = target.ProfilePath;
+        ManagingMod = true; Changed?.Invoke();
+        await _commands.WaitAsync();
         try {
-            ManagingMod = true; Status = "Manage the Nexus account in MO2"; Changed?.Invoke();
+            if (!IsConnected) return;
+            if (target != CurrentTarget) { Status = "The MO2 profile changed. Open the dialog again."; return; }
+            Status = "Manage the Nexus account in MO2"; Changed?.Invoke();
             var result = await Client.SendAsync("manageNexusAccount", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(30));
             if (!result.GetProperty("opened").GetBoolean() || result.GetProperty("tab").GetString() != "nexusTab") throw new InvalidOperationException("MO2 did not open Nexus settings");
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
@@ -315,11 +321,17 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task ShowModDetails(EntityId id)
     {
-        var profile = ProfilePath;
+        if (!CanStartHostAction) return;
+        var target = CurrentTarget;
+        var profile = target.ProfilePath;
         var mod = _mods.Lookup(id);
-        if (!mod.HasValue || !await _commands.WaitAsync(0)) return;
+        if (!mod.HasValue) return;
+        ManagingMod = true; Changed?.Invoke();
+        await _commands.WaitAsync();
         try {
-            ManagingMod = true; Status = "Opening mod details in MO2"; Changed?.Invoke();
+            if (!IsConnected) return;
+            if (target != CurrentTarget) { Status = "The MO2 profile changed. Open the dialog again."; return; }
+            Status = "Opening mod details in MO2"; Changed?.Invoke();
             await Client.SendAsync("showModDetails", new() { ["profilePath"] = profile, ["name"] = mod.Value.Name }, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
         } catch (Exception error) { Report(error); }
