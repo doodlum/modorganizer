@@ -7,29 +7,54 @@ using NexusMods.Abstractions.Loadouts;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages.Sorting;
 using R3;
-using ReactiveUI;
 
 namespace Mo2.Frontend;
 
 internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
 {
+    private static readonly ComponentKey CanMoveKey = ComponentKey.From("MO2.PluginCanMove");
+    private static readonly ComponentKey CountKey = ComponentKey.From("MO2.PluginCount");
     public IObservable<IChangeSet<CompositeItemModel<ISortItemKey>, ISortItemKey>> ObserveLoadOrder(ISortOrderVariety variety, LoadoutId loadout, R3.Observable<ListSortDirection> direction)
     {
         var id = variety.GetSortOrderIdFor(loadout).Value;
-        return variety.GetSortOrderItemsChangeSet(id).Transform(item => {
+        var orderChanged = false;
+        CompositeItemModel<ISortItemKey> Create(IReactiveSortItem item) {
             var model = new CompositeItemModel<ISortItemKey>(item.Key);
-            model.Add(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey, new StringComponent((item is ScenarioPlugin { HasWarning: true } ? "⚠ " : "") + item.DisplayName));
+            model.Add(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey, new StringComponent(item.DisplayName));
             model.Add(LoadOrderColumns.ModNameColumn.ModNameComponentKey, new StringComponent(item.ModName));
             model.Add(LoadOrderColumns.IsActiveComponentKey, new ValueComponent<bool>(item.IsActive));
-            var index = item.WhenAnyValue(x => x.SortIndex).ToObservable();
-            var count = variety.GetSortOrderItems(id).Count;
-            var canMove = item is not ScenarioPlugin plugin || plugin.CanMove;
+            var index = new ValueComponent<int>(item.SortIndex);
+            var canMove = new ValueComponent<bool>(item is not ScenarioPlugin plugin || plugin.CanMove);
+            var count = new ValueComponent<int>(variety.GetSortOrderItems(id).Count);
+            model.Add(CanMoveKey, canMove); model.Add(CountKey, count);
             model.Add(LoadOrderColumns.IndexColumn.IndexComponentKey, new SharedComponents.IndexComponent(
-                new ValueComponent<int>(item.SortIndex, index, subscribeWhenCreated: true),
-                new ValueComponent<string>((item.SortIndex + 1).Ordinalize(), index.Select(x => (x + 1).Ordinalize()), subscribeWhenCreated: true),
-                R3.Observable.CombineLatest(index, direction, (i, d) => canMove && (d == ListSortDirection.Ascending ? i > 0 : i < count - 1)),
-                R3.Observable.CombineLatest(index, direction, (i, d) => canMove && (d == ListSortDirection.Ascending ? i < count - 1 : i > 0))));
+                index, new ValueComponent<string>((item.SortIndex + 1).Ordinalize()),
+                R3.Observable.CombineLatest(index.Value.AsObservable(), direction, canMove.Value.AsObservable(), count.Value.AsObservable(),
+                    (i, d, movable, total) => movable && (d == ListSortDirection.Ascending ? i > 0 : i < total - 1)),
+                R3.Observable.CombineLatest(index.Value.AsObservable(), direction, canMove.Value.AsObservable(), count.Value.AsObservable(),
+                    (i, d, movable, total) => movable && (d == ListSortDirection.Ascending ? i < total - 1 : i > 0))));
+            Update(model, item);
             return model;
-        });
+        }
+        void Update(CompositeItemModel<ISortItemKey> model, IReactiveSortItem item) {
+            model.Get<StringComponent>(LoadOrderColumns.DisplayNameColumn.DisplayNameComponentKey).Value.Value = (item is ScenarioPlugin { HasWarning: true } ? "⚠ " : "") + item.DisplayName;
+            model.Get<StringComponent>(LoadOrderColumns.ModNameColumn.ModNameComponentKey).Value.Value = item.ModName;
+            model.Get<ValueComponent<bool>>(LoadOrderColumns.IsActiveComponentKey).Value.Value = item.IsActive;
+            model.Get<ValueComponent<bool>>(CanMoveKey).Value.Value = item is not ScenarioPlugin plugin || plugin.CanMove;
+            model.Get<ValueComponent<int>>(CountKey).Value.Value = variety.GetSortOrderItems(id).Count;
+            var index = model.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
+            orderChanged |= index.Index.Value.Value != item.SortIndex;
+            index.Index.Value.Value = item.SortIndex;
+            index.DisplaySortIndexComponent.Value.Value = (item.SortIndex + 1).Ordinalize();
+        }
+        // Preserve native row identity and selection when MO2 reports state changes.
+        return variety.GetSortOrderItemsChangeSet(id).TransformWithInlineUpdate(Create, Update)
+            .Where(changes => {
+                // NMA sorts on every list change; that resets row selection. State-only
+                // changes already flow through the existing reactive components.
+                var publish = orderChanged || changes.Any(x => x.Reason is ChangeReason.Add or ChangeReason.Remove or ChangeReason.Moved);
+                orderChanged = false;
+                return publish;
+            });
     }
 }

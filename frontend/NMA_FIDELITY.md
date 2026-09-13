@@ -305,3 +305,30 @@ MO2 data comparisons passed. Evidence: `/tmp/mo2-topbar-runtime.log` and
 (16), including absent/custom log-path metadata; build passed with the existing
 upstream OpenTelemetry advisory. This change does not implement the disabled
 NMA onboarding/changelog features or introduce a second account authority.
+
+## Plugin multi-selection and activation refresh
+
+Actual evdev Ctrl-click input selected two MCM example ESPs in the native plugin
+table and clicked Disable selected / Enable selected. The first run exposed
+selection loss after the MO2 snapshot refreshed: selected rows were replaced,
+and NMA's unconditional list sort reset selection even after preserving row
+identity. The provider now updates reactive row components in place and only
+publishes list changes for membership/order changes. Plugin-cache replacement
+also removes only missing keys. Activation and diagnostic updates retain the
+native selection; genuine membership/order changes still update and sort rows.
+
+Activation buttons now reflect whether an editable selected plugin needs that
+state, and the command skips fixed plugins and redundant state requests.
+`frontend/tools/check_plugin_mouse.py` passed both mouse phases with selection
+retained, followed by fixed-only and mixed-selection checks through the native
+selection model. It restored every original plugin state/order and checked that
+mod activation/priority stayed unchanged. The fixture requires Linux evdev
+access and the initialized isolated FNV host; run it from the repository root.
+
+The same run passed native mod disable/restore (plugin removal/addition), fixed
+and stale reorder guards, movable-plugin order restoration, all 14 FNV plugin
+metadata checks, and Skyrim's 151 mod rows / 150 plugins with independent host
+comparisons before returning to FNV. Evidence: `/tmp/mo2-plugin-multi.log` and
+`artifacts/plugin-multi.png`. Both real mouse phases completed and the frontend
+exited successfully. Build passed with the existing upstream OpenTelemetry
+advisory. Multi-row dragging was not exercised by this check.

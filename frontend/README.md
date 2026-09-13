@@ -9,6 +9,10 @@ Linux Avalonia frontend for Mod Organizer. `run.sh` opens NMA’s My Games with 
 running MO2 host with the [bridge extension](mo2-plugin/README.md) installed.
 Live mode shows the active MO2 profile's mods on the left and plugins on the
 right, and sends mod activation, mod priority, plugin activation and plugin ordering changes through MO2.
+Ctrl-click selects multiple plugins. Enable/Disable selected retains that
+selection across activation updates, skips fixed plugins and leaves mod
+activation independent. Buttons are disabled when no selected plugin needs
+the requested change.
 The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
 The sidebar, game widgets, loadout cards, top bar and panel system use the original

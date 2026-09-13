@@ -163,6 +163,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1" && live.Profile.IsConnected) await VerifyTopBar(live, liveWindow, openLogs: true);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_WORKSPACES") == "1") await VerifyProfileWorkspaces(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
@@ -526,6 +527,64 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyPluginMulti(Mo2LiveWorkspace live, Window window)
+    {
+        if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
+            throw new InvalidOperationException("Plugin mouse test requires the isolated FNV profile");
+        var wrapper = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
+        var table = wrapper.GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        var enable = wrapper.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "EnableSelectedPlugins");
+        var disable = wrapper.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins");
+        var original = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.IsActive, x.SortIndex)).ToArray();
+        var mods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
+        var targets = live.Profile.Order.Plugins.Where(x => x.DisplayName.StartsWith("MCM Example") && x.CanToggle && x.IsActive).Take(2).Select(x => x.DisplayName).ToArray();
+        if (targets.Length != 2) throw new InvalidOperationException("Two active MCM example plugins are required");
+        async Task MousePhase(string phase, Button button) {
+            var scroll = table.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(s => s.Extent.Height - s.Viewport.Height).First();
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await WaitFor(() => targets.All(name => table.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == name)), "Plugin rows did not scroll into view");
+            window.Activate();
+            var points = targets.Select((name, index) => {
+                var text = table.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == name);
+                var point = text.PointToScreen(new Point(12, text.Bounds.Height / 2));
+                return new { X = point.X, Y = point.Y, Ctrl = index > 0 };
+            }).ToList();
+            var action = button.PointToScreen(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2));
+            points.Add(new { X = action.X, Y = action.Y, Ctrl = false });
+            File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new { Phase = phase, Points = points }));
+        }
+        try {
+            await MousePhase("disable", disable);
+            await WaitFor(() => targets.All(name => !live.Profile.Order.Plugins.Single(x => x.DisplayName == name).IsActive), "Mouse multi-selection did not disable both ESPs", seconds: 60);
+            if (!mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))))
+                throw new InvalidOperationException("Disabling plugins changed mod activation");
+            await MousePhase("enable", enable);
+            await WaitFor(() => targets.All(name => live.Profile.Order.Plugins.Single(x => x.DisplayName == name).IsActive), "Mouse multi-selection did not re-enable both ESPs", seconds: 60);
+            await WaitFor(() => !enable.IsEnabled && disable.IsEnabled && live.PluginsPage!.Adapter.SelectedModels.Count == 2,
+                $"Selection or activation button availability disagrees with restored plugins: selected={live.PluginsPage!.Adapter.SelectedModels.Count}, enable={enable.IsEnabled}, disable={disable.IsEnabled}");
+            table.RowSelection!.Clear();
+            var fixedIndex = live.Profile.Order.Plugins.ToList().FindIndex(x => !x.CanToggle);
+            table.RowSelection.Select(new IndexPath(fixedIndex));
+            await WaitFor(() => !enable.IsEnabled && !disable.IsEnabled, "Fixed-only selection enables plugin activation");
+            var targetIndex = live.Profile.Order.Plugins.ToList().FindIndex(x => x.DisplayName == targets[0]);
+            table.RowSelection.Select(new IndexPath(targetIndex));
+            await WaitFor(() => disable.IsEnabled, "Mixed selection did not allow its editable plugin");
+            disable.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.DisplayName == targets[0]).IsActive, "Mixed selection did not disable the editable plugin");
+            if (!live.Profile.Order.Plugins.Where(x => !x.CanToggle).All(x => original.Single(o => o.DisplayName == x.DisplayName).IsActive == x.IsActive))
+                throw new InvalidOperationException("Mixed selection changed a fixed plugin");
+        } finally {
+            File.Delete("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json");
+            foreach (var state in original.Where(x => live.Profile.Order.Plugins.Single(p => p.DisplayName == x.DisplayName).IsActive != x.IsActive))
+                await live.Profile.SetPluginsActive([state.DisplayName], state.IsActive);
+            table.RowSelection!.Clear();
+        }
+        await live.Profile.Refresh();
+        if (!original.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.IsActive, x.SortIndex))) ||
+            !mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)))) throw new InvalidOperationException("Plugin test did not restore original MO2 state");
+        Console.WriteLine("PASS: real Ctrl-click multi-selection and activation buttons disable/enable two ESPs independently of mods; fixed and mixed selections respect restrictions; original state restored");
     }
 
     private static async Task VerifyTopBar(Mo2LiveWorkspace live, Window window, bool openLogs = false)

@@ -16,10 +16,11 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
     {
         var layout = new DockPanel();
         var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Margin = new Thickness(12), Spacing = 8 };
+        var activationButtons = new List<(Button Button, bool Enabled)>();
         foreach (var (label, enabled) in new[] { ("Enable selected", true), ("Disable selected", false) }) {
-            var button = new Button { Content = label };
+            var button = new Button { Content = label, Name = enabled ? "EnableSelectedPlugins" : "DisableSelectedPlugins" };
             button.Click += async (_, _) => { if (ViewModel is { } model) await model.SetSelectedActive(enabled); };
-            actions.Children.Add(button);
+            actions.Children.Add(button); activationButtons.Add((button, enabled));
         }
         var details = new TextBlock { Name = "Mo2PluginDiagnostics", TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(12) };
         var detailScroll = new ScrollViewer { Content = details, Height = 150, IsVisible = false };
@@ -37,6 +38,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             var profile = ViewModel!.LiveProfile!;
             void UpdateSelection() {
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
+                foreach (var (button, enabled) in activationButtons)
+                    button.IsEnabled = profile.IsConnected && !profile.SelectingProfile && selected.Any(x => x.CanToggle && x.IsActive != enabled);
                 actions.IsEnabled = selected.Any(x => x.CanToggle);
                 details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
                 if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";

@@ -11,7 +11,7 @@ internal sealed class ScenarioLoadOrderPage(IServiceProvider services, NexusMods
 {
     public Mo2LiveProfile? LiveProfile { get; init; }
     public Task SetSelectedActive(bool enabled) => LiveProfile is { } profile
-        ? profile.SetPluginsActive(profile.Order.Plugins.Where(plugin => plugin.CanToggle && Adapter.SelectedModels.Any(row => plugin.Key.Equals(row.Key))).Select(plugin => plugin.DisplayName), enabled)
+        ? profile.SetPluginsActive(profile.Order.Plugins.Where(plugin => plugin.CanToggle && plugin.IsActive != enabled && Adapter.SelectedModels.Any(row => plugin.Key.Equals(row.Key))).Select(plugin => plugin.DisplayName), enabled)
         : Task.CompletedTask;
     public IconValue TabIcon => IconValues.Package;
     public string TabTitle => "Plugin load order";

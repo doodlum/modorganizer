@@ -45,7 +45,12 @@ internal sealed class ScenarioPluginOrder : ISortOrderVariety
         LearnMoreUrl = "https://loot.github.io/docs/help/introduction-to-load-orders/",
     };
     public Func<ScenarioPlugin[], CancellationToken, Task>? ApplyOrder { get; set; }
-    public void Replace(IEnumerable<ScenarioPlugin> plugins) => _items.Edit(cache => { cache.Clear(); cache.AddOrUpdate(plugins); });
+    public void Replace(IEnumerable<ScenarioPlugin> plugins)
+    {
+        var incoming = plugins.ToArray();
+        var removed = _items.Keys.Except(incoming.Select(x => x.Key)).ToArray();
+        _items.Edit(cache => { cache.RemoveKeys(removed); cache.AddOrUpdate(incoming); });
+    }
     public ScenarioPluginOrder(bool seedFixtures = true)
     {
         if (!seedFixtures) return;
