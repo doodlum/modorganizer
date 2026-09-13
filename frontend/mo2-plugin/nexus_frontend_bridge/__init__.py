@@ -54,6 +54,9 @@ class NexusFrontendBridge(mobase.IPluginTool):
                 # second main UI. Explicit installer/tool dialogs remain windows.
                 window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
                 window.hide()
+            # MO2 resolves AppConfig::logPath ("logs") against QApplication dataPath.
+            data_path = QApplication.instance().property('dataPath')
+            self.bridge.logs_path = str(Path(data_path) / 'logs') if data_path else None
             self.bridge.mod_actions = ModActions(organizer, window)
             self.bridge.downloads.window = window
             self.bridge.profiles = Profiles(organizer, window)

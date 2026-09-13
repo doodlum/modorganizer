@@ -143,6 +143,7 @@ public partial class MockApp : Application
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_OPTIONS") is { } options) await VerifyLayoutOptions(live, liveWindow, options);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_RESTORE") == "1") await VerifyLayoutRestore(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATALOG") == "1") {
@@ -162,6 +163,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1" && live.Profile.IsConnected) await VerifyTopBar(live, liveWindow, openLogs: true);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_WORKSPACES") == "1") await VerifyProfileWorkspaces(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_NAVIGATION") == "1") await VerifyProfileNavigation(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_SKYRIM") == "1") {
@@ -524,6 +526,32 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyTopBar(Mo2LiveWorkspace live, Window window, bool openLogs = false)
+    {
+        var view = window.GetVisualDescendants().OfType<TopBarView>().Single();
+        var model = (Mo2TopBar)view.ViewModel!;
+        if (typeof(TopBarDesignViewModel).IsAssignableFrom(model.GetType()) || model.Username is not null || model.Avatar is not null || model.IsLoggedIn)
+            throw new InvalidOperationException("Live top bar still contains a demo identity");
+        foreach (var command in new[] { model.ShowWelcomeMessageCommand, model.LogoutCommand, model.OpenNexusModsProfileCommand,
+            model.OpenNexusModsPremiumCommand, model.OpenNexusModsAccountSettingsCommand, model.OpenForumsCommand })
+            if (((System.Windows.Input.ICommand)command).CanExecute(System.Reactive.Unit.Default)) throw new InvalidOperationException("Unmapped top-bar action remains enabled");
+        if (((System.Windows.Input.ICommand)model.ViewChangelogCommand).CanExecute(NavigationInformation.From(NavigationInput.Default)))
+            throw new InvalidOperationException("Unmapped changelog remains enabled");
+        var menu = view.FindControl<MenuItem>("ViewAppLogsMenuItem")!;
+        await WaitFor(() => ReferenceEquals(menu.Command, model.ViewAppLogsCommand), "Native logs menu did not bind to the MO2 command");
+        if (menu.Header?.ToString() != "View MO2 logs") throw new InvalidOperationException("Logs menu misidentifies its destination");
+        if (!live.Profile.IsConnected) {
+            if (((System.Windows.Input.ICommand)model.ViewAppLogsCommand).CanExecute(System.Reactive.Unit.Default) || model.LogsDirectory is not null)
+                throw new InvalidOperationException("Disconnected top bar enables instance logs");
+        } else {
+            var root = live.CatalogEntries.Single(x => x.Registration.Endpoint == live.Profile.Endpoint).Registration.Directory;
+            await WaitFor(() => model.LogsDirectory == Path.Combine(root, "logs") && ((System.Windows.Input.ICommand)model.ViewAppLogsCommand).CanExecute(System.Reactive.Unit.Default),
+                "Logs menu did not follow the connected MO2 instance");
+            if (openLogs) menu.Command!.Execute(System.Reactive.Unit.Default);
+        }
+        Console.WriteLine("PASS: live top bar has no demo account; unmapped actions disabled; native logs command follows MO2 connection; directory request=" + openLogs);
     }
 
     private static async Task VerifySidebarLaunch(Mo2LiveWorkspace live, Window window)
@@ -1040,6 +1068,7 @@ public partial class MockApp : Application
             var priorities = live.ModsPage!.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
             if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Mod rows lost MO2 priority order after switching games");
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, window);
+            if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, window, openLogs: true);
         }
         try {
             await VisitGameProfile(skyrim, selected);

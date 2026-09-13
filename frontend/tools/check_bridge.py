@@ -53,6 +53,10 @@ class ContractTests(unittest.TestCase):
         result = self.bridge.execute(self.request(action='snapshot'))
         self.assertEqual(result['plugins'][0]['masters'], ['FalloutNV.esm'])
         self.assertEqual(result['mods'][0]['state'], 1)
+    def test_log_directory_is_host_metadata_not_an_assumed_install_path(self):
+        self.assertIsNone(self.bridge.execute(self.request(action='snapshot'))['instance']['logsPath'])
+        self.bridge.logs_path = 'Z:/custom MO2 data/logs'
+        self.assertEqual(self.bridge.execute(self.request(action='snapshot'))['instance']['logsPath'], 'Z:/custom MO2 data/logs')
     def test_native_mod_details_are_forwarded_without_recomputing_conflicts(self):
         class ModActions:
             def snapshot(self): return [{'name': 'Overwrite', 'state': 4, 'priority': 1,

@@ -194,6 +194,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var topBar = new TopBarView { ViewModel = new Mo2TopBar(this) };
         topBar.ViewModel.WhenAnyValue(x => x.ActiveWorkspaceSubtitle).Subscribe(text =>
             topBar.FindControl<TextBlock>("ActiveWorkspaceSubtitleTextBlock")!.IsVisible = !string.IsNullOrEmpty(text));
+        topBar.FindControl<MenuItem>("ViewAppLogsMenuItem")!.Header = "View MO2 logs";
         var account = topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>("LoginButton")!;
         account.Text = "Nexus account";
         ToolTip.SetTip(account, "Manage the selected instance’s Nexus account in MO2. Select a profile first.");

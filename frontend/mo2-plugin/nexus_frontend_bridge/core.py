@@ -12,6 +12,7 @@ def number(value):
 class Bridge:
     def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None, mod_actions=None):
         self.mod_actions = mod_actions
+        self.logs_path = None
         self.executables = executables
         self.profiles = profiles
         self.downloads = downloads
@@ -44,7 +45,7 @@ class Bridge:
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
-                         'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath()},
+                         'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath(), 'logsPath': self.logs_path},
             'mods': self.mod_actions.snapshot() if self.mod_actions is not None else [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
                       'priority': mods.priority(name)} for name in mods.allModsByProfilePriority()],
             'plugins': self.mod_actions.plugin_snapshot() if self.mod_actions is not None else [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),

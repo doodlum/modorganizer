@@ -279,3 +279,29 @@ The saved data uses the native workspace's current-page model; it does not add
 cross-restart Back/Forward history or restore live game processes. Diagnostic
 reference serialization is implemented, but a restart with a live diagnostic
 extension has not yet been exercised.
+
+## Top-bar behavior audit
+
+The live top bar now implements the native interface directly instead of
+inheriting the design model's demo username/avatar, login toggle and enabled
+no-op commands. The existing Nexus account button still opens MO2 settings.
+Welcome, changelog and unsupported account menu actions are disabled rather
+than presenting an enabled action with no implementation; forums remain disabled.
+
+The native help menu's **View MO2 logs** command uses a path reported by the
+bridge from MO2's QApplication `dataPath` plus its `logs` subdirectory, matching
+the original application. It does not infer that path from the executable or
+read log contents. The command is disabled without a connected host or existing
+log directory, and follows the selected instance. Older bridges without this
+optional metadata leave it disabled.
+
+`MO2_VERIFY_TOPBAR=1` passed disconnected → FNV → Skyrim → FNV, verifying the
+native menu binding, absence of demo identity, disabled unsupported commands and
+correct host log directories. Dolphin processes confirmed both requested log
+folders (their selected log files were not opened/read); those test windows
+were closed afterward. Combined sidebar launch, native Home history and independent
+MO2 data comparisons passed. Evidence: `/tmp/mo2-topbar-runtime.log` and
+`artifacts/topbar-mo2.png`. The screenshot was inspected. Bridge checks passed
+(16), including absent/custom log-path metadata; build passed with the existing
+upstream OpenTelemetry advisory. This change does not implement the disabled
+NMA onboarding/changelog features or introduce a second account authority.

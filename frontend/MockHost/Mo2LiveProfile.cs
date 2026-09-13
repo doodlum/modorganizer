@@ -26,6 +26,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
     public string Endpoint { get; private set; }
     public bool SelectingProfile { get; private set; }
+    public string? LogsDirectory { get; private set; }
     public string NexusGame { get; private set; } = "";
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
@@ -52,6 +53,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
         Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
+        LogsDirectory = snapshot.GetProperty("instance").TryGetProperty("logsPath", out var logs) && logs.GetString() is { } logsPath ? Mo2InstanceCatalog.LocalPath(logsPath) : null;
         NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
         Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
             .Where(x => !x.GetProperty("hidden").GetBoolean())

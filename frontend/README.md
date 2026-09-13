@@ -27,6 +27,10 @@ or unsupported layout is left intact and its error appears in the status bar.
 **Create Copy**, **Rename** and **Delete** on each card open MO2’s original
 prompts and confirmation. The active profile cannot be renamed or deleted. Cards refresh when MO2
 profile files change, including changes made in the original interface.
+The native help menu’s **View MO2 logs** action opens the connected host’s log
+folder through the Linux desktop. Its path comes from the bridge. Unsupported
+NMA welcome/changelog/account-menu actions are disabled; the **Nexus account**
+button continues to open MO2’s own account settings.
 The native **PLAY** button and MO2 executable picker sit at the bottom of the
 profile sidebar. Launch is disabled while MO2 is busy, disconnected, or no valid
 executable is selected. The native top bar shows the active profile name.
