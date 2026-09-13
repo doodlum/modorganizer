@@ -15,6 +15,9 @@ activation independent. Buttons are disabled when no selected plugin needs
 the requested change.
 The Downloads tab reads MO2's downloads folder, requests Nexus files through
 MO2's logged-in downloader, and installs archives through its existing installers.
+Downloads identifies the connected game and profile. Archive selection retains
+that instance/profile target; if it changes while the picker is open, choose the
+archive again. Install and transfer actions disable while MO2 is unavailable or busy.
 The sidebar, game widgets, loadout cards, top bar and panel system use the original
 NMA views. My Games → View → profile switches the connected game. My Loadouts
 shows real profiles grouped by game across registered MO2 instances. Each

@@ -61,6 +61,31 @@ remaining navigation/extension coverage still need validation.
 
 ## Implementation history
 
+### Download action profile boundaries
+
+Archive selection now captures the MO2 endpoint and profile before awaiting the
+file picker. Installation checks that target again after acquiring the command
+lock. Archive-row installation and transfer controls also retain their original
+target, and queued Nexus requests validate their captured target before sending.
+A changed target reports that the action needs to be chosen again, without
+sending it to the new profile or invalidating its valid snapshot.
+
+Downloads displays the game/profile name and provides its path in a tooltip.
+Import, download, row-install and transfer controls require an available snapshot
+and disable while selecting a profile, installing, launching or managing a mod.
+
+`MO2_VERIFY_CATALOG=1 MO2_VERIFY_DOWNLOAD_CONTEXT=1` with `MO2_SCREENSHOT` passed
+against the isolated FNV host. The check uses the production picker continuation
+with an asynchronous picker callback that selects Frontend Clone Test while
+selection is pending. It verifies rejection of that install, a stale transfer
+action and an incorrect instance identity. A current-target attempt reaches MO2's
+native missing-archive validation, then refresh restores the controls. Both
+profiles' mod/plugin snapshots remain unchanged and Frontend Test is reselected.
+This check does not automate the operating system's file picker or install a mod.
+Evidence: `/tmp/mo2-download-context.log` and
+[Downloads with its profile context](artifacts/download-context.png). Build passed
+with the existing upstream OpenTelemetry warning.
+
 The default frontend opens NMA’s My Games and the real profile catalog without assuming an
 active profile. Fixture mode requires `MO2_FIXTURES=1` or `run-fixtures.sh`.
 `Mo2ProfileFiles` reads

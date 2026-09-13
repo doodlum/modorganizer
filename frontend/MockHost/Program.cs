@@ -164,6 +164,7 @@ public partial class MockApp : Application
                             if (!live.Catalog.Read().Any(x => x.Instance?.Game == "Skyrim Special Edition")) throw new InvalidOperationException("Skyrim catalog entry missing");
                             Console.WriteLine("PASS: default startup has only the real MO2 catalog; selecting a registered profile connects both live panels; Skyrim profiles present");
                         }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1") await VerifyDownloadContext(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_MULTI") == "1") await VerifyPluginMulti(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_DRAG") == "1") await VerifyPluginDrag(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PANEL_DRAG") == "1") await VerifyPanelDrag(live, liveWindow);
@@ -530,6 +531,71 @@ public partial class MockApp : Application
             if (!bytes.SequenceEqual(File.ReadAllBytes(path))) throw new InvalidOperationException("Profile action changed unrelated profile state: " + Path.GetRelativePath(root, path));
         Console.WriteLine("PASS: native Create Copy preserves mod/plugin files; Rename Cancel preserves name, Rename accepts and cards refresh with identical mod/plugin files; Delete No preserves profile; Delete Yes removes it; cards refresh without reopening; active and unrelated profiles unchanged");
         live.ShowProfile();
+    }
+
+    private static async Task VerifyDownloadContext(Mo2LiveWorkspace live, Window window)
+    {
+        const string missing = "/home/deck/mo2/frontend/artifacts/nonexistent-context-check.zip";
+        var profile = live.Profile;
+        if (!profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || File.Exists(missing))
+            throw new InvalidOperationException("Download context check requires isolated FNV and a nonexistent archive path");
+        var disconnected = new Mo2LiveProfile("");
+        await disconnected.InstallArchive(missing);
+        if (disconnected.CanUseDownloads || !disconnected.Status.Contains("connected MO2 profile"))
+            throw new InvalidOperationException("Disconnected archive operation was not rejected");
+        var entry = live.CatalogEntries.Single(x => x.Registration.Directory.EndsWith("/frontend/artifacts/mo2-fnv-host"));
+        var original = entry.Instance!.Profiles.Single(x => x.Name == "Frontend Test");
+        var clone = entry.Instance.Profiles.Single(x => x.Name == "Frontend Clone Test");
+        var client = new Mo2BridgeClient(profile.Endpoint);
+        async Task<string> State() {
+            var snapshot = await client.SendAsync("snapshot");
+            return snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
+        }
+        var before = await State();
+        live.OpenDownloads();
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2DownloadsView>().Any(), "Downloads page did not render");
+        var view = window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single();
+        var context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
+        if (context.Text != "Fallout: New Vegas · Frontend Test") throw new InvalidOperationException("Downloads does not identify its MO2 game and profile");
+        var import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
+        var download = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
+        if (!import.IsEnabled || !download.IsEnabled) throw new InvalidOperationException("Connected Downloads actions are disabled");
+        var started = false; var disabledDuringSwitch = false;
+        void Changed() {
+            started |= profile.Installing;
+            disabledDuringSwitch |= profile.SelectingProfile && !import.IsEnabled && !download.IsEnabled;
+        }
+        profile.Changed += Changed;
+        var oldTarget = profile.CurrentTarget;
+        try {
+            var cloneBefore = "";
+            await view.ChooseArchive(async () => {
+                if (!await profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException("Clone profile did not connect");
+                cloneBefore = await State();
+                return missing;
+            });
+            if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || !disabledDuringSwitch ||
+                context.Text != "Fallout: New Vegas · Frontend Clone Test" || await State() != cloneBefore)
+                throw new InvalidOperationException("Archive picker continuation crossed its original profile boundary");
+            await profile.ControlDownload(missing, "cancel", oldTarget);
+            if (!profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || await State() != cloneBefore)
+                throw new InvalidOperationException("Stale download row acted on another profile");
+            await profile.InstallArchive(missing, new Mo2ProfileTarget(oldTarget.Endpoint + "-different-instance", profile.ProfilePath));
+            if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed."))
+                throw new InvalidOperationException("Archive target guard ignored instance identity");
+            await view.ChooseArchive(() => Task.FromResult<string?>(missing));
+            if (!started || !profile.Status.Contains("The mod archive does not exist") || import.IsEnabled || download.IsEnabled ||
+                view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Install") && x.IsEnabled))
+                throw new InvalidOperationException("Current target did not reach native archive validation, or unavailable controls remained enabled");
+            await profile.Refresh();
+            if (!profile.IsConnected || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
+                throw new InvalidOperationException("Downloads did not recover after refresh or changed clone state");
+        } finally {
+            profile.Changed -= Changed;
+            await profile.SelectProfile(entry.Registration, original);
+        }
+        if (await State() != before) throw new InvalidOperationException("Download context check changed original MO2 state");
+        Console.WriteLine("PASS: picker continuation and stale archive/download actions stay bound to their MO2 instance/profile; current target reaches native validation; disconnected/busy controls disable; both profiles unchanged");
     }
 
     private static async Task VerifyPanelDrag(Mo2LiveWorkspace live, Window window)

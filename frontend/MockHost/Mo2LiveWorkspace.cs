@@ -68,7 +68,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         if (snapshot == _catalogSnapshot) return;
         _catalogSnapshot = snapshot; CatalogChanged?.Invoke();
     }
-    public string GameName => Profile.NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
+    public string GameName => Profile.GameName;
     public Mo2LiveProfile Profile { get; }
     private IEnumerable<object> ProfilePages => WorkspaceController.TryGetWorkspace(_profileWorkspace, out var workspace)
         ? workspace.Panels.SelectMany(x => x.Tabs).Select(x => (object)x.Contents.ViewModel) : [];

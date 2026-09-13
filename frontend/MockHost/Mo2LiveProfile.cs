@@ -9,6 +9,7 @@ using NexusMods.MnemonicDB.Abstractions;
 
 namespace Mo2.Frontend;
 
+internal readonly record struct Mo2ProfileTarget(string Endpoint, string ProfilePath);
 internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused);
 internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false);
 
@@ -28,6 +29,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool SelectingProfile { get; private set; }
     public string? LogsDirectory { get; private set; }
     public string NexusGame { get; private set; } = "";
+    public string GameName => NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
     public bool ManagingMod { get; private set; }
@@ -47,6 +49,16 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     private string? _lastSnapshot;
     public bool IsConnected => _lastSnapshot is not null;
+    public Mo2ProfileTarget CurrentTarget => new(Endpoint, ProfilePath);
+    public bool CanUseDownloads => IsConnected && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
+    private bool CheckDownloadTarget(Mo2ProfileTarget target)
+    {
+        if (target != CurrentTarget) Status = "The MO2 profile changed. Choose the archive or download action again.";
+        else if (!IsConnected || ProfilePath.Length == 0) Status = "Select a connected MO2 profile before using downloads.";
+        else return true;
+        Changed?.Invoke();
+        return false;
+    }
     private void Apply(JsonElement snapshot)
     {
         var raw = snapshot.GetRawText();
@@ -242,11 +254,13 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { SelectingProfile = false; Changed?.Invoke(); _commands.Release(); }
     }
-    public async Task InstallArchive(string path)
+    public async Task InstallArchive(string path, Mo2ProfileTarget? requestedTarget = null)
     {
-        var profile = ProfilePath;
+        var target = requestedTarget ?? CurrentTarget;
+        var profile = target.ProfilePath;
         await _commands.WaitAsync();
         try {
+            if (!CheckDownloadTarget(target)) return;
             Installing = true; Status = "Complete installation in MO2"; Changed?.Invoke();
             var hostPath = path.StartsWith('/') ? "Z:" + path : path;
             var result = await Client.SendAsync("installArchive", new() { ["profilePath"] = profile, ["path"] = hostPath }, timeout: TimeSpan.FromMinutes(30));
@@ -256,11 +270,13 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { Installing = false; Changed?.Invoke(); _commands.Release(); }
     }
-    public async Task ControlDownload(string path, string operation)
+    public async Task ControlDownload(string path, string operation, Mo2ProfileTarget? requestedTarget = null)
     {
-        var profile = ProfilePath;
+        var target = requestedTarget ?? CurrentTarget;
+        var profile = target.ProfilePath;
         await _commands.WaitAsync();
         try {
+            if (!CheckDownloadTarget(target)) return;
             await Client.SendAsync("controlDownload", new() { ["profilePath"] = profile, ["path"] = path, ["operation"] = operation });
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             Status = operation + " requested through MO2"; Changed?.Invoke();
@@ -269,10 +285,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     }
     public async Task DownloadNexus(string link)
     {
-        var profile = ProfilePath;
+        var target = CurrentTarget;
+        var profile = target.ProfilePath;
         var game = NexusGame;
         await _commands.WaitAsync();
         try {
+            if (!CheckDownloadTarget(target)) return;
             var file = Mo2NexusLink.Parse(link);
             if (!string.Equals(file.Game, game, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Choose a Nexus file for the current game");
             await Client.SendAsync("startNexusDownload", new() { ["profilePath"] = profile, ["game"] = game, ["modId"] = file.ModId, ["fileId"] = file.FileId });
