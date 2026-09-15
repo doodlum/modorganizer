@@ -149,11 +149,16 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         var nativeGroup = native.FindControl<ItemsControl>("ContextControlGroup")!;
         var group = Mo2SelectionGroup.Adopt(nativeGroup, out var groupDeselect,
             () => native.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
+        // The emptied original takes the shared group's place rather than lingering
+        // beside it: left in the toolbar it was still an item, so the two pages'
+        // toolbars held a different number of things.
         if (nativeGroup.Parent is Panel groupOwner) {
             var at = groupOwner.Children.IndexOf(nativeGroup);
+            groupOwner.Children.Remove(nativeGroup);
             groupOwner.Children.Insert(Math.Max(0, at), group);
         } else if (nativeGroup.Parent is ItemsControl groupHost) {
             var at = groupHost.Items.IndexOf(nativeGroup);
+            groupHost.Items.Remove(nativeGroup);
             groupHost.Items.Insert(Math.Max(0, at), group);
         }
         var separator = new MenuItem { Name = "CreateSeparatorMenuItem", Header = "Add separator…" };

@@ -75,8 +75,13 @@ internal static class Mo2RowPaddingCheck
                 .FirstOrDefault(x => x.Name == statusName);
             var table = page.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault();
             if (heading is null || toggle is null || table is null) return null;
-            // The row the toggle is in, which is what carries the actions at its end.
-            var row = toggle.GetSelfAndVisualAncestors().OfType<TreeDataGridRow>().FirstOrDefault();
+            // The topmost row on screen, not whichever one the visual tree happens to
+            // list first: rows are recycled as a list scrolls, so after any scrolling
+            // the first one in the tree can be several rows down — and this measures
+            // how far the first row sits below the column headings.
+            var row = table.GetVisualDescendants().OfType<TreeDataGridRow>()
+                .Where(x => x.Bounds.Height > 0 && x.TranslatePoint(default, page) is not null)
+                .OrderBy(x => x.TranslatePoint(default, page)!.Value.Y).FirstOrDefault();
             if (row is null) return null;
             // The last thing drawn in the row, so the right-hand end can be compared
             // without knowing which actions each page happens to offer.
@@ -94,7 +99,8 @@ internal static class Mo2RowPaddingCheck
             var rowTop = row.TranslatePoint(default, page)?.Y;
             if (rule is null || ruleBottom is null || headingTop is null || rowTop is null) return null;
             var headingAt = heading.TranslatePoint(default, page)?.X;
-            var toggleAt = toggle.TranslatePoint(default, page)?.X;
+            var toggleAt = (row.GetVisualDescendants().OfType<Control>().FirstOrDefault(x => x.Name == statusName) ?? toggle)
+                .TranslatePoint(default, page)?.X;
             var tableAt = table.TranslatePoint(default, page)?.X;
             var rowAt = row.TranslatePoint(default, page)?.X;
             var actionsAt = actions?.TranslatePoint(new Point(actions.Bounds.Width, 0), page)?.X;

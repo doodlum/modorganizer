@@ -75,6 +75,23 @@ internal static class Mo2SharedListCheck
                 $"{(search is null ? 0 : 1)} search control, {(group is null ? 0 : 1)} selection group");
         }
 
+        // The toolbar holds the same things in the same order on both pages. Each
+        // page assembled its own, so the pill, the search and the selection group
+        // could sit in any order relative to one another without anything noticing.
+        string Shape(Control page) => string.Join(" ", page.GetVisualDescendants().OfType<Toolbar>()
+            .SelectMany(toolbar => toolbar.Items.OfType<Control>())
+            .Select(item => item switch {
+                Border { Name: { } pill } when pill.EndsWith("PrimaryActions", StringComparison.Ordinal) => "pill",
+                NexusMods.App.UI.Controls.Search.SearchControl => "search",
+                Panel { Name: "ContextControlGroup" } => "selection",
+                ItemsControl inner when inner.Items.OfType<NexusMods.App.UI.Controls.Search.SearchControl>().Any() => "search",
+                _ => item.GetType().Name.ToLowerInvariant(),
+            }));
+        var shapes = new[] { ("My Mods", Shape(mods)), ("Plugins", Shape(plugins)) };
+        if (shapes[0].Item2 != shapes[1].Item2)
+            faults.Add($"the toolbars hold different things: My Mods \"{shapes[0].Item2}\", Plugins \"{shapes[1].Item2}\"");
+        described.Add($"both toolbars read \"{shapes[0].Item2}\"");
+
         // The same rail, to the pixel: both pages reserve the same width for it and
         // give it the same room above and below.
         var rails = new[] { mods, plugins }
@@ -124,9 +141,18 @@ internal static class Mo2SharedListCheck
             if (Math.Abs(viewer.Offset.Y - bar.Value) > 1.5)
                 faults.Add($"{name}'s rows are at {viewer.Offset.Y:F0} while its rail reads {bar.Value:F0}");
             scrolled++;
-            viewer.Offset = new Vector(viewer.Offset.X, 0);
+            // Put the list back where it was found, rail included, and wait for it to
+            // settle: anything checked after this in the same run reads these tables,
+            // and one left scrolled reported its first row 249px below its headings.
             table.ClearValue(Layoutable.HeightProperty);
-            await Task.Delay(300);
+            bar.Value = 0;
+            viewer.Offset = new Vector(viewer.Offset.X, 0);
+            for (var settle = 0; settle < 20 && viewer.Offset.Y > .5; settle++) {
+                viewer.Offset = new Vector(viewer.Offset.X, 0);
+                await Task.Delay(100);
+                window.UpdateLayout();
+            }
+            if (viewer.Offset.Y > .5) faults.Add($"{name} was left scrolled to {viewer.Offset.Y:F0} by this check");
         }
 
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
