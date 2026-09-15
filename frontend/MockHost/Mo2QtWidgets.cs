@@ -67,7 +67,7 @@ internal static class Mo2QtWidgets
     internal static Button Button(string name, string caption, string tip, string icon, Action click)
     {
         var button = new Button {
-            Name = name, Padding = new Thickness(10, 4), Background = Brushes.Transparent,
+            Name = name, Padding = new Thickness(6, 2), Background = Brushes.Transparent, FontSize = Mo2Density.FontSize,
             VerticalAlignment = VerticalAlignment.Center,
             Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = {
                 new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = Mo2TableRow.GlyphSize,

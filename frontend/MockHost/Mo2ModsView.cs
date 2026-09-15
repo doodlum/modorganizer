@@ -459,7 +459,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
 
         // Under the list: MO2's displayCategoriesBtn, what the list is filtered to,
         // the grouping box and the filter field.
-        var filterBar = new Grid { Name = "ModsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*,Auto,Auto,Auto"),
+        var filterBar = new Grid { Name = "ModsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
             Margin = new Thickness(0,6,0,0) };
         categoriesToggle = Mo2QtWidgets.Toggle("ModsDisplayCategoriesButton", Mo2QtWidgets.DisplayCategoriesTip,
             "mdi-filter-variant", true, on => { if (categoriesRef is not null) categoriesRef.IsVisible = on && Bounds.Width >= 420; });
@@ -469,19 +469,23 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         Grid.SetColumn(filterLabel, 1); filterBar.Children.Add(filterLabel);
         var currentCategory = Mo2QtWidgets.Caption("ModsCurrentCategoryLabel", "");
         currentCategory.Opacity = .85;
+        // In the row's stretching column, and trimmed: a long list of ticked
+        // categories used to take whatever width it wanted and push the grouping box
+        // and the filter field off the end of the pane.
+        currentCategory.TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis;
         Grid.SetColumn(currentCategory, 2); filterBar.Children.Add(currentCategory);
         var clearAll = Mo2QtWidgets.Button("ModsClearFiltersButton", Mo2QtWidgets.ClearAllFilters, Mo2QtWidgets.ClearAllFilters,
             "mdi-filter-remove-outline", () => clearFilters?.Invoke());
         clearAll.IsVisible = false;
-        Grid.SetColumn(clearAll, 4); filterBar.Children.Add(clearAll);
+        Grid.SetColumn(clearAll, 3); filterBar.Children.Add(clearAll);
         var groupBox = Mo2QtWidgets.Choice("ModsGroupBox", "Group the mod list.", Mo2QtWidgets.GroupModes, 0,
             choice => Model().SetGrouping(choice));
         groupBox.Margin = new Thickness(6,0); groupBox.MinWidth = 96;
-        Grid.SetColumn(groupBox, 5); filterBar.Children.Add(groupBox);
+        Grid.SetColumn(groupBox, 4); filterBar.Children.Add(groupBox);
         var qtFilter = Mo2QtWidgets.Filter("ModsQtFilter", Mo2QtWidgets.ModFilterTip,
             text => Model().SetColumnFilters(text, "", ""), out filterField);
         qtFilter.MinWidth = 140;
-        Grid.SetColumn(qtFilter, 6); filterBar.Children.Add(qtFilter);
+        Grid.SetColumn(qtFilter, 5); filterBar.Children.Add(qtFilter);
 
         // MO2's category filter sits beside the list, not above it, so the pane is a
         // column of categories and the list rather than the list alone. Its own two
@@ -572,7 +576,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             categoriesGroup.IsVisible = categoriesToggle.IsChecked == true && Bounds.Width >= 420;
             // MO2 puts this group behind a splitter, so it grows with the pane. A
             // fixed 176 left its separators box drawn as "Fi" on every pane width.
-            var wanted = Math.Clamp(Math.Round(Bounds.Width * .3), 190, 260);
+            var wanted = Math.Clamp(Math.Round(Bounds.Width * .3), 200, 260);
             if (Math.Abs(categoriesGroup.Width - wanted) > .5) categoriesGroup.Width = wanted;
             // Tell the columns how much of the pane the filter is using, so they fit
             // into what is left rather than into the whole panel.

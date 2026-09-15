@@ -200,6 +200,9 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         _open.IsEnabled = ready && ViewModel?.Profile.CanChangeOriginalUi == true && _table.RowSelection?.SelectedItem is Mo2DataEntry;
     }
     private Mo2ColumnToggle? _columns;
+    // The handler that keeps the columns fitting the panel. Held so a re-render can
+    // replace it rather than adding another one for every table it builds.
+    private EventHandler? _fitColumns;
     private void Render()
     {
         // MO2's own filters, over the page's existing search: only conflicting files,
@@ -217,13 +220,18 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         source.Columns.Add(Mo2FolderPage.NameColumn<Mo2DataEntry>(row => (row.Name, row.Directory, row.Details, false)));
         // The rest of MO2's own Data columns (filetreemodel.cpp): Mod, Type, Size and
         // Date modified beside the name.
+        // MinWidth 0 so a column the panel has no room for can be taken down to
+        // nothing: left at the default the tree keeps enough for the heading, and a
+        // "dropped" column still drew its title and a column of ellipses.
         TemplateColumn<Mo2DataEntry> Column(string header, Func<Mo2DataEntry, string> text, GridLength width) =>
             new(header, new FuncDataTemplate<Mo2DataEntry>((row, _) => {
                 var label = new TextBlock { Text = row is null ? "" : text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin };
                 if (row is not null) ToolTip.SetTip(label, row.Details);
                 return label;
-            }), width: width);
+            }), width: width, options: new Avalonia.Controls.Models.TreeDataGrid.TemplateColumnOptions<Mo2DataEntry> {
+                MinWidth = new GridLength(0),
+            });
         // The mod a file comes from is a fixed column, as MO2 draws it: sharing the
         // width evenly with the name left both halved, and every file in a folder of
         // long names was drawn as "Carava…".
@@ -231,6 +239,22 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         source.Columns.Add(Column("Type", x => x.Type, new GridLength(70)));
         source.Columns.Add(Column("Size", x => x.SizeText, new GridLength(90)));
         source.Columns.Add(Column("Date modified", x => x.ModifiedText, new GridLength(140)));
+        // Dropped from the right as the panel narrows, so the name always has room:
+        // in MO2's own panel layout this tree is half a window wide, and four fixed
+        // columns left the name column — the one the tree is read by — at nothing but
+        // its icon.
+        (int Column, double Width, double Threshold)[] optional = [
+            (1, 150, 380), (2, 70, 460), (3, 90, 560), (4, 140, 700)];
+        void FitColumns() {
+            var width = _table.Bounds.Width;
+            if (width <= 0) return;
+            foreach (var (column, natural, threshold) in optional)
+                source.Columns.SetColumnWidth(column, new GridLength(width >= threshold ? natural : 0));
+        }
+        _table.LayoutUpdated -= _fitColumns;
+        _fitColumns = (_, _) => FitColumns();
+        _table.LayoutUpdated += _fitColumns;
+        FitColumns();
         source.RowSelection!.SelectionChanged += (_,_) => {
             if (_active && ReferenceEquals(_table.Source, source) && ViewModel is { } model && _target is { } target) {
                 _selection = source.RowSelection.SelectedItem is { } row ? (row.Name, row.Directory) : null;
