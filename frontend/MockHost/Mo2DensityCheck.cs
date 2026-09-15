@@ -65,13 +65,6 @@ internal static class Mo2DensityCheck
                 if (drawn.Length == 0) continue;
                 rows = drawn.Length;
                 tallest = drawn.Max(x => x.Bounds.Height);
-                if (Environment.GetEnvironmentVariable("MO2_DENSITY_DIAGNOSTIC") == "1" && attempt == 0) {
-                    var row = drawn[0];
-                    var height = Avalonia.Diagnostics.AvaloniaObjectExtensions.GetDiagnostic(row, Avalonia.Layout.Layoutable.HeightProperty);
-                    var min = Avalonia.Diagnostics.AvaloniaObjectExtensions.GetDiagnostic(row, Avalonia.Layout.Layoutable.MinHeightProperty);
-                    Console.WriteLine($"DENSITY {name}: height={height.Value} ({height.Priority}) min={min.Value} ({min.Priority}) " +
-                        $"bounds={row.Bounds.Height} content={(row.GetVisualChildren().FirstOrDefault() as Control)?.Bounds.Height}");
-                }
                 if (tallest <= Mo2Density.Row + Slack) break;
             }
             if (rows == 0) { measured.Add($"{name} has no rows to measure"); continue; }

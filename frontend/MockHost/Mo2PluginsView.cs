@@ -100,7 +100,10 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var mainGrid = editor.FindControl<Grid>("MainGrid")!;
         mainGrid.Margin = new Thickness(0);
         mainGrid.RowDefinitions = new RowDefinitions("Auto,*"); Grid.SetRow(tableControl, 1);
-        var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,8,0,6); headings.Height = Mo2TableRow.HeadingBand;
+        // The same band as the mod list's headings, top and bottom: 8 above and 6
+        // below here against 4 and 4 there put the two tables' first rows 4px apart
+        // when the panes sit side by side.
+        var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,4,0,4); headings.Height = Mo2TableRow.HeadingBand;
         // MO2's own headers, from the same table the row's columns come from.
         foreach (var (column, text) in Mo2PluginRow.Headers)
             Mo2ModRow.Add(headings, Mo2TableRow.Heading(text), column);
@@ -147,8 +150,11 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "backup", live.CurrentTarget); });
         var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);
+        // The same band as the row of widgets above the mod list, and the same gap
+        // under it: 25px tall with 8 below here against 24 and 6 there put this
+        // table's headings 3px below the ones beside them.
         var qtBar = new StackPanel { Name = "PluginsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
+            Spacing = 6, Height = Mo2TableRow.ActionSize, Margin = new Thickness(0, 0, 0, 6) };
         qtBar.Children.Add(qtSort); qtBar.Children.Add(qtRestore); qtBar.Children.Add(qtSave); qtBar.Children.Add(qtCount);
         var qtFilterHost = Mo2QtWidgets.Filter("PluginsQtFilter", Mo2QtWidgets.PluginFilterTip,
             text => { if (ViewModel is { } model) model.Mo2SearchText = text; }, out _);

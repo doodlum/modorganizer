@@ -239,8 +239,10 @@ internal static class Mo2RowStyleCheck
     }
 
     // The colour a row actually ends up drawing, read back from a render of the row
-    // itself. Sampled left of the cells so the reading is the row's own surface
-    // rather than whatever text or control happens to sit mid-row.
+    // itself. Sampled just above the row's bottom edge, which is the band nothing in
+    // a row occupies: the enable box and the text are centred on the line. Sampling
+    // 4px in from the left worked only while every cell was inset 24px — at MO2's
+    // density that point is inside the enable box, and the check read its orange.
     private static string RowPixel(TreeDataGrid table, bool selected)
     {
         var row = table.GetVisualDescendants().OfType<TreeDataGridRow>()
@@ -255,7 +257,7 @@ internal static class Mo2RowStyleCheck
         try {
             bitmap.CopyPixels(new PixelRect(0, 0, size.Width, size.Height), handle.AddrOfPinnedObject(), pixels.Length, stride);
         } finally { handle.Free(); }
-        var at = stride * (size.Height / 2) + 4 * 4;
+        var at = stride * Math.Max(0, size.Height - 2) + size.Width / 2 * 4;
         return $"#{pixels[at + 3]:x2}{pixels[at + 2]:x2}{pixels[at + 1]:x2}{pixels[at]:x2}";
     }
 

@@ -51,7 +51,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     })
                 }) }
         });
-        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
         var actions = new ItemsControl();
         StandardButton ActionButton(string text, string name, IconValue icon) {
             var button = new StandardButton { Text = text, Name = name, LeftIcon = icon,
@@ -73,12 +73,17 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         nexusFlyout.Closed += (_, _) => linkTarget = null;
         actions.Items.Add(import); actions.Items.Add(install); actions.Items.Add(delete); actions.Items.Add(nexus);
         native.GetLogicalDescendants().OfType<Toolbar>().Single().Items.Insert(1, actions);
-        Grid.SetRow(native,1); layout.Children.Add(native);
+        Grid.SetRow(native,2); layout.Children.Add(native);
         var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,8,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
         layout.Children.Add(unavailable);
-        // Retained as a context marker for stale-picker checks; visible context is the native page header.
-        var context = new TextBlock { Name = "DownloadProfileContext", IsVisible = false };
-        layout.Children.Add(context);
+        // The game and profile these downloads belong to. Shown, where it used to be
+        // a hidden marker for the stale-picker checks: the native page header that
+        // carried it is stood down with the rest of the header line on a narrow
+        // panel, which left this page with a band of nothing where the other pages
+        // say what they are showing.
+        var context = new TextBlock { Name = "DownloadProfileContext", Opacity = .6, FontSize = Mo2Density.FontSize,
+            Margin = new Thickness(24,0,24,6), TextTrimming = TextTrimming.CharacterEllipsis };
+        Grid.SetRow(context, 1); layout.Children.Add(context);
         // MO2's own downloadTab furniture: a Refresh and a Query Metadata beside it.
         var qtBar = new StackPanel { Name = "DownloadsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
             Spacing = 6, Margin = new Thickness(24,0,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
@@ -102,7 +107,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         var qtFilter = Mo2QtWidgets.Filter("DownloadsQtFilter", Mo2QtWidgets.DownloadFilterTip, _ => ApplyFilter(), out filterField);
         qtFilter.MinWidth = 160;
         Grid.SetColumn(qtFilter, 2); qtFilterBar.Children.Add(qtFilter);
-        Grid.SetRow(qtFilterBar, 2); layout.Children.Add(qtFilterBar);
+        Grid.SetRow(qtFilterBar, 3); layout.Children.Add(qtFilterBar);
         Content = layout;
         // The native downloads page draws its own header and toolbar; the shared
         // chrome puts them on one line with the separator, padding and compaction

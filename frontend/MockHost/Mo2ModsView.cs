@@ -329,6 +329,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
         var help = new StandardButton { Name = "ModsHelpButton", ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
             LeftIcon = IconValues.HelpOutline, Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None, Size = StandardButton.Sizes.Medium,
+            // Kept inside the heading band it shares. Left to its own height it made
+            // that row taller than the headings in it, which is what started this
+            // table's first row 3px below the one on Plugins.
+            Height = Mo2TableRow.ActionSize, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
         ToolTip.SetTip(help, "Mod priority help");
         help.Flyout = new Flyout { Content = new TextBlock { Text = "Drag mods to change their priority. Mods lower in the list win file conflicts. Select a mod to highlight its conflicts and linked plugins. Use separators to group mods; click the arrow to collapse a group, or double-click its name to rename it.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 280 } };
@@ -493,9 +497,11 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditTip,
             "mdi-filter-cog-outline", () => { if (categoriesToggle is not null) categoriesToggle.IsChecked = false; }));
         // MO2 gives this row the group's full width and lets the separators box take
-        // what the two radios leave (stretch 1,1,2), which is what keeps it inside the
-        // group rather than running out of its right edge.
-        var filterOptions = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"), Margin = new Thickness(0,4,0,0) };
+        // what the two radios leave (stretch 1,1,2). At the width a group beside the
+        // list can have here, that box is left about 80px and its caption is drawn as
+        // "Filte", so it takes the line under the radios instead.
+        var filterOptions = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto"), Margin = new Thickness(0,4,0,0) };
         var andRadio = Mo2QtWidgets.Radio("ModsFiltersAnd", Mo2QtWidgets.FiltersAnd, Mo2QtWidgets.FiltersAndTip,
             "ModCategoryMatch", true, on => { if (on) Model().SetCategoryMatchAll(true); });
         var orRadio = Mo2QtWidgets.Radio("ModsFiltersOr", Mo2QtWidgets.FiltersOr, Mo2QtWidgets.FiltersOrTip,
@@ -507,7 +513,9 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             choice => Model().SetSeparatorMode(choice));
         separatorMode.MinWidth = 0;
         separatorMode.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-        Grid.SetColumn(separatorMode, 2); filterOptions.Children.Add(separatorMode);
+        separatorMode.Margin = new Thickness(0,4,0,0);
+        Grid.SetRow(separatorMode, 1); Grid.SetColumnSpan(separatorMode, 3);
+        filterOptions.Children.Add(separatorMode);
         var categoriesGroup = Mo2QtWidgets.Categories("ModCategories", out var categoryItems, out _, filterActions, filterOptions);
         categoriesGroup.Width = 190;
         categoriesGroup.Margin = new Thickness(0,0,6,0);
@@ -547,8 +555,16 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         Grid.SetRow(categoriesGroup,1); modsTab.Children.Add(categoriesGroup);
         Grid.SetRow(list,1); Grid.SetColumn(list,1); modsTab.Children.Add(list);
         Grid.SetRow(filterBar,2); Grid.SetColumn(filterBar,1); modsTab.Children.Add(filterBar);
-        modsTab.LayoutUpdated += (_, _) => {
-            RefreshCategories();
+        // The pane's own width, as of the last pass that changed it. Everything here
+        // runs on every layout pass, and anything it writes asks for another one: the
+        // filter group's width was recomputed from the pane each time, and between
+        // that and the column fitting it depends on, the passes never stopped —
+        // which starved the background work that builds the rows, so the lists drew
+        // two mods and no plugins at all.
+        var paneWidth = double.NaN;
+        var toggleWas = true;
+        void FitPane()
+        {
             // MO2 hides the category filter when there is no room for it beside the
             // list, and its own button decides whether it is wanted at all. Set at 620
             // this never showed in a half-width panel, which is the default layout — so
@@ -561,13 +577,26 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             // Tell the columns how much of the pane the filter is using, so they fit
             // into what is left rather than into the whole panel.
             Mo2ModRow.SideWidth = categoriesGroup.IsVisible ? categoriesGroup.Width + 6 : 0;
+        }
+        categoriesToggle.IsCheckedChanged += (_, _) => FitPane();
+        modsTab.LayoutUpdated += (_, _) => {
+            RefreshCategories();
+            // Only when the pane's width has actually changed. Everything in FitPane
+            // writes something that asks for another layout pass, so running it on
+            // every pass never let the passes stop — which starved the background
+            // work that builds the rows, and the lists drew two mods and no plugins.
+            if (double.IsNaN(paneWidth) || Math.Abs(paneWidth - Bounds.Width) > .5 || toggleWas != (categoriesToggle.IsChecked == true)) {
+                paneWidth = Bounds.Width; toggleWas = categoriesToggle.IsChecked == true;
+                FitPane();
+            }
             // What the list is narrowed to, which MO2 spells out beside the filter
-            // field and offers to clear only while there is something to clear.
+            // field and offers to clear only while there is something to clear. Both
+            // are written only when they change, so neither asks for a pass of its own.
             var narrowed = chosenCategories.Count > 0 ? string.Join(", ", chosenCategories.OrderBy(x => x)) : "";
             if ((filterField?.Text ?? "").Length > 0)
                 narrowed = narrowed.Length > 0 ? narrowed + " · \"" + filterField!.Text + "\"" : "\"" + filterField!.Text + "\"";
             if (currentCategory.Text != narrowed) currentCategory.Text = narrowed;
-            clearAll.IsVisible = narrowed.Length > 0;
+            if (clearAll.IsVisible != narrowed.Length > 0) clearAll.IsVisible = narrowed.Length > 0;
         };
         listContainer.Content = modsTab;
         Mo2ListRail.Connect(scroll, table);

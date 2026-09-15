@@ -12,6 +12,9 @@ namespace Mo2.Frontend;
 // either of them drifting again.
 internal static class Mo2RowPaddingCheck
 {
+    private static string ModsHeading => Mo2ModRow.Headers.First(x => x.Column == Mo2ModRow.Name).Name;
+    private static string PluginsHeading => Mo2PluginRow.Headers.First(x => x.Column == Mo2PluginRow.Name).Name;
+
     internal static void Run()
     {
         var faults = new List<string>();
@@ -123,8 +126,13 @@ internal static class Mo2RowPaddingCheck
         Table? mods = null, plugins = null;
         for (var attempt = 0; attempt < 200 && (mods is null || plugins is null); attempt++) {
             await Task.Delay(100);
-            mods ??= Measure(Page<Mo2ModsView>(), "ModActivationToggle", "Mod name");
-            plugins ??= Measure(Page<Mo2PluginsView>(), "PluginActivationToggle", "Plugin name");
+            // The heading text each table actually draws, taken from the same
+            // declarations the columns are built from: spelled out here, the two
+            // strings stopped matching when the columns took MO2's own names, and
+            // the check reported that it could not measure either table rather than
+            // that it was looking for headings neither page has.
+            mods ??= Measure(Page<Mo2ModsView>(), "ModActivationToggle", ModsHeading);
+            plugins ??= Measure(Page<Mo2PluginsView>(), "PluginActivationToggle", PluginsHeading);
         }
         if (mods is null || plugins is null)
             throw new Exception($"Could not measure both tables (mods={mods is not null}, plugins={plugins is not null})");
@@ -140,12 +148,16 @@ internal static class Mo2RowPaddingCheck
         Same("name column starts", mods.Name, plugins.Name);
         // And the tables themselves sit the same distance inside their pages, at both
         // ends: the rows run to the table's edge, and the rail beyond it is the same
-        // width on both pages.
-        Same("table starts", mods.Left, plugins.Left);
+        // width on both pages. The mod list is measured from where its own list area
+        // starts rather than from the page edge — MO2 puts the Filters group beside
+        // that list, so the pane holds the group and the list side by side.
+        Same("table starts", mods.Left - Mo2ModRow.SideWidth, plugins.Left);
         Same("table ends", mods.Right, plugins.Right);
         Same("rows start", mods.RowLeft, plugins.RowLeft);
         Same("rows end", mods.RowRight, plugins.RowRight);
-        Same("row actions end", mods.Actions, plugins.Actions);
+        // Not the row actions: MO2 puts a mod's actions on its right-click menu, so a
+        // mod row draws no buttons and the rightmost one found in it is whatever the
+        // row happens to hold.
         Same("row height", mods.RowHeight, plugins.RowHeight);
         Same("headings below the separator", mods.HeadingTop, plugins.HeadingTop);
         Same("heading row height", mods.HeadingHeight, plugins.HeadingHeight);
@@ -230,8 +242,8 @@ internal static class Mo2RowPaddingCheck
             throw new Exception(string.Join("; ", faults) +
                 $". Mods: {Trail(Page<Mo2ModsView>(), "ModActivationToggle")}" +
                 $". Plugins: {Trail(Page<Mo2PluginsView>(), "PluginActivationToggle")}" +
-                $". Down mods: {Down(Page<Mo2ModsView>(), "Mod name")}" +
-                $". Down plugins: {Down(Page<Mo2PluginsView>(), "Plugin name")}");
+                $". Down mods: {Down(Page<Mo2ModsView>(), ModsHeading)}" +
+                $". Down plugins: {Down(Page<Mo2PluginsView>(), PluginsHeading)}");
         }
         Console.WriteLine($"PASS row padding (live): both tables run from {mods.Left:F0}px to {mods.Right:F0}px of their " +
             $"page, their status column {mods.Status:F0}px and name column {mods.Name:F0}px into the table, their rows " +

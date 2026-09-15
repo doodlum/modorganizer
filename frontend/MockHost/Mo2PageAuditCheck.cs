@@ -79,7 +79,21 @@ internal static class Mo2PageAuditCheck
             // with no pictogram at all.
             var header = body.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault(x => x.IsVisible)
                 ?? body.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault();
-            if (directory is not null) Capture(window, Path.Combine(directory, "audit-" + name + ".png"));
+            // Panels reflow into a new page rather than swapping to it, so a capture
+            // taken as soon as the page is there is a picture of the page before it
+            // part way through leaving — Downloads was pictured showing External
+            // Files. Held until the body has stopped moving.
+            if (directory is not null) {
+                var settled = body.Bounds;
+                for (var attempt = 0; attempt < 20; attempt++) {
+                    await Task.Delay(100);
+                    window.UpdateLayout();
+                    var now = (Body(live, window) ?? body).Bounds;
+                    if (now == settled && now.Height > 0) break;
+                    settled = now;
+                }
+                Capture(window, Path.Combine(directory, "audit-" + name + ".png"));
+            }
             if (header is null) { faults.Add($"{name}: no page header"); continue; }
 
             var stack = body.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(x => x.Name == "PanelHeaderStack");
