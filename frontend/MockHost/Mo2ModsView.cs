@@ -186,6 +186,10 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
 
 internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
 {
+    // The archives MO2 installs from, which is what it accepts on a drop.
+    internal static bool IsArchive(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is ".zip" or ".7z" or ".rar" or ".fomod";
+
     public LoadoutView NativeView { get; } = new();
     private TabControl SubTabs => NativeView.FindControl<TabControl>("RulesTabControl")!;
     private TextBox SearchBox => NativeView.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
@@ -612,6 +616,24 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         table.RowDragStarted += (sender, args) => ViewModel?.Adapter.OnRowDragStarted(sender, args);
         table.RowDragOver += (sender, args) => ViewModel?.Adapter.OnRowDragOver(sender, args);
         table.RowDrop += (sender, args) => ViewModel?.Adapter.OnRowDrop(sender, args);
+        // MO2 installs an archive dropped onto its mod list, which is how most mods
+        // arrive: a file manager, a browser download, an archive on the desktop.
+        DragDrop.SetAllowDrop(this, true);
+        static string[] Archives(Avalonia.Input.IDataObject data) =>
+            (data.GetFiles() ?? []).Select(x => x.TryGetLocalPath() ?? "")
+                .Where(x => x.Length > 0 && Mo2ModsView.IsArchive(x)).ToArray();
+        AddHandler(DragDrop.DragOverEvent, (_, e) => {
+            e.DragEffects = ViewModel?.LiveProfile?.CanChangeOriginalUi == true && Archives(e.Data).Length > 0
+                ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        });
+        AddHandler(DragDrop.DropEvent, async (_, e) => {
+            e.Handled = true;
+            if (ViewModel?.LiveProfile is not { } live || !live.CanChangeOriginalUi) return;
+            var target = live.CurrentTarget;
+            foreach (var archive in Archives(e.Data)) await live.InstallArchive(archive, target);
+        });
+
         // What MO2's own list does with a mod without going through a menu: opening a
         // mod is a double-click, the space bar switches it on and off, and Delete
         // takes it out — through the same dialog its menu entry uses, so the

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.VisualTree;
 using NexusMods.App.UI.Controls.Navigation;
 using NexusMods.App.UI.WorkspaceSystem;
@@ -191,6 +192,14 @@ internal static class Mo2WidgetBehaviourCheck
                     }
                 }
             } else faults.Add("a mod row carries no menu");
+
+            // MO2 installs an archive dropped onto its mod list. The drop itself needs
+            // a pointer and a file manager, so what is checked here is that the list
+            // takes drops at all and knows an archive from anything else.
+            if (!DragDrop.GetAllowDrop(mods)) faults.Add("My Mods does not accept a dropped archive");
+            else if (!Mo2ModsView.IsArchive("/tmp/Some Mod-1234.7z") || Mo2ModsView.IsArchive("/tmp/notes.txt"))
+                faults.Add("My Mods does not tell an archive from another file");
+            else worked.Add("My Mods takes dropped archives, as MO2 does");
 
             // The profile box, over the profiles of the instance this one belongs to.
             if (Named<ComboBox>(mods, "ModsProfileBox") is { } profiles) {
