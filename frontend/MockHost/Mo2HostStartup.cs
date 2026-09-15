@@ -42,6 +42,9 @@ internal static class Mo2HostStartup
     {
         await Gate.WaitAsync();
         try {
+            // Browser protocol handlers are separate processes. Hold this lease
+            // through connection, then recheck process state before any launch.
+            using var lease = await Mo2HostStartupLease.Acquire(Mo2HostStartupLease.PathFor(registration), TimeSpan.FromSeconds(90));
             var running = IsRunning(registration);
             if (!running && registration.Launcher is { } launcher) {
                 if (!File.Exists(launcher)) throw new FileNotFoundException("The configured MO2 launcher no longer exists");

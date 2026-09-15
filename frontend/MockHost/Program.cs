@@ -40,6 +40,35 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--check-host-startup-lease") { Mo2HostStartupLeaseCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--hold-host-startup-lease") { Mo2HostStartupLeaseCheck.Hold(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-original-actions") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2OriginalActionCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-view-locator") { Mo2ViewLocatorCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-sorted-roots") { Mo2SortedRootsCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-download-identities") { Mo2DownloadIdentityCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-download-status") { Mo2DownloadStatusCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-external-columns") { Mo2ExternalColumnsCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-external-files") { Mo2ExternalFilesCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--scan-external-files") {
+            if (args.Length != 3) throw new ArgumentException("Expected game folder and Steam app ID");
+            var scan = Mo2ExternalFiles.Scan(args[1], args[2]);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(scan)); return;
+        }
+        if (args.FirstOrDefault() == "--check-notifications") { Mo2NotificationStateCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-desktop-launcher") { Mo2DesktopLauncherCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-search-query") { Mo2SearchQueryCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-catalog-read") { Mo2CatalogReadCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-bridge-errors") { Mo2BridgeErrorCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-shared-nexus-logout") { Mo2SharedNexusLogoutCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-account-monitor") { Mo2AccountMonitorCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-account-status-live") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2AccountMonitorCheck.Live(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-shared-nexus-live") { if (args.Length != 3) throw new ArgumentException("Expected bridge directory and key-file path"); Mo2SharedNexusLoginCheck.Live(args[1],args[2]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-shared-nexus-login") { Mo2SharedNexusLoginCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-nexus-sso-connection") { Mo2NexusSsoCheck.CheckConnection().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-nexus-sso") { Mo2NexusSsoCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-collections") { Mo2CollectionsCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-mod-order") { Mo2ModOrderCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-nxm") { Mo2NxmCheck.Run(); return; }
         if (args.FirstOrDefault() == "--nxm") {
             try {
@@ -87,17 +116,32 @@ internal static class Program
             return;
         }
         if (args.FirstOrDefault() == "--inspect-mo2") { Mo2ProfileFiles.Inspect(args.Skip(1).ToArray()); return; }
+        Mo2StartupCheck.ProcessStarted();
         IconProvider.Current.Register<MaterialDesignIconProvider>();
-        AppBuilder.Configure<MockApp>().UsePlatformDetect()
+        var builder = AppBuilder.Configure<MockApp>().UsePlatformDetect()
             .With(new X11PlatformOptions { UseDBusMenu = false, WmClass = "mo2-nexus-frontend" })
             .With(new SkiaOptions { UseOpacitySaveLayer = true })
-            .UseReactiveUI().LogToTrace().StartWithClassicDesktopLifetime(args);
+            .UseReactiveUI().LogToTrace();
+        // Lets the Avalonia DevTools MCP attach to this process. Opt-in, because the
+        // diagnostics listener has no place in a normal user session.
+        if (Environment.GetEnvironmentVariable("MO2_DEVELOPER_TOOLS") == "1") builder = builder.WithDeveloperTools();
+        builder.StartWithClassicDesktopLifetime(args);
     }
 }
 
 // Resolve the same interface-based views as upstream without constructing its backend services.
 internal sealed class FixtureViewLocator : IViewLocator
 {
+    private static readonly Lazy<Type[]> NativeViewTypes = new(() => typeof(MyGamesView).Assembly.GetTypes()
+        .Where(type => !type.IsAbstract && type.GetConstructor(Type.EmptyTypes) is not null).ToArray());
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Type> NativeViews = new();
+
+    internal static Type ResolveNativeViewType(Type modelInterface) => NativeViews.GetOrAdd(modelInterface, key => {
+        var required = typeof(IViewFor<>).MakeGenericType(key);
+        return NativeViewTypes.Value.FirstOrDefault(required.IsAssignableFrom)
+            ?? throw new InvalidOperationException($"No upstream view for {key}");
+    });
+
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
         if (viewModel is Mo2GamesPage games) {
@@ -112,19 +156,26 @@ internal sealed class FixtureViewLocator : IViewLocator
             otherGames.IsVisible = false;
             if (otherGames.Parent is Panel parent && parent.Children.IndexOf(otherGames) is var index && index > 0 && parent.Children[index - 1] is Separator separator)
                 separator.IsVisible = false;
+            // Home's pages sit in a workspace panel like every other page, so they
+            // take the same chrome. Leaving them on NMA's own header treatment made
+            // Home the one place where a page had no separator and no compaction.
+            Mo2PanelChrome.Adopt(gamesView);
             return gamesView;
         }
         if (viewModel is Mo2LoadoutsPage loadouts) {
             var loadoutsView = new MyLoadoutsView { ViewModel = loadouts };
             var profileHeader = loadoutsView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single();
-            profileHeader.Title = loadouts.Game is null ? "My Loadouts" : "Profiles";
-            profileHeader.Description = loadouts.Game is null ? "Your MO2 profiles across all games." : "Profiles for " + loadouts.Game + ".";
+            profileHeader.Title = loadouts.GameScoped ? "Profiles" : "My Loadouts";
+            profileHeader.Description = !loadouts.GameScoped ? "Your MO2 profiles across all games." : loadouts.Game is null ? "Manage profiles for this game." : "Profiles for " + loadouts.Game + ".";
             var emptyLoadouts = loadoutsView.FindControl<EmptyState>("MyLoadoutsEmptyState")!;
             emptyLoadouts.Header = "No MO2 profiles found";
             emptyLoadouts.Subtitle = "Add an MO2 instance from Settings to see its profiles here.";
+            // This branch returns before the generic adoption at the end of the
+            // locator, which is why Profiles was the one game page still without it.
+            Mo2PanelChrome.Adopt(loadoutsView);
             return loadoutsView;
         }
-        if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return new Mo2PluginsView { ViewModel = plugins };
+        if (viewModel is ScenarioLoadOrderPage { LiveProfile: not null } plugins) return Mo2DeferredView<ScenarioLoadOrderPage>.For(plugins, "Plugins", model => new Mo2PluginsView { ViewModel = model }, reuseBody: true);
         if (viewModel is Mo2CreateProfileCard create) {
             var createView = new NexusMods.App.UI.Controls.LoadoutCard.CreateNewLoadoutCardView { ViewModel = create };
             var text = createView.FindControl<TextBlock>("CreateNewLoadoutTextBlock")!;
@@ -140,22 +191,40 @@ internal sealed class FixtureViewLocator : IViewLocator
             ToolTip.SetTip(rename, "Rename this profile in MO2. Select a different profile first if this one is active.");
             DockPanel.SetDock(rename, Dock.Right);
             cardView.FindControl<DockPanel>("ActionsDock")!.Children.Insert(1, rename);
+            // The badge draws a filled strip across the top right corner of the game
+            // icon. MO2 profiles are not numbered or applied loadouts, so it carries
+            // nothing and only covers the artwork. Hidden on every badge the card
+            // actually realises: an application style did not reach this view, and
+            // hiding the named control alone left the strip on screen.
+            void HideBadges() {
+                foreach (var badge in cardView.GetVisualDescendants()
+                             .OfType<NexusMods.App.UI.Controls.LoadoutBadge.LoadoutBadge>())
+                    badge.IsVisible = false;
+            }
+            cardView.AttachedToVisualTree += (_, _) => HideBadges();
+            cardView.LayoutUpdated += (_, _) => HideBadges();
             return cardView;
         }
         if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
         if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2LogsPage logs) return new Mo2LogsView { ViewModel = logs };
+        if (viewModel is Mo2SavesPage saves) return new Mo2SavesView { ViewModel = saves };
+        if (viewModel is Mo2DataPage data) return new Mo2DataView { ViewModel = data };
         if (viewModel is Mo2ArchivesPage archives) return new Mo2ArchivesView { ViewModel = archives };
+        if (viewModel is Mo2ExternalFilesPage externalFiles) return new Mo2ExternalFilesView { ViewModel = externalFiles };
         if (viewModel is Mo2OverwritePage overwrite) return new Mo2OverwriteView { ViewModel = overwrite };
         if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
+        if (viewModel is Mo2ComponentsPage components) return new Mo2ComponentsView { ViewModel = components };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
-        if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return new Mo2ModsView { ViewModel = liveMods };
+        if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return Mo2DeferredView<ScenarioInstalledPage>.For(liveMods, "My Mods", model => new Mo2ModsView { ViewModel = model }, reuseBody: true);
         if (viewModel is not IViewModel vm) return null;
-        var viewType = typeof(MyGamesView).Assembly.GetTypes().FirstOrDefault(type =>
-            !type.IsAbstract && typeof(IViewFor<>).MakeGenericType(vm.ViewModelInterface).IsAssignableFrom(type)
-            && type.GetConstructor(Type.EmptyTypes) is not null);
-        if (viewType is null) throw new InvalidOperationException($"No upstream view for {vm.ViewModelInterface}");
+        var viewType = ResolveNativeViewType(vm.ViewModelInterface);
         var view = (IViewFor)Activator.CreateInstance(viewType)!;
+        // Profiles and Health Check are drawn by native NMA views with no frontend
+        // wrapper to set their chrome up, which left them as the only game pages
+        // without the shared padding, header separator and maximise action.
+        if (viewModel is Mo2HealthPage or Mo2LoadoutsPage { GameScoped: true } && view is Control native)
+            Mo2PanelChrome.Adopt(native);
         if (view is IViewContract vc && contract is not null) vc.ViewContract = contract;
         if (view is NexusMods.App.UI.Controls.Spine.Buttons.Icon.IconButton homeIcon && contract == "Home")
             homeIcon.AttachedToVisualTree += (_,_) => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
@@ -168,7 +237,11 @@ internal sealed class FixtureViewLocator : IViewLocator
 
 public partial class MockApp : Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        if (Environment.GetEnvironmentVariable("MO2_UI_TEMPLATE_TIMING") == "1") Mo2TemplateTiming.Install();
+        AvaloniaXamlLoader.Load(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -179,14 +252,257 @@ public partial class MockApp : Application
             if (Environment.GetEnvironmentVariable("MO2_FIXTURES") != "1") {
                 var endpoint = Environment.GetEnvironmentVariable("MO2_BRIDGE_DIRECTORY") ?? "";
                 var live = new Mo2LiveWorkspace(endpoint);
-                var liveWindow = live.CreateWindow();
+                Window liveWindow;
+                using (Mo2StartupCheck.Phase("window")) liveWindow = live.CreateWindow();
+                liveWindow.Opened += (_, _) => Mo2StartupCheck.WindowOpened(liveWindow, live);
                 desktop.MainWindow = liveWindow;
                 if (endpoint.Length == 0) live.ShowHome();
                 desktop.Exit += (_, _) => live.Dispose();
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_FILE_PAGE_LIFECYCLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2FilePageLifecycleCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL file page lifecycle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEARCH_FOCUS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SearchFocusCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL search focus: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_TOGGLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SidebarToggleCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL sidebar toggle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEARCH_INPUT") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2SearchInputCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL search input: " + error.Message); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_FILES_LIFECYCLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ExternalFilesLifecycleCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL External Files lifecycle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOOLS_LIFECYCLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ToolsLifecycleCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL Tools lifecycle: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOGGLE_LIFECYCLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ToggleLifecycleCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL toggle lifecycle: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_REUSE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2PageReuseCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL page reuse lifecycle: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_PRESET") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2LayoutPresetCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL layout preset: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_CACHE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2RetainedViewsCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL workspace cache: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PROFILE_BUFFER") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try {
+                            await Mo2ProfileBufferCheck.Run(live, liveWindow);
+                            if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_CACHE") == "1")
+                                await Mo2RetainedViewsCheck.Live(live, liveWindow);
+                        }
+                        catch (Exception error) { Console.WriteLine("FAIL profile buffer: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_FILTERED_ROWS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2FilteredRowsCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL filtered rows: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAIRED_PANELS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DeferredPresentationCheck.CheckPairedWorkspace(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL paired panels: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DEFERRED_PANELS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try {
+                            await Mo2DeferredPresentationCheck.CheckRowLifecycle(liveWindow);
+                            await Mo2TabRestoreCheck.Run(live, liveWindow);
+                            await Mo2SortedRootsUiCheck.Run(live, liveWindow);
+                            Console.WriteLine("PASS deferred panels: repeated tab/size changes and live selection/sorting");
+                        } catch (Exception error) { Console.WriteLine("FAIL deferred panels: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SORTED_ROOTS_UI") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SortedRootsUiCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL sorted roots UI: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEPARATOR_INTERACTIONS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SeparatorInteractionCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL separator interactions: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORDER_PROVIDER") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2OrderProviderCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL plugin provider: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_UI_LATENCY_REPORT") is { Length: > 0 } latencyReport)
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2UiLatencyProbe.Run(live, liveWindow, latencyReport); }
+                        catch (Exception error) { Console.WriteLine("UI latency probe failed: " + error.GetType().Name); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TEMPLATE_PREPARATION") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2TemplatePreparationCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL template preparation: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ALERT_LIFECYCLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2AlertLifecycleCheck.Run(liveWindow); await Mo2AlertLifecycleCheck.Live(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL help lifecycle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ICON_ALIASES") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2IconAliasesCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL icon aliases: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENTRY_MENUS") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2EntryMenuCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL lazy entry menus: " + error.Message); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_ROW") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2PluginRowCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL plugin row: " + error.Message); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALLED_INTERACTIONS") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2InstalledInteractionCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL installed interactions: " + error.Message + "\n" + error.StackTrace); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_RESTORE") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2TabRestoreCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL tab restoration: " + error.Message); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TRADITIONAL_UI") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2TraditionalUiCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL traditional UI: " + error.Message); }
+                    }, TimeSpan.FromSeconds(3));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_BROWSER_SSO") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2LoginPopupCheck.Live(liveWindow, live); }
+                        catch { Console.WriteLine("FAIL browser SSO verification; authorization or native account confirmation did not complete"); }
+                    }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LOGOUT") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2SharedNexusLogoutCheck.Live(live, desktop); }
+                        catch { Console.WriteLine("FAIL shared logout UI verification; inspect native account state before retrying"); }
+                    }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_OVERWRITE_REFRESH") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try {
+                            await WaitFor(() => live.Profile.IsConnected && live.ModsPage?.Adapter.SourceCount.Value > 0, "MO2 mod list did not connect");
+                            await VerifyNativeMods(live, liveWindow);
+                            await VerifyOverwriteRefresh(live, liveWindow);
+                        } catch (Exception error) { Console.WriteLine("FAIL Overwrite verification: " + error.Message + "\n" + error.StackTrace); }
+                    }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_COLLECTION_RENAME") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await VerifyLiveCollectionRename(live, desktop); }
+                        catch (Exception error) { Console.WriteLine("FAIL collection rename verification: " + error.Message); }
+                    }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LOGIN_POPUP") == "1")
+                    liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2LoginPopupCheck.Run(liveWindow, live); }
+                        catch (Exception error) { Console.WriteLine("FAIL login popup verification: " + error.Message); }
+                    }, TimeSpan.FromSeconds(1));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LOGIN_BUTTON") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2LoginButtonCheck.Run(liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL login button: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MODS_SELECTION") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        // The check does its own waiting and reports what it saw, so no
+                        // gate here: a gate only hides which part never arrived.
+                        try { await Mo2ModSelectionCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL mods selection group: " + error.Message); }
+                    }, TimeSpan.FromSeconds(4));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_COLUMN_TOGGLE") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ColumnToggleCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL column toggle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PHYSICALITY") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2PhysicalityCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL physicality: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PANEL_CHROME") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2PanelChromeCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL panel chrome: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_COMPONENTS") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ComponentsCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_COMPONENTS_SCREENSHOT")); }
+                        catch (Exception error) { Console.WriteLine("FAIL components gallery: " + error.Message); }
+                    };
+                // Capture aid: the responsive columns need more width than the Mods
+                // panel gets while sharing the window, and the window cannot exceed
+                // the display. Closing the other panels gives it the whole width.
+                if (Environment.GetEnvironmentVariable("MO2_SINGLE_PANEL") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(() => {
+                        try {
+                            live.ShowProfile();
+                            var workspace = live.WorkspaceController.ActiveWorkspace;
+                            // Keep the panel holding Mods, close the rest.
+                            var keep = workspace.Panels.FirstOrDefault(panel =>
+                                panel.Tabs.Any(tab => tab.Contents.ViewModel is ScenarioInstalledPage)) ?? workspace.Panels.First();
+                            foreach (var panel in workspace.Panels.Where(x => x.Id != keep.Id).ToArray())
+                                live.WorkspaceController.ClosePanel(workspace.Id, panel.Id);
+                            Console.WriteLine($"CHECK single panel: {workspace.Panels.Count} panel(s) remain");
+                        } catch (Exception error) { Console.WriteLine("CHECK single panel failed: " + error.Message); }
+                    }, TimeSpan.FromSeconds(8));
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
-                        if (endpoint.Length > 0) await WaitFor(() => live.Profile.ProfilePath.Length > 0 && live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0, "Live MO2 tables did not connect");
+                        if (endpoint.Length > 0) await WaitFor(() => live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0 &&
+                            (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is not null ||
+                             Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1" ||
+                             (live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0)), "Live MO2 profile or required tables did not connect");
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
+                                if (Environment.GetEnvironmentVariable("MO2_VERIFY_STARTUP") == "1") {
+                            try { await Mo2StartupCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL startup: " + error.Message); }
+                        }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_REFRESH_CADENCE") == "1") {
+                            try { await Mo2RefreshCadenceCheck.Run(live.Profile); }
+                            catch (Exception error) { Console.WriteLine("FAIL refresh cadence: " + error.Message); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_AUDIT") == "1") {
+                            try { await Mo2PageAuditCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_DIRECTORY")); }
+                            catch (Exception error) { Console.WriteLine("FAIL page audit: " + error.Message); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_MAXIMISE") == "1") {
+                            try { await Mo2PhysicalityCheck.Maximise(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL panel maximise: " + error.Message); }
+                        }
+                        // Last of the opt-in checks, and after the window's own gate: it
+                        // navigates to Home and splits panels, so running it earlier
+                        // starves the gate that waits for the profile's tables and leaves
+                        // every check after it looking at a workspace it rearranged.
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_DRAG") == "1") {
+                            try { await Mo2TabDragDropCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL tab drag and drop: " + error.Message); }
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_INPUT") == "1") await VerifyWorkspaceInput(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ARCHIVES") == "1") await VerifyArchives(live,liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI") == "1") await VerifyNewUi(live, liveWindow);
@@ -263,10 +579,20 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_UNINSTALL") == "1") await VerifyUninstall(live);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is { } executable) {
                             if (!live.Profile.ProfilePath.Contains("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test")) throw new InvalidOperationException("Launch check requires the isolated FNV profile");
-                            var launchPanel = liveWindow.GetVisualDescendants().OfType<Mo2LaunchPanel>().Single();
+                            live.ShowProfile();
+                            await WaitFor(() => liveWindow.GetVisualDescendants().OfType<Mo2LaunchPanel>().Any() ||
+                                liveWindow.GetVisualDescendants().OfType<Button>().Any(button => button.Name == "CompactLaunchToolsButton"), "Game launch controls did not appear");
+                            var compactTools = liveWindow.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => button.Name == "CompactLaunchToolsButton");
+                            var compactFlyout = compactTools?.Flyout as Flyout;
+                            if (compactFlyout is not null) compactFlyout.ShowAt(compactTools!);
+                            var launchPanel = liveWindow.GetVisualDescendants().OfType<Mo2LaunchPanel>().FirstOrDefault()
+                                ?? compactFlyout?.Content as Mo2LaunchPanel
+                                ?? throw new InvalidOperationException("Game launch picker is unavailable");
+                            await WaitFor(() => launchPanel.Model.CanLaunch, "Game launch control did not become ready");
                             launchPanel.Executable.SelectedItem = executable;
                             if (launchPanel.Model.SelectedExecutable != executable || !launchPanel.Model.CanLaunch)
                                 throw new InvalidOperationException("Native launch control cannot select this executable");
+                            compactFlyout?.Hide();
                             await launchPanel.Model.Command.Execute();
                             Console.WriteLine("LAUNCH RESULT: " + live.Profile.Status);
                         }
@@ -358,6 +684,30 @@ public partial class MockApp : Application
                             await WaitFor(() => (live.Profile.Mods.Single(x => x.Name == disabledModName).State & 2) == 0 && live.Profile.Order.Plugins.All(x => x.ModName != disabledModName), "MO2 mod deactivation did not remove its plugins");
                             Console.WriteLine("PASS: native mod deactivation command disabled the mod and removed its plugins from the right panel");
                         }
+                        // Capture aid: open a named profile page before the shot so the
+                        // file pages can be inspected, not just whatever was restored.
+                        if (Environment.GetEnvironmentVariable("MO2_OPEN_PAGE") is { } wanted) {
+                            live.ShowProfile();
+                            var menu = live.ProfileMenu;
+                            var item = wanted switch {
+                                "external" => menu.ExternalFilesItem, "archives" => menu.ArchivesItem,
+                                "saves" => menu.SavesItem, "data" => menu.DataItem,
+                                "tools" => menu.ToolsItem, "overwrite" => menu.OverwriteItem,
+                                _ => menu.LogsItem };
+                            await item.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                            await Task.Delay(4000);
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_SINGLE_PANEL") == "1") {
+                            try {
+                                var single = live.WorkspaceController.ActiveWorkspace;
+                                var keep = single.Panels.FirstOrDefault(panel =>
+                                    panel.Tabs.Any(tab => tab.Contents.ViewModel is ScenarioInstalledPage)) ?? single.Panels.First();
+                                foreach (var panel in single.Panels.Where(x => x.Id != keep.Id).ToArray())
+                                    live.WorkspaceController.ClosePanel(single.Id, panel.Id);
+                                await Task.Delay(1500);
+                                Console.WriteLine($"CHECK single panel: {single.Panels.Count} panel(s) remain");
+                            } catch (Exception error) { Console.WriteLine("CHECK single panel failed: " + error.Message); }
+                        }
                         await Task.Delay(500);
                         foreach (var table in liveWindow.GetVisualDescendants().OfType<TreeDataGrid>())
                             Console.WriteLine($"TABLE: source={table.Source?.Items.Cast<object>().Count()} rows={table.Rows?.Count} bounds={table.Bounds} visualRows={table.GetVisualDescendants().Count(x => x is Avalonia.Controls.Primitives.TreeDataGridRow)}");
@@ -432,7 +782,7 @@ public partial class MockApp : Application
         if (!entry.Instance.Profiles.Any(x => x.Name == "Frontend Clone Test")) await live.Profile.ManageProfiles();
         var clone = Mo2ProfileFiles.Read(entry.Registration.Directory).Profiles.Single(x => x.Name == "Frontend Clone Test");
         if (!await live.Profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException(live.Profile.Status);
-        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Cloned profile rows did not activate");
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Cloned profile rows did not activate");
         var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
         if ((mod.State & 2) != 0) {
             live.Profile.Toggle([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]);
@@ -736,9 +1086,9 @@ public partial class MockApp : Application
         filter.SelectedIndex = 2;
         await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => (x.State & 2) == 0 && (x.State & 4) == 0), "Disabled filter mismatch");
         filter.SelectedIndex = 0;
-        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Filter did not restore rows");
+        await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Filter did not restore rows");
         var table = view.NativeView.FindControl<TreeDataGrid>("TreeDataGrid")!;
-        await WaitFor(() => table.Rows?.Count == live.Profile.Mods.Count(x => !x.IsOverwrite), "Mod rows not rendered");
+        await WaitFor(() => table.Rows?.Count == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Mod rows not rendered");
         var movable = live.Profile.Mods.Where(x => (x.State & 4) == 0 && x.Priority > 0).OrderBy(x => x.Priority).First();
         var previous = live.Profile.Mods.OrderBy(x => x.Priority).Select(x => (x.Name,x.Priority)).ToArray();
         try {
@@ -837,7 +1187,7 @@ public partial class MockApp : Application
             workspace.Panels.Last().IsSelected = true;
             await live.ProfileMenu.LeftMenuItemExternalChanges!.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
             await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any() && window.GetVisualDescendants().OfType<Mo2PluginsView>().Any()
-                && live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Paired MO2 lists did not render");
+                && live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Paired MO2 lists did not render");
             await Capture(tag + "mods");
             if (tag == "fnv-return") continue;
             await live.ProfileMenu.LeftMenuItemHealthCheck.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
@@ -1059,10 +1409,13 @@ public partial class MockApp : Application
             return window.GetVisualDescendants().OfType<Mo2DownloadsView>().Single();
         }
         var view = await CurrentDownloads();
+        Button NexusButton(Mo2DownloadsView page) => page.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "OpenNexusLinkButton");
+        Flyout LinkFlyout(Mo2DownloadsView page) => (Flyout)NexusButton(page).Flyout!;
+        Button LinkSubmit(Mo2DownloadsView page) => ((Control)LinkFlyout(page).Content!).GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
         var context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
         if (context.Text != "Fallout: New Vegas · Frontend Test") throw new InvalidOperationException("Downloads does not identify its MO2 game and profile");
         var import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
-        var download = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
+        var download = LinkSubmit(view);
         if (!import.IsEnabled || !download.IsEnabled) throw new InvalidOperationException("Connected Downloads actions are disabled");
         var started = false; var disabledDuringSwitch = false;
         void Changed() {
@@ -1072,9 +1425,13 @@ public partial class MockApp : Application
         profile.Changed += Changed;
         var oldTarget = profile.CurrentTarget;
         try {
+            var openedLink = LinkFlyout(view);
+            openedLink.ShowAt(NexusButton(view));
+            await WaitFor(() => openedLink.IsOpen, "Nexus link dialog did not open");
             var cloneBefore = "";
             await view.ChooseArchive(async () => {
                 if (!await profile.SelectProfile(entry.Registration, clone)) throw new InvalidOperationException("Clone profile did not connect");
+                if (openedLink.IsOpen) throw new InvalidOperationException("Nexus dialog remained open after switching profiles");
                 cloneBefore = await State();
                 // Switching profiles now restores its own workspace. Inspect the
                 // newly active downloads page while the old picker retains its target.
@@ -1082,7 +1439,7 @@ public partial class MockApp : Application
                 view = await CurrentDownloads();
                 context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
                 import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
-                download = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
+                download = LinkSubmit(view);
                 return missing;
             });
             if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || !disabledDuringSwitch ||
@@ -1091,20 +1448,34 @@ public partial class MockApp : Application
             await profile.ControlDownload(missing, "cancel", oldTarget);
             if (!profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || await State() != cloneBefore)
                 throw new InvalidOperationException("Stale download row acted on another profile");
+            await profile.DownloadNexus("not-a-link", oldTarget);
+            if (!profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || await State() != cloneBefore)
+                throw new InvalidOperationException("Stale Nexus dialog reached parsing or another profile");
+            await profile.DownloadNexus("not-a-link", new Mo2ProfileTarget(oldTarget.Endpoint + "-different-instance", profile.ProfilePath));
+            if (!profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed.") || await State() != cloneBefore)
+                throw new InvalidOperationException("Stale Nexus dialog ignored instance identity");
+            foreach (var (link, message) in new[] {
+                ("not-a-link", "Paste a Nexus file link"),
+                ("nxm://skyrimspecialedition/mods/1/files/1", "Choose a Nexus file for the current game")
+            }) {
+                await profile.DownloadNexus(link, profile.CurrentTarget);
+                if (!profile.IsConnected || profile.Status != message || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
+                    throw new InvalidOperationException("Local Nexus link validation disconnected or changed MO2");
+            }
             await profile.InstallArchive(missing, new Mo2ProfileTarget(oldTarget.Endpoint + "-different-instance", profile.ProfilePath));
             if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed."))
                 throw new InvalidOperationException("Archive target guard ignored instance identity");
             await view.ChooseArchive(() => Task.FromResult<string?>(missing));
-            if (!started || !profile.Status.Contains("The mod archive does not exist") || import.IsEnabled || download.IsEnabled ||
-                view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Install") && x.IsEnabled))
-                throw new InvalidOperationException("Current target did not reach native archive validation, or unavailable controls remained enabled");
-            if (!view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable") ||
-                view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "No downloads yet") ||
-                view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Install")))
-                throw new InvalidOperationException("Unavailable Downloads still presents stale archive rows or an empty-folder claim");
+            if (!started || !profile.Status.Contains("The mod archive does not exist") || !profile.IsConnected || !import.IsEnabled || !download.IsEnabled)
+                throw new InvalidOperationException("Native archive rejection did not preserve the connected profile and usable controls");
+            var downloadTable = view.GetVisualDescendants().OfType<TreeDataGrid>().Single(x => x.Name == "TreeDataGridDownloads");
+            if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable" && x.IsEffectivelyVisible) ||
+                view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.IsEffectivelyVisible && x.Text == "No downloads yet") ||
+                downloadTable.Rows?.Count != profile.Downloads.Count)
+                throw new InvalidOperationException("Native command rejection cleared the connected Downloads table");
             await profile.Refresh();
-            if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable") ||
-                view.GetVisualDescendants().OfType<Button>().Count(x => Equals(x.Content, "Install")) != profile.Downloads.Count)
+            await WaitFor(() => downloadTable.Rows?.Count == profile.Downloads.Count, "Fresh MO2 download rows did not settle");
+            if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable" && x.IsEffectivelyVisible))
                 throw new InvalidOperationException("Fresh MO2 snapshot did not restore the download rows");
             if (!profile.IsConnected || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
                 throw new InvalidOperationException("Downloads did not recover after refresh or changed clone state");
@@ -1113,7 +1484,7 @@ public partial class MockApp : Application
             await profile.SelectProfile(entry.Registration, original);
         }
         if (await State() != before) throw new InvalidOperationException("Download context check changed original MO2 state");
-        Console.WriteLine("PASS: picker continuation and stale archive/download actions stay bound to their MO2 instance/profile; current target reaches native validation; disconnected/busy controls disable; both profiles unchanged");
+        Console.WriteLine("PASS: Nexus flyout closes on profile switch; stale Nexus links, picker continuations and archive/download actions stay bound to their instance/profile; malformed and wrong-game links preserve connection; busy controls disable; native archive rejection preserves connection and rows; refresh succeeds; both profiles unchanged");
     }
 
     private static async Task VerifyPanelDrag(Mo2LiveWorkspace live, Window window)
@@ -1373,11 +1744,33 @@ public partial class MockApp : Application
         live.ShowProfile();
         await WaitFor(() => window.GetVisualDescendants().OfType<Mo2LaunchPanel>().Any(), "Profile sidebar did not restore launch controls");
         if (panel.Model.SelectedExecutable != original) throw new InvalidOperationException("Home navigation lost the executable selection");
-        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault()?.NativeView.FindControl<TextBlock>("ModsCount")?.Text == live.Profile.Mods.Count(x => !x.IsOverwrite).ToString(),
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault()?.NativeView.FindControl<TextBlock>("ModsCount")?.Text == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator).ToString(),
             "Native mod count did not return after Home navigation");
         if (window.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Run through MO2") || Equals(x.Content, "Refresh from MO2")))
             throw new InvalidOperationException("Duplicate header controls remain");
         Console.WriteLine($"PASS: native sidebar PLAY command bound to MO2; {expected.Length} executable choices match host; invalid selection disables PLAY; Home hides controls and restores selection");
+    }
+
+    private static async Task VerifyOverwriteRefresh(Mo2LiveWorkspace live, Window window)
+    {
+        await live.ProfileMenu.OverwriteItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2OverwriteView>().Any(), "Overwrite panel did not open");
+        var view = window.GetVisualDescendants().OfType<Mo2OverwriteView>().Single();
+        await WaitFor(() => view.GetVisualDescendants().OfType<TreeDataGrid>().Any(x => x.Name == "OverwriteFiles"), "Overwrite table did not render");
+        var table = view.GetVisualDescendants().OfType<TreeDataGrid>().Single(x => x.Name == "OverwriteFiles");
+        const string selectedPath = "__frontend_overwrite_check_A.txt";
+        await WaitFor(() => table.Rows?.Any(x => x.Model is Mo2OverwriteFile { Path: selectedPath }) == true, "Required Overwrite fixture did not load");
+        var index = Enumerable.Range(0, table.Rows!.Count).Single(i => table.Rows[i].Model is Mo2OverwriteFile { Path: selectedPath });
+        table.RowSelection!.Select(new IndexPath(index));
+        var filter = view.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "OverwriteSearch");
+        filter.Text = "__frontend_overwrite_check_B.txt";
+        await WaitFor(() => table.Rows!.Count == 1 && table.RowSelection!.SelectedItem is null, "Overwrite filter did not hide the selected file");
+        filter.Text = "";
+        await WaitFor(() => table.RowSelection!.SelectedItem is Mo2OverwriteFile { Path: selectedPath }, "Clearing Overwrite filter lost selection");
+        await view.Refresh();
+        if (table.RowSelection!.SelectedItem is not Mo2OverwriteFile { Path: selectedPath })
+            throw new InvalidOperationException("Overwrite refresh lost selection");
+        Console.WriteLine("PASS live Overwrite filter/clear/refresh preserve file selection");
     }
 
     private static async Task VerifyNativeMods(Mo2LiveWorkspace live, Window window)
@@ -1413,20 +1806,11 @@ public partial class MockApp : Application
             }
         }
         searchBox.Text = live.Profile.Mods.Single(x => x.IsOverwrite).DisplayName;
-        await WaitFor(() => table.Rows!.Count == 1 && native.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "Overwrite"), "Overwrite search did not render");
-        table.RowSelection!.Select(new IndexPath(0));
-        await WaitFor(() => live.ModsPage!.SelectionCount.Value == 1, "Overwrite selection failed");
-        if (native.FindControl<Button>("DeleteButton")!.IsEnabled || native.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "MoveModEarlierButton").IsEnabled ||
-            !native.FindControl<Button>("ViewFilesButton")!.IsEnabled)
-            throw new InvalidOperationException("Native toolbar does not respect Overwrite restrictions");
+        await WaitFor(() => table.Rows!.Count == 0, "Overwrite must be absent from the Mods panel");
         search.FindControl<Button>("SearchClearButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-        await WaitFor(() => table.Rows!.Count == live.Profile.Mods.Count(x => !x.IsOverwrite), "Native clear search did not restore all mods");
-        var tabs = native.FindControl<TabControl>("RulesTabControl")!;
-        tabs.SelectedItem = native.FindControl<TabItem>("RulesTabItem");
-        await WaitFor(() => native.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Any(), "Native Rules tab did not render");
-        var rules = native.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Single().ViewModel!;
-        await WaitFor(() => rules.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Native Rules tab did not load MO2 plugins");
-        tabs.SelectedItem = native.FindControl<TabItem>("ModsTabItem");
+        await WaitFor(() => table.Rows!.Count == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Native clear search did not restore all mods");
+        if (native.FindControl<TabItem>("RulesTabItem")!.IsVisible)
+            throw new InvalidOperationException("Removed Rules tab became visible");
         live.ModsPage!.CommandDeselectItems.Execute(R3.Unit.Default);
         await live.Profile.Refresh();
         if (!modsBefore.SequenceEqual(live.Profile.Mods.OrderBy(x => x.Name).Select(x => (x.Name, x.Priority, x.State))) ||
@@ -1434,7 +1818,7 @@ public partial class MockApp : Application
             throw new InvalidOperationException("Native mods UI test did not restore MO2 state");
         var priorities = live.ModsPage.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
         if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Default mod rows do not follow MO2 priority");
-        Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite restrictions and Rules tab use MO2 state; original state restored");
+        Console.WriteLine("PASS: native mods search/clear, selection/deselect, activation, Overwrite exclusion and hidden Rules tab match the frontend; original state restored");
     }
 
     private static async Task VerifyLayoutOptions(Mo2LiveWorkspace live, Window window, string mode)
@@ -1903,7 +2287,7 @@ public partial class MockApp : Application
             visit.Command!.Execute(visit.CommandParameter);
             await WaitFor(() => !live.Profile.SelectingProfile && Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == Path.GetFullPath(profile.Directory)
                 && live.WorkspaceController.ActiveWorkspace.Context is Mo2WorkspaceContext, "Game card did not switch both panels: " + live.Profile.Status, seconds: 110);
-            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite), "Native mod rows did not refresh after game switch");
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator), "Native mod rows did not refresh after game switch");
             var priorities = live.ModsPage!.Adapter.Source.Value.Items.Select(x => x.Get<ValueComponent<int>>(Mo2ModsAdapter.PriorityKey).Value.Value).ToArray();
             if (!priorities.SequenceEqual(priorities.Order())) throw new InvalidOperationException("Mod rows lost MO2 priority order after switching games");
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_SIDEBAR_LAUNCH") == "1") await VerifySidebarLaunch(live, window);
@@ -1913,7 +2297,7 @@ public partial class MockApp : Application
             await VisitGameProfile(skyrim, selected);
             if (live.WorkspaceController.ActiveWorkspace.Panels.SelectMany(x => x.Tabs).Count(x => x.Contents.ViewModel is ScenarioInstalledPage { IsMo2Profile: true }) != 1)
                 throw new InvalidOperationException("Profile selection duplicated the mod-list tab");
-            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite) && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
+            await WaitFor(() => live.ModsPage!.Adapter.SourceCount.Value == live.Profile.Mods.Count(x => !x.IsOverwrite && !x.IsSeparator) && live.PluginsPage!.Adapter.SourceCount.Value == live.Profile.Order.Plugins.Count, "Both panels did not change to Skyrim");
             var snapshot = await new Mo2BridgeClient(skyrim.Registration.Endpoint).SendAsync("snapshot");
             var mods = snapshot.GetProperty("mods").EnumerateArray().Select(x => (x.GetProperty("name").GetString(), x.GetProperty("state").GetInt32(), x.GetProperty("priority").GetInt32())).OrderBy(x => x.Item1).ToArray();
             if (!mods.SequenceEqual(live.Profile.Mods.Select(x => ((string?)x.Name, x.State, x.Priority)).OrderBy(x => x.Item1)))
@@ -2013,6 +2397,76 @@ public partial class MockApp : Application
         if (!live.Profile.Order.Plugins.Select(x => x.DisplayName).SequenceEqual(original.Select(x => x.DisplayName)))
             throw new InvalidOperationException("Live check did not restore original plugin order");
         Console.WriteLine("PASS: live two-panel tables; native plugin row command changes MO2; independent host read agrees; original order restored");
+    }
+
+    private static async Task VerifyLiveCollectionRename(Mo2LiveWorkspace live, IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        const string original = "__Rename UI check_separator", renamed = "UI renamed_separator";
+        await WaitFor(() => live.Profile.IsConnected && live.Profile.Mods.Any(x => x.Name == original), "Required temporary collection is missing");
+        var controller = live.WorkspaceController;
+        var data = Mo2CollectionFactory.Data(original);
+        for (var i = 0; i < 2; i++)
+            controller.OpenPage(controller.ActiveWorkspaceId, data, controller.GetOpenPageBehavior(data, NavigationInformation.From(OpenPageBehaviorType.NewPanel)));
+        await Task.Delay(500);
+        var pages = controller.ActiveWorkspace.Panels.SelectMany(x => x.Tabs).Select(x => x.Contents)
+            .Where(x => x.PageData.Context is Mo2CollectionContext c && c.Key == original).ToArray();
+        if (pages.Length < 2) throw new InvalidOperationException("Multiple collection panels were not created");
+        var model = (ScenarioInstalledPage)pages[0].ViewModel;
+        controller.OpenPage(controller.ActiveWorkspaceId, data, controller.GetOpenPageBehavior(data, NavigationInformation.From(OpenPageBehaviorType.NewTab)));
+        var historyTab = controller.ActiveWorkspace.SelectedTab;
+        var historyPanel = controller.ActiveWorkspace.Panels.Single(x => x.Tabs.Contains(historyTab));
+        controller.OpenPage(controller.ActiveWorkspaceId, Mo2CollectionFactory.Data(""),
+            new OpenPageBehavior.ReplaceTab(historyPanel.Id, historyTab.Id), checkOtherPanels: false);
+        async Task Submit(string title, ButtonDefinitionId action) {
+            model.CommandRenameGroup.Execute(R3.Unit.Default);
+            await WaitFor(() => desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Rename dialog did not open");
+            var dialog = desktop.Windows.OfType<DialogWindow>().Single(x => x.IsVisible);
+            ((IDialogStandardContentViewModel)dialog.ViewModel!.ContentViewModel!).InputText = title;
+            await Task.Delay(100);
+            dialog.ViewModel.ButtonPressCommand.Execute(action);
+            await WaitFor(() => !desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Rename dialog did not close");
+        }
+        await Submit("Cancelled", ButtonDefinitionId.Cancel);
+        if (!live.Profile.Mods.Any(x => x.Name == original)) throw new InvalidOperationException("Cancel changed native collection");
+        await Submit("UI renamed", ButtonDefinitionId.Accept);
+        await WaitFor(() => live.Profile.Mods.Any(x => x.Name == renamed), "Accepted dialog did not rename native separator");
+        if (pages.Any(x => x.PageData.Context is not Mo2CollectionContext { Key: renamed } || ((ScenarioInstalledPage)x.ViewModel).CollectionKey != renamed))
+            throw new InvalidOperationException("Open collection panel identities did not update");
+        live.SaveLayouts();
+        Console.WriteLine("PASS real NMA rename dialog Cancel/Accept; native separator and multiple open panel identities updated");
+        await historyTab.GoBackInHistoryCommand.Execute();
+        if (historyTab.Contents.PageData.Context is not Mo2CollectionContext { Key: renamed })
+            throw new InvalidOperationException("Back reopened the old collection name");
+        await historyTab.GoForwardInHistoryCommand.Execute();
+        if (historyTab.Contents.PageData.Context is not Mo2CollectionContext { Key: "" })
+            throw new InvalidOperationException("Rename changed an unrelated Forward entry");
+        Console.WriteLine("PASS Back follows collection rename; unrelated Forward entry preserved");
+        await Submit("__Rename UI check", ButtonDefinitionId.Accept);
+        await WaitFor(() => live.Profile.Mods.Any(x => x.Name == original), "Test collection name was not restored");
+        Console.WriteLine("PASS collection test name restored");
+        async Task Remove(ButtonDefinitionId action) {
+            model.CommandDeleteGroup.Execute(R3.Unit.Default);
+            await WaitFor(() => desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Removal confirmation did not open");
+            var dialog = desktop.Windows.OfType<DialogWindow>().Single(x => x.IsVisible);
+            dialog.ViewModel!.ButtonPressCommand.Execute(action);
+            await WaitFor(() => !desktop.Windows.OfType<DialogWindow>().Any(x => x.IsVisible), "Removal confirmation did not close");
+        }
+        await Remove(ButtonDefinitionId.Cancel);
+        if (!live.Profile.Mods.Any(x => x.Name == original) || pages.Any(x => ((ScenarioInstalledPage)x.ViewModel).CollectionKey != original))
+            throw new InvalidOperationException("Cancelled collection removal changed native state or panel identities");
+        await Remove(ButtonDefinitionId.Accept);
+        await WaitFor(() => !live.Profile.Mods.Any(x => x.Name == original) && !live.Profile.ManagingMod, "Accepted collection removal did not finish");
+        if (pages.Any(x => x.PageData.Context is Mo2CollectionContext || ((ScenarioInstalledPage)x.ViewModel).CollectionKey is not null))
+            throw new InvalidOperationException("Removed collection panels did not switch to My Mods");
+        live.SaveLayouts();
+        Console.WriteLine("PASS panel removal Cancel/Accept; native separator removed; all open collection panels switched to My Mods");
+        await historyTab.GoBackInHistoryCommand.Execute();
+        if (historyTab.Contents.PageData.Context is Mo2CollectionContext || ((ScenarioInstalledPage)historyTab.Contents.ViewModel).CollectionKey is not null)
+            throw new InvalidOperationException("Back reopened a removed collection");
+        await historyTab.GoForwardInHistoryCommand.Execute();
+        if (historyTab.Contents.PageData.Context is not Mo2CollectionContext { Key: "" })
+            throw new InvalidOperationException("Removal changed an unrelated Forward entry");
+        Console.WriteLine("PASS Back follows collection removal to My Mods; Forward remains usable");
     }
 
     private static async Task VerifyDialogs(ScenarioWorkspace scenario, IClassicDesktopStyleApplicationLifetime desktop)

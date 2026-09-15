@@ -11,7 +11,7 @@ using System.Reactive.Subjects;
 
 namespace Mo2.Frontend;
 
-internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
+internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel, IDisposable
 {
     public ReactiveCommand<Unit, Unit> NewTabCommand { get; }
     public ReactiveCommand<NavigationInformation, Unit> OpenSettingsCommand { get; }
@@ -21,16 +21,20 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
     public ReactiveCommand<Unit, Unit> OpenForumsCommand { get; } = ReactiveCommand.Create(() => { }, Observable.Return(false));
     public ReactiveCommand<NavigationInformation, Unit> ViewChangelogCommand { get; } = ReactiveCommand.Create<NavigationInformation>(_ => { }, Observable.Return(false));
     public ReactiveCommand<Unit, Unit> ShowWelcomeMessageCommand { get; } = Disabled();
-    public ReactiveCommand<Unit, Unit> LogoutCommand { get; } = Disabled();
+    public ReactiveCommand<Unit, Unit> LogoutCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenNexusModsProfileCommand { get; } = Disabled();
     public ReactiveCommand<Unit, Unit> OpenNexusModsPremiumCommand { get; } = Disabled();
-    public ReactiveCommand<Unit, Unit> OpenNexusModsAccountSettingsCommand { get; } = Disabled();
+    public ReactiveCommand<Unit, Unit> OpenNexusModsAccountSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ViewAppLogsCommand { get; }
     public R3.ReactiveCommand<R3.Unit, R3.Unit> LoginCommand { get; }
-    // The account button opens MO2's account settings. No separate NMA login state.
-    public bool IsLoggedIn => false;
-    public UserRole UserRole => UserRole.Free;
-    public string? Username => null;
+    public Func<bool, Task> ManageAccount { get; }
+    private bool _isLoggedIn;
+    private string? _username;
+    private Mo2LoginResult? _confirmedAccount;
+    public bool IsLoggedIn { get => _isLoggedIn; private set => this.RaiseAndSetIfChanged(ref _isLoggedIn, value); }
+    private UserRole _userRole = UserRole.Free;
+    public UserRole UserRole { get => _userRole; private set => this.RaiseAndSetIfChanged(ref _userRole, value); }
+    public string? Username { get => _username; private set => this.RaiseAndSetIfChanged(ref _username, value); }
     public IImage? Avatar => null;
     private string _title = "Home", _subtitle = "";
     public string ActiveWorkspaceTitle { get => _title; private set => this.RaiseAndSetIfChanged(ref _title, value); }
@@ -38,6 +42,16 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
     public IAddPanelDropDownViewModel AddPanelDropDownViewModel { get; set; }
     private static ReactiveCommand<Unit, Unit> Disabled() => ReactiveCommand.Create(() => { }, Observable.Return(false));
     private readonly BehaviorSubject<bool> _canOpenLogs = new(false);
+    private readonly Mo2AccountMonitor _account;
+    private readonly Avalonia.Threading.DispatcherTimer _accountTimer;
+    private readonly Mo2LiveWorkspace _shell;
+    private async void RefreshAccount() => await _account.Refresh();
+    public void Dispose()
+    {
+        _accountTimer.Stop();
+        _shell.CatalogChanged -= RefreshAccount;
+        _account.Dispose();
+    }
     public string? LogsDirectory { get; private set; }
     private IPanelTabViewModel? _selectedTab;
     public IPanelTabViewModel? SelectedTab
@@ -48,6 +62,7 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
 
     public Mo2TopBar(Mo2LiveWorkspace shell)
     {
+        _shell = shell;
         var controller = shell.WorkspaceController;
         void UpdateLogs() {
             var directory = shell.Profile.LogsDirectory;
@@ -66,11 +81,54 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
         OpenSettingsCommand = ReactiveCommand.Create<NavigationInformation>(info =>
             controller.OpenPage(controller.ActiveWorkspaceId, shell.ConnectionsPage, controller.GetOpenPageBehavior(shell.ConnectionsPage, info)));
         ActiveWorkspaceSubtitle = "";
+        _account = new(() => Mo2SharedNexusLogin.ReadStatus(shell.Catalog.Registrations), ApplyAccount);
+        async Task Account(bool logout) {
+            if (!_account.BeginLogin()) {
+                // Without this the button silently does nothing while a previous
+                // attempt is still open.
+                shell.NexusAccountStatus.OnNext("Nexus sign-in is already open. Finish or cancel it first.");
+                return;
+            }
+            Mo2LoginResult? result = null;
+            try {
+                result = await shell.LoginToNexus(logout);
+                if (result is null) shell.NexusAccountStatus.OnNext(
+                    logout ? "Sign-out did not start; the frontend window is not ready."
+                           : "Nexus sign-in did not start; the frontend window is not ready.");
+            } catch (Exception error) {
+                // A throwing command is swallowed by ReactiveCommand, which is what
+                // made a failed sign-in look like a dead button.
+                shell.NexusAccountStatus.OnNext("Nexus sign-in failed: " + error.Message);
+                Console.Error.WriteLine("Nexus sign-in failed: " + error);
+            }
+            finally { await _account.EndLogin(result); }
+        }
+        ManageAccount = Account;
         LoginCommand = R3.ReactiveCommandExtensions.ToReactiveCommand<R3.Unit, R3.Unit>(R3.Observable.Return(true), async (_, _) => {
-            if (shell.Profile.ProfilePath.Length == 0) shell.OpenLoadouts(null);
-            else await shell.Profile.ManageNexusAccount();
+            await Account(false);
             return R3.Unit.Default;
         }, awaitOperation: R3.AwaitOperation.Drop);
+        void ApplyAccount(Mo2LoginResult? result) {
+            if (result is null) return;
+            var status = $"Nexus account · {result.Connected} of {result.Total} instances connected";
+            if (result.Unavailable > 0) status += $" · {result.Unavailable} unavailable; status not confirmed";
+            if (result.Failures.Count > 0) status += ". " + result.Failures[0];
+            var retainAccount = result.CanRetainConfirmedAccount(_confirmedAccount);
+            if (retainAccount) status += ". Showing the last confirmed account.";
+            shell.NexusAccountStatus.OnNext(status);
+            if (retainAccount) return;
+            IsLoggedIn = result.Total > 0 && result.Connected == result.Total && result.Failures.Count == 0;
+            _confirmedAccount = IsLoggedIn ? result : null;
+            Username = IsLoggedIn ? result.Username : null;
+            UserRole = !IsLoggedIn ? UserRole.Free : result.Premium ? UserRole.Premium : result.Supporter ? UserRole.Supporter : UserRole.Free;
+        }
+        OpenNexusModsAccountSettingsCommand = ReactiveCommand.CreateFromTask(() => Account(false));
+        LogoutCommand = ReactiveCommand.CreateFromTask(() => Account(true), this.WhenAnyValue(x => x.IsLoggedIn));
+        shell.CatalogChanged += RefreshAccount;
+        _accountTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _accountTimer.Tick += (_, _) => RefreshAccount();
+        _accountTimer.Start();
+        RefreshAccount();
         AddPanelDropDownViewModel = new AddPanelDropDownViewModel(controller);
         NewTabCommand = ReactiveCommand.Create(() => controller.ActiveWorkspace.SelectedPanel.AddDefaultTab());
         controller.WhenAnyValue(c => c.ActiveWorkspace).Subscribe(workspace => {

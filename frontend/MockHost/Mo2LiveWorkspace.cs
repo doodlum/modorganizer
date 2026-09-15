@@ -26,9 +26,16 @@ namespace Mo2.Frontend;
 
 internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
 {
-    private readonly ServiceProvider _database = ScenarioDatabase.Create();
+    private readonly ServiceProvider _database = Database();
+    private static ServiceProvider Database()
+    {
+        using var timing = Mo2StartupCheck.Phase("database");
+        return ScenarioDatabase.Create();
+    }
     private readonly ServiceProvider _desktop;
     public NexusMods.Sdk.IOSInterop DesktopInterop => _desktop.GetRequiredService<NexusMods.Sdk.IOSInterop>();
+    private readonly Func<Task> _createCollection;
+    private readonly Func<string,Task<bool>> _removeCollection;
     public WindowId WindowId { get; } = WindowId.NewId();
     public bool IsActive => true;
     public IWorkspaceController WorkspaceController { get; }
@@ -36,13 +43,19 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _downloadsPage;
     private readonly PageData _toolsPage;
     private readonly PageData _overwritePage;
+    private readonly PageData _externalFilesPage;
     private readonly PageData _logsPage;
     private readonly PageData _archivesPage;
+    private readonly PageData _dataPage;
+    private readonly PageData _savesPage;
     private readonly PageData _profilesPage;
     private readonly PageData _modsPage;
     private readonly PageData _gamesPage;
     private readonly PageData _gameLoadoutsPage;
     private readonly PageData _connectionsPage;
+    private readonly PageData _componentsPage;
+    private Mo2TopBar? _topBar;
+    internal System.Reactive.Subjects.BehaviorSubject<string> NexusAccountStatus { get; } = new("Checking Nexus account…");
     private readonly Mo2HealthDetailsFactory _healthDetailsFactory;
     private readonly Mo2WorkspaceLayout _layout;
     public string? LayoutError => _layout.Error;
@@ -59,10 +72,30 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public Mo2InstanceCatalog Catalog { get; }
     public IReadOnlyList<Mo2CatalogEntry> CatalogEntries { get; private set; } = [];
     private string? _catalogSnapshot;
+    private bool _catalogReading, _catalogRefreshPending, _disposed;
     public event Action? CatalogChanged;
     public void RefreshCatalog()
     {
-        var entries = Catalog.Read();
+        if (_disposed) return;
+        _catalogRefreshPending = true;
+        if (!_catalogReading) _ = RefreshCatalogAsync();
+    }
+    private async Task RefreshCatalogAsync()
+    {
+        _catalogReading = true;
+        try {
+            do {
+                _catalogRefreshPending = false;
+                var entries = await Catalog.ReadAsync();
+                if (!_disposed) ApplyCatalog(entries);
+            } while (_catalogRefreshPending && !_disposed);
+        } catch (Exception) {
+            Console.Error.WriteLine("Could not refresh MO2 catalog; the next poll will retry.");
+        } finally { _catalogReading = false; }
+    }
+    private void ApplyCatalog(IReadOnlyList<Mo2CatalogEntry> entries)
+    {
+        using var timing = Mo2UiLatencyProbe.Measure("Apply instance catalog");
         var snapshot = System.Text.Json.JsonSerializer.Serialize(entries.Select(entry => new {
             entry.Registration, entry.Error, Game = entry.Instance?.Game, Selected = entry.Instance?.SelectedProfile,
             Profiles = entry.Instance?.Profiles.Select(profile => new {
@@ -75,34 +108,41 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     public string GameName => Profile.GameName;
     public Mo2LiveProfile Profile { get; }
+    private readonly Task _firstRead;
     private IEnumerable<object> ProfilePages => WorkspaceController.TryGetWorkspace(_profileWorkspace, out var workspace)
         ? workspace.Panels.SelectMany(x => x.Tabs).Select(x => (object)x.Contents.ViewModel) : [];
     public ScenarioInstalledPage? ModsPage => ProfilePages.OfType<ScenarioInstalledPage>().FirstOrDefault();
     public ScenarioLoadOrderPage? PluginsPage => ProfilePages.OfType<ScenarioLoadOrderPage>().FirstOrDefault();
     public Mo2LiveWorkspace(string endpoint)
     {
+        using var construction = Mo2StartupCheck.Phase("workspace");
         Profile = new(endpoint);
         Catalog = new(endpoint);
-        RefreshCatalog();
+        using (Mo2StartupCheck.Phase("catalog")) ApplyCatalog(Catalog.Read());
         Profile.Changed += RefreshCatalog;
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
+        Profile.ConfirmRemoval = mods => Mo2SeparatorDialog.ConfirmRemoval(windows, mods);
         services.Add<IWindowManager>(windows);
-        services.Add<ISettingsManager>(new MemorySettings(services));
+        services.Add<ISettingsManager>(new MemorySettings(services, new Mo2AlertPreferences(Mo2AlertPreferences.DefaultPath)));
         services.Add<ILoggerFactory>(NullLoggerFactory.Instance);
         services.Add<IWorkspaceAttachmentsFactoryManager>(new FixtureAttachments());
-        _desktop = NexusMods.Backend.ServiceExtensions.AddRuntimeDependencies(
-            NexusMods.Backend.ServiceExtensions.AddOSInterop(new ServiceCollection()
-                .AddLogging().AddSingleton<NexusMods.Paths.IFileSystem>(NexusMods.Paths.FileSystem.Shared)
-                .AddSingleton(services.GetRequiredService<ISettingsManager>()))).BuildServiceProvider();
+        using (Mo2StartupCheck.Phase("desktop services"))
+            _desktop = NexusMods.Backend.ServiceExtensions.AddRuntimeDependencies(
+                NexusMods.Backend.ServiceExtensions.AddOSInterop(new ServiceCollection()
+                    .AddLogging().AddSingleton<NexusMods.Paths.IFileSystem>(NexusMods.Paths.FileSystem.Shared)
+                    .AddSingleton(services.GetRequiredService<ISettingsManager>()))).BuildServiceProvider();
         services.Add<NexusMods.Sdk.IOSInterop>(DesktopInterop);
-        services.Add<IEnumerable<ILoadOrderDataProvider>>([new ScenarioOrderProvider()]);
+        services.Add<IEnumerable<ILoadOrderDataProvider>>([new ScenarioOrderProvider(Profile)]);
         services.Add(_database.GetRequiredService<NexusMods.MnemonicDB.Abstractions.IConnection>());
         services.Add<IEnumerable<ILoadoutDataProvider>>([Profile]);
-        var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "Mods", IconValues.CollectionsOutline,
-            () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads));
+        var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "My Mods", IconValues.CollectionsOutline,
+            () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads) { CreateCollection = () => Mo2Collections.Create(windows, Profile) });
+        var collections = new Mo2CollectionFactory(services, windows, Profile, OpenDownloads);
+        _createCollection = () => Mo2Collections.Create(windows, Profile);
+        _removeCollection = key => Mo2Collections.Remove(windows, Profile, key);
         _modsPage = mods.Data;
-        var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", IconValues.Package,
+        var plugins = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82102", "Plugins", ScenarioLoadOrderPage.PluginIcon,
             () => new ScenarioLoadOrderPage(services, Profile.Order) { LiveProfile = Profile });
         _pluginsPage = plugins.Data;
         var downloads = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82103", "Downloads", IconValues.Download,
@@ -115,8 +155,12 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var games = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82105", "My Games", IconValues.GamepadOutline,
             () => new Mo2GamesPage(windows, this));
         _gamesPage = games.Data;
+        var components = new FixturePageFactory("3f2b6c41-9d7a-45e2-9c0f-6d1f2a7c8b34", "Components", Mo2ComponentsPage.ComponentsIcon,
+            () => new Mo2ComponentsPage(windows, services.GetRequiredService<ISettingsManager>()));
+        _componentsPage = components.Data;
         var connections = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82106", "Connections", IconValues.Folder,
-            () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile));
+            () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile, logout => _topBar?.ManageAccount(logout) ?? Task.CompletedTask,
+                NexusAccountStatus));
         _connectionsPage = connections.Data;
         _profilesPage = profiles.Data;
         var health = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82108", "Health Check", IconValues.Cardiology,
@@ -127,22 +171,55 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         _toolsPage = tools.Data;
         var overwrite = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82111", "Overwrite", IconValues.Folder, () => new Mo2OverwritePage(windows, Profile));
         _overwritePage = overwrite.Data;
+        var externalFiles = new FixturePageFactory("18e27c99-33d0-4f49-9022-ae3671586d24", "External Files", IconValues.FolderEditOutline,
+            () => new Mo2ExternalFilesPage(windows, Profile));
+        _externalFilesPage = externalFiles.Data;
         var logs = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82112", "Logs", Mo2LogsPage.LogsIcon, () => new Mo2LogsPage(windows,Profile));
         _logsPage = logs.Data;
         var archives = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82113", "Archives", Mo2ArchivesPage.ArchiveIcon, () => new Mo2ArchivesPage(windows,Profile));
         _archivesPage = archives.Data;
-        foreach (var factory in new[] { mods, plugins, downloads, health, tools, overwrite, logs, archives }) factory.IsAvailable = context => context is Mo2WorkspaceContext;
-        foreach (var factory in new[] { games, profiles, connections }) factory.IsAvailable = context => context is HomeContext;
+        var data = new FixturePageFactory("5ef051ba-34cd-4674-bb41-18a49ff6b7d3", "Data", Mo2DataPage.DataIcon, () => new Mo2DataPage(windows, Profile));
+        _dataPage = data.Data;
+        var saves = new FixturePageFactory("c0896704-91ec-4246-8651-85998f4a15b1", "Saves", IconValues.Save, () => new Mo2SavesPage(windows, Profile));
+        _savesPage = saves.Data;
+        foreach (var factory in new[] { mods, plugins, downloads, health, tools, overwrite, externalFiles, logs, archives, data, saves }) factory.IsAvailable = context => context is Mo2WorkspaceContext;
+        foreach (var factory in new[] { games, profiles, connections, components }) factory.IsAvailable = context => context is HomeContext;
         _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
-        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, health.Data, tools.Data, overwrite.Data, logs.Data, archives.Data], _healthDetailsFactory.Id);
-        services.Add(new PageFactoryController([archives, logs, overwrite, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, new NewTabPageFactory(services)]));
+        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, components.Data, health.Data, tools.Data, overwrite.Data, externalFiles.Data, logs.Data, archives.Data, data.Data, saves.Data], _healthDetailsFactory.Id);
+        services.Add(new PageFactoryController([collections, saves, data, archives, logs, overwrite, externalFiles, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, components, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
+        void ReplaceCollection(string instance, string oldName, PageData replacement) {
+            foreach (var workspace in WorkspaceController.AllWorkspaces.Where(x => x.Context is Mo2WorkspaceContext context && context.Endpoint == instance))
+                foreach (var tab in workspace.Panels.SelectMany(x => x.Tabs)) {
+                    if (tab is PanelTabViewModel nativeTab)
+                        nativeTab.ReplaceHistoryPages(data => data.Context is Mo2CollectionContext history && history.Key == oldName ? replacement : data);
+                    if (tab.Contents.PageData.Context is Mo2CollectionContext collection && collection.Key == oldName) {
+                        tab.Contents.PageData = replacement;
+                        if (tab.Contents.ViewModel is ScenarioInstalledPage page) page.CollectionKey = (replacement.Context as Mo2CollectionContext)?.Key;
+                    }
+                }
+            _layout.ReplaceCollection(instance, oldName, replacement);
+            SaveLayouts();
+        }
+        Profile.CollectionRenamed += (instance, oldName, newName) => ReplaceCollection(instance, oldName, Mo2CollectionFactory.Data(newName));
+        Profile.CollectionRemoved += (instance, oldName) => ReplaceCollection(instance, oldName, _modsPage);
+        // The connected profile's first read starts here, not when the window opens:
+        // the request is a file the host picks up on its own, so it can be in flight
+        // while the rest of startup builds. Waiting until Opened put MO2's answer
+        // behind every page factory, the workspace restore and the first frame.
+        _firstRead = FirstRead();
+        async Task FirstRead()
+        {
+            using var timing = Mo2StartupCheck.Phase("first snapshot");
+            await Profile.Refresh();
+        }
+        using var rest = Mo2StartupCheck.Phase("workspaces");
         var home = WorkspaceController.CreateWorkspace(new HomeContext(), games.Data);
         _homeWorkspace = home.Id;
         _layout.Restore(home, WorkspaceController);
         WorkspaceController.ChangeActiveWorkspace(home.Id);
-        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data);
+        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data, components.Data);
         _profileWorkspace = CreateProfileWorkspace(new Mo2WorkspaceContext()).Id;
         WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
         Profile.Changed += () => {
@@ -157,8 +234,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     private IWorkspaceViewModel CreateProfileWorkspace(Mo2WorkspaceContext context)
     {
+        using var timing = Mo2UiLatencyProbe.Measure("Create profile workspace", always: true);
         var workspace = WorkspaceController.CreateWorkspace(context, _modsPage);
-        _profileMenus[workspace.Id] = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _logsPage, _archivesPage);
+        _profileMenus[workspace.Id] = new Mo2LoadoutMenu(WorkspaceController, workspace.Id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _externalFilesPage, _logsPage, _archivesPage, _dataPage, _savesPage, Profile, _createCollection, _removeCollection);
         WorkspaceController.OpenPage(workspace.Id, _pluginsPage, new OpenPageBehavior.NewPanel(WorkspaceGridState.From(true,
             new PanelGridState(workspace.Panels.Single().Id, new Rect(0, 0, 0.5, 1)),
             new PanelGridState(PanelId.DefaultValue, new Rect(0.5, 0, 0.5, 1)))));
@@ -166,13 +244,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     private void EnsureProfileWorkspace(bool activate)
     {
+        using var timing = Mo2UiLatencyProbe.Measure("Ensure profile workspace", always: true);
         if (Profile.ProfilePath.Length == 0) return;
         var key = (Profile.Endpoint, Profile.ProfilePath);
         if (!_profileWorkspaces.TryGetValue(key, out var id)) {
             var context = new Mo2WorkspaceContext(key.Endpoint, key.ProfilePath);
             if (_profileWorkspaces.Count == 0 && WorkspaceController.TryGetWorkspace(_profileWorkspace, out var initial)) {
                 initial.Context = context; id = initial.Id;
-                _profileMenus[id] = new Mo2LoadoutMenu(WorkspaceController, id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _logsPage, _archivesPage);
+                _profileMenus[id] = new Mo2LoadoutMenu(WorkspaceController, id, _modsPage, _pluginsPage, _downloadsPage, _healthPage, GameProfilesPage(context), _toolsPage, _overwritePage, _externalFilesPage, _logsPage, _archivesPage, _dataPage, _savesPage, Profile, _createCollection, _removeCollection);
             } else id = CreateProfileWorkspace(context).Id;
             _profileWorkspaces.Add(key, id);
             if (WorkspaceController.TryGetWorkspace(id, out var restored)) {
@@ -209,9 +288,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         WorkspaceController.OpenPage(_profileWorkspace, _downloadsPage,
             WorkspaceController.GetOpenPageBehavior(_downloadsPage, NavigationInformation.From(NavigationInput.Default)));
     }
+    public void OpenHealth() {
+        ShowProfile();
+        WorkspaceController.OpenPage(_profileWorkspace, _healthPage, WorkspaceController.GetOpenPageBehavior(_healthPage, NavigationInformation.From(NavigationInput.Default)));
+    }
     public void ShowHome() => WorkspaceController.ChangeActiveWorkspace(_homeWorkspace);
     public void OpenGames() => OpenHomePage(_gamesPage);
     public void OpenConnections() => OpenHomePage(_connectionsPage);
+    public void OpenComponents() => OpenHomePage(_componentsPage);
     public void OpenProfiles() => OpenLoadouts(null);
     public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
     public void OpenHealthDetails(Mo2HealthDetailsContext context, NavigationInformation info)
@@ -221,31 +305,118 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     public void ShowProfile()
     {
+        using var timing = Mo2UiLatencyProbe.Measure("Show profile workspace");
         EnsureProfileWorkspace(false);
-        WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
+        if (WorkspaceController.ActiveWorkspaceId != _profileWorkspace)
+            WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
     }
+    private Window? _window;
+    private bool _loggingIn;
+    public async Task<Mo2LoginResult?> LoginToNexus(bool logout = false)
+    {
+        // Two separate reasons used to return the same silent null.
+        if (_loggingIn) { NexusAccountStatus.OnNext("Nexus sign-in is already open. Finish or cancel it first."); return null; }
+        if (_window is null) return null;
+        _loggingIn = true;
+        try { return await Mo2NexusLoginPopup.Show(_window, this, logout: logout); }
+        finally { _loggingIn = false; }
+    }
+    // Diagnostics need a window wide enough for the responsive columns to appear;
+    // MO2_WINDOW_SIZE=WxH overrides the normal launch size.
+    private static (double Width, double Height) WindowSize()
+    {
+        var value = Environment.GetEnvironmentVariable("MO2_WINDOW_SIZE");
+        if (value?.Split('x') is [var w, var h] && double.TryParse(w, out var width) && double.TryParse(h, out var height))
+            return (width, height);
+        return (1280, 800);
+    }
+
     public Window CreateWindow()
     {
         var status = new TextBlock { Text = Profile.Status, Margin = new Thickness(16, 8), TextWrapping = TextWrapping.Wrap };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,*,Auto") };
-        var topBar = new TopBarView { ViewModel = new Mo2TopBar(this) };
+        var topBar = new TopBarView { ViewModel = _topBar = new Mo2TopBar(this) };
         topBar.ViewModel.WhenAnyValue(x => x.ActiveWorkspaceSubtitle).Subscribe(text =>
             topBar.FindControl<TextBlock>("ActiveWorkspaceSubtitleTextBlock")!.IsVisible = !string.IsNullOrEmpty(text));
+        // The top bar's grid is top-aligned inside a taller row, which left the
+        // title and the toggle sitting above the window controls beside them.
+        topBar.FindControl<Grid>("MainGrid")!.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        // The title and subtitle stretch to the header's height, so their glyphs sit
+        // at the top of the box while the icons beside them are centred. Centring the
+        // text blocks themselves puts the glyphs on the icons' line.
+        foreach (var name in new[] { "ActiveWorkspaceTitleTextBlock", "ActiveWorkspaceSubtitleTextBlock" })
+            topBar.FindControl<TextBlock>(name)!.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         topBar.FindControl<MenuItem>("ViewAppLogsMenuItem")!.Header = "View MO2 logs";
+        topBar.FindControl<MenuItem>("OpenNexusModsAccountSettingsMenuItem")!.Header = "Connect MO2 instances…";
+        var presetMenu = new MenuFlyout();
+        var preset = new MenuItem { Header = "Use MO2 panel layout" };
+        var undoPreset = new MenuItem { Header = "Undo panel layout" };
+        presetMenu.Items.Add(preset); presetMenu.Items.Add(undoPreset);
+        preset.Click += (_,_) => _layout.UseMo2Layout(WorkspaceController.ActiveWorkspace, WorkspaceController, _modsPage, _pluginsPage, _dataPage, _archivesPage, _savesPage, _downloadsPage);
+        undoPreset.Click += (_,_) => _layout.UndoPreset(WorkspaceController.ActiveWorkspace, WorkspaceController);
+        presetMenu.Opening += (_,_) => {
+            preset.IsEnabled = WorkspaceController.ActiveWorkspace.Context is Mo2WorkspaceContext;
+            undoPreset.IsEnabled = _layout.CanUndo(WorkspaceController.ActiveWorkspace);
+        };
+        var presetButton = new NexusMods.App.UI.Controls.StandardButton {
+            Size = NexusMods.App.UI.Controls.StandardButton.Sizes.Medium, Fill = NexusMods.App.UI.Controls.StandardButton.Fills.None,
+            Name = "Mo2LayoutPresetButton", ShowLabel = false, ShowIcon = NexusMods.App.UI.Controls.StandardButton.ShowIconOptions.Left,
+            LeftIcon = new ProjektankerIcon("mdi-dock-right"), Flyout = presetMenu
+        };
+        ToolTip.SetTip(presetButton, "Panel layouts");
+        var navigationButtons = (StackPanel)topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>("NewTabButton")!.Parent!;
+        navigationButtons.Children.Add(presetButton);
         var account = topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>("LoginButton")!;
         account.Text = "Nexus account";
-        ToolTip.SetTip(account, "Manage the selected instance’s Nexus account in MO2. Select a profile first.");
-        Grid.SetColumn(topBar, 1); Grid.SetColumnSpan(topBar, 2); grid.Children.Add(topBar);
-        var view = new WorkspaceView { ViewModel = WorkspaceController.ActiveWorkspace, Margin = new Thickness(12, 0) };
-        Grid.SetRow(view, 1); Grid.SetColumn(view, 2); grid.Children.Add(view);
-        var spine = new Spine { ViewModel = new Mo2Spine(this) };
-        spine.Styles.Add(new Avalonia.Styling.Style(selector => selector.OfType<NexusMods.App.UI.Controls.LoadoutBadge.LoadoutBadge>()) {
-            Setters = { new Avalonia.Styling.Setter(Control.IsVisibleProperty, false) }
+        ToolTip.SetTip(account, "Log into Nexus Mods for all registered MO2 instances.");
+        // Vortex's header carries a user profile icon rather than NMA's placeholder
+        // avatar art; it fills once an account is connected.
+        var avatarIcon = topBar.FindControl<UnifiedIcon>("AvatarUnifiedIcon")!;
+        avatarIcon.Size = 24;
+        void SyncAvatar() => avatarIcon.Value = new ProjektankerIcon(
+            _topBar?.IsLoggedIn == true ? "mdi-account-circle" : "mdi-account-circle-outline");
+        SyncAvatar();
+        var accountStatusSubscription = NexusAccountStatus.Subscribe(text => {
+            ToolTip.SetTip(account, text);
+            ToolTip.SetTip(topBar.FindControl<Control>("AvatarMenuItemButton")!, text);
+            SyncAvatar();
         });
+        Grid.SetColumn(topBar, 1); Grid.SetColumnSpan(topBar, 2); grid.Children.Add(topBar);
+        var workspaceHost = new Mo2RetainedViews<IWorkspaceViewModel>(
+            model => new WorkspaceView { ViewModel = model, Margin = new Thickness(12, 0),
+                PanelViewFactory = panel => new Mo2DeferredPanel(panel) },
+            model => model.Context is Mo2WorkspaceContext && WorkspaceController.AllWorkspaces.Contains(model) &&
+                model.Panels.Count > 0 && model.Panels.All(panel => panel.Tabs.All(tab =>
+                    tab.Contents.ViewModel is ScenarioInstalledPage or ScenarioLoadOrderPage)),
+            control => ((WorkspaceView)control).ViewModel = null);
+        workspaceHost.Activate(WorkspaceController.ActiveWorkspace);
+        // Dividers are created and replaced whenever panels change, so the resistance
+        // is attached from the canvas's layout rather than once at construction.
+        workspaceHost.LayoutUpdated += (_, _) => Mo2PanelPhysics.Watch(workspaceHost);
+        Grid.SetRow(workspaceHost, 1); Grid.SetColumn(workspaceHost, 2); grid.Children.Add(workspaceHost);
+        // The badge strip is hidden for every game icon from the application styles,
+        // so the spine no longer carries its own copy of that rule.
+        var spine = new Spine { ViewModel = new Mo2Spine(this) };
         Grid.SetRowSpan(spine, 2); grid.Children.Add(spine);
+        // Vortex fills the home glyph while home is showing and outlines it otherwise,
+        // and marks the button active. IconButtonViewModel.IsActive is not reactive,
+        // so the rendered button is driven from the active workspace directly.
+        void SyncHomeButton() {
+            var host = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(spine)
+                .OfType<NexusMods.App.UI.Controls.Spine.Buttons.Icon.IconButton>().FirstOrDefault();
+            if (host is null) return;
+            var button = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(host).OfType<Button>().FirstOrDefault();
+            if (button is null) return;
+            var active = WorkspaceController.ActiveWorkspace.Context is HomeContext;
+            button.Classes.Set("Active", active); button.Classes.Set("Inactive", !active);
+            foreach (var icon in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(button).OfType<UnifiedIcon>())
+                icon.Value = new ProjektankerIcon(active ? "mdi-home" : "mdi-home-outline");
+        }
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace)
+            .Subscribe(_ => Dispatcher.UIThread.Post(SyncHomeButton, DispatcherPriority.Loaded));
         var profileSidebar = new NexusMods.App.UI.LeftMenu.Loadout.LoadoutLeftMenuView { ViewModel = ProfileMenu };
-        // MO2 has no separate collection/deployment authority.
-        foreach (var name in new[] { "NewCollection", "ApplyControlViewHost" })
+        // Separators are rows in My Mods, not separate collection pages.
+        foreach (var name in new[] { "ApplyControlViewHost", "CollectionItems", "NewCollection" })
             profileSidebar.FindControl<Control>(name)!.IsVisible = false;
         var installed = (StackPanel)profileSidebar.FindControl<Control>("LoadoutItem")!.Parent!;
         var pluginsItem = profileSidebar.FindControl<Control>("ExternalChangesItem")!;
@@ -253,8 +424,14 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         installed.Children.Insert(1, pluginsItem);
         var overwriteItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.OverwriteItem };
         installed.Children.Insert(2, overwriteItem);
+        var externalFilesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ExternalFilesItem };
+        installed.Children.Add(externalFilesItem);
         var archivesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ArchivesItem };
         installed.Children.Insert(2, archivesItem);
+        var dataItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.DataItem };
+        installed.Children.Insert(3, dataItem);
+        var savesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.SavesItem };
+        installed.Children.Insert(4, savesItem);
         var toolsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ToolsItem };
         ((StackPanel)profileSidebar.FindControl<Control>("HealthCheckItem")!.Parent!).Children.Add(toolsItem);
         var logsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.LogsItem };
@@ -265,33 +442,61 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Grid.SetRow(launchPanel, 1);
         ((Grid)profileSidebar.Content!).Children.Add(launchPanel);
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
-        var sidebar = new ContentControl { Content = homeSidebar };
+        if (HomeMenu.LeftMenuItemComponents is { } componentsItem)
+            homeSidebar.FindControl<StackPanel>("LeftMenuStack")!.Children.Add(
+                new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = componentsItem });
+        var sidebar = new ContentControl { Name = "Mo2Sidebar", Content = homeSidebar };
         Grid.SetColumn(sidebar, 1); Grid.SetRow(sidebar, 1); grid.Children.Add(sidebar);
-        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => { view.ViewModel = workspace; profileSidebar.ViewModel = ProfileMenu; profilesItem.ViewModel = ProfileMenu.ProfilesItem; toolsItem.ViewModel = ProfileMenu.ToolsItem; overwriteItem.ViewModel = ProfileMenu.OverwriteItem; logsItem.ViewModel = ProfileMenu.LogsItem; archivesItem.ViewModel = ProfileMenu.ArchivesItem; sidebar.Content = workspace.Context is Mo2WorkspaceContext ? profileSidebar : homeSidebar; });
+        WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(workspace => {
+            using var timing = Mo2UiLatencyProbe.Measure("Activate workspace view", always: true);
+            using (Mo2UiLatencyProbe.Measure("Replace workspace canvas", always: true)) workspaceHost.Activate(workspace);
+            using (Mo2UiLatencyProbe.Measure("Retarget sidebar controls", always: true)) {
+                SyncMenu();
+                sidebar.Content = workspace.Context is Mo2WorkspaceContext ? profileSidebar : homeSidebar;
+            }
+        });
         // Native dialogs can own the host without owning frontend navigation.
         // Keep panels, tabs and selection responsive; commands guard their targets.
         void SyncMenu() {
+            using var timing = Mo2UiLatencyProbe.Measure("Sync profile sidebar");
             profileSidebar.ViewModel = ProfileMenu;
             profilesItem.ViewModel = ProfileMenu.ProfilesItem;
             toolsItem.ViewModel = ProfileMenu.ToolsItem;
-            overwriteItem.ViewModel = ProfileMenu.OverwriteItem;
-            logsItem.ViewModel = ProfileMenu.LogsItem; archivesItem.ViewModel = ProfileMenu.ArchivesItem;
+            overwriteItem.ViewModel = ProfileMenu.OverwriteItem; externalFilesItem.ViewModel = ProfileMenu.ExternalFilesItem;
+            logsItem.ViewModel = ProfileMenu.LogsItem; archivesItem.ViewModel = ProfileMenu.ArchivesItem; dataItem.ViewModel = ProfileMenu.DataItem; savesItem.ViewModel = ProfileMenu.SavesItem;
         }
         Profile.Changed += SyncMenu;
         Grid.SetRow(status, 2); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
-        var window = new Window { Title = "Nexus Mods", Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://MockHost/Assets/AppIcon.png"))), SystemDecorations = SystemDecorations.None, Width = 1280, Height = 800,
+        var window = new Window { Title = "Nexus Mods", Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://MockHost/Assets/AppIcon.png"))), SystemDecorations = SystemDecorations.None, Width = WindowSize().Width, Height = WindowSize().Height,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
+        _window = window;
+        Mo2TabDragDrop.Attach(window, WorkspaceController);
+        Mo2CollapsibleSidebar.Attach(grid, sidebar, profileSidebar, homeSidebar, launchPanel, Profile,
+            (Panel)topBar.FindControl<TextBlock>("ActiveWorkspaceTitleTextBlock")!.Parent!);
+        var notifications = new Mo2Notifications(this);
+        // Vortex keeps notifications at the foot of the spine beside downloads,
+        // not in the header with the account controls.
+        var downloadBorder = spine.FindControl<Border>("DownloadBorder")!;
+        var spineFoot = (Panel)downloadBorder.Parent!;
+        notifications.Button.Name = "SpineNotificationsButton";
+        notifications.Button.Margin = new Thickness(0, 0, 0, 8);
+        notifications.Button.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+        spineFoot.Children.Insert(spineFoot.Children.IndexOf(downloadBorder), notifications.Button);
+        window.Closed += (_,_) => notifications.Dispose();
+        Mo2ResponsiveHeaders.Attach(window);
         void UpdateStatus() => status.Text = Profile.Status + (LayoutError is { } error ? " · " + error : "");
         Profile.Changed += UpdateStatus;
         UpdateStatus();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        timer.Tick += async (_, _) => { await Profile.Refresh(); RefreshCatalog(); SaveLayouts(); UpdateStatus(); };
-        window.Opened += async (_, _) => { await Profile.Refresh(); timer.Start(); };
+        timer.Tick += async (_, _) => { await Profile.RefreshIfChanged(); RefreshCatalog(); SaveLayouts(); UpdateStatus(); };
+        // The first read was started at construction; this only waits for whichever
+        // of the two finishes last before the periodic poll takes over.
+        window.Opened += async (_, _) => { await _firstRead; await Profile.Refresh(); timer.Start(); };
         window.Closing += (_, _) => SaveLayouts();
-        window.Closed += (_, _) => { timer.Stop(); SaveLayouts(); };
+        window.Closed += (_, _) => { workspaceHost.ClearRetained(); timer.Stop(); accountStatusSubscription.Dispose(); ((Mo2TopBar)topBar.ViewModel!).Dispose(); SaveLayouts(); };
         return window;
     }
-    public void Dispose() { _desktop.Dispose(); Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult(); }
+    public void Dispose() { _disposed = true; Profile.Changed -= RefreshCatalog; _desktop.Dispose(); Task.Run(async () => await _database.DisposeAsync()).GetAwaiter().GetResult(); }
 }
 
 internal sealed record Mo2WorkspaceContext(string Endpoint = "", string ProfilePath = "") : IWorkspaceContext

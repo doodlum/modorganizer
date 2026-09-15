@@ -2,6 +2,7 @@
     x:Class="Mo2.Frontend.MockApp"
     xmlns="https://github.com/avaloniaui"
     xmlns:ui="using:NexusMods.App.UI"
+    xmlns:loadoutBadge="using:NexusMods.App.UI.Controls.LoadoutBadge"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     RequestedThemeVariant="Dark">
     <Application.DataTemplates>
@@ -22,6 +23,14 @@
 
     <Application.Styles>
         <StyleInclude Source="avares://NexusMods.Themes.NexusFluentDark/NexusFluentDarkTheme.axaml" />
+
+        <!-- The badge draws a filled strip across the top right corner of whatever
+             game icon it sits on. MO2 profiles are not numbered or applied loadouts,
+             so the strip carries nothing and the artwork is shown whole instead.
+             Previously hidden on the spine only, which left it on the loadout cards. -->
+        <Style Selector="loadoutBadge|LoadoutBadge">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
     </Application.Styles>
 
 </Application>

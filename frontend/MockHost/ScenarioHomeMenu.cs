@@ -12,12 +12,18 @@ internal sealed class ScenarioHomeMenu : AViewModel<IHomeLeftMenuViewModel>, IHo
     public WorkspaceId WorkspaceId { get; }
     public ILeftMenuItemViewModel LeftMenuItemMyGames { get; }
     public ILeftMenuItemViewModel LeftMenuItemMyLoadouts { get; }
-    public ScenarioHomeMenu(IWorkspaceController controller, PageData games, PageData loadouts)
+    // Not part of the native home menu interface: the view inserts it below
+    // My Loadouts, so the shared-control gallery sits with the other home pages.
+    public ILeftMenuItemViewModel? LeftMenuItemComponents { get; }
+    public ScenarioHomeMenu(IWorkspaceController controller, PageData games, PageData loadouts, PageData? components = null)
     {
         WorkspaceId = controller.ActiveWorkspaceId;
         LeftMenuItemMyGames = new LeftMenuItemViewModel(controller, WorkspaceId, games) {
             Text = new StringComponent("My Games"), Icon = IconValues.GamepadOutline };
         LeftMenuItemMyLoadouts = new LeftMenuItemViewModel(controller, WorkspaceId, loadouts) {
             Text = new StringComponent("My Loadouts"), Icon = IconValues.Package };
+        if (components is { } page)
+            LeftMenuItemComponents = new LeftMenuItemViewModel(controller, WorkspaceId, page) {
+                Text = new StringComponent("Components"), Icon = Mo2ComponentsPage.ComponentsIcon };
     }
 }

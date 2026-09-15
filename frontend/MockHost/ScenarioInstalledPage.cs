@@ -27,6 +27,12 @@ internal sealed class ScenarioRules : AViewModel<ISortingSelectionViewModel>, IS
 
 internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>, ILoadoutViewModel
 {
+    private readonly BindableReactiveProperty<string> _mo2CollectionName = new("My Mods");
+    public void SetCollectionTitle(string name) { _mo2CollectionName.Value = name; TabTitle = name; }
+    public string? CollectionKey { get; set; }
+    public Func<NexusMods.MnemonicDB.Abstractions.EntityId?, Task> CreateSeparatorDialog { get; }
+    public Func<string, Task> RenameSeparatorDialog { get; }
+    public Func<Task> CreateCollection { get; set; } = () => Task.CompletedTask;
     public bool IsMo2Profile { get; }
     public Mo2LiveProfile? LiveProfile { get; }
     public string EmptyStateTitleText => "No mods installed";
@@ -59,7 +65,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public R3.ReactiveCommand<R3.Unit> CommandOpenRevisionUrl { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandCopyRevisionUrl { get; } = new();
     public R3.ReactiveCommand<R3.Unit> CommandChangeVisibility { get; } = new();
-    public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; } = new();
+    public R3.ReactiveCommand<R3.Unit> CommandDeleteGroup { get; }
 
     private string _mo2SearchText = "";
     private bool _mo2SearchExpanded;
@@ -70,16 +76,26 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         LoadoutPageSubTabs selected = LoadoutPageSubTabs.Mods, bool isCollection = false, Action? openDownloads = null) : base(windows)
     {
         LiveProfile = mods as Mo2LiveProfile;
+        CreateSeparatorDialog = above => LiveProfile is { } profile ? Mo2SeparatorDialog.Create(windows, profile, above) : Task.CompletedTask;
+        RenameSeparatorDialog = name => LiveProfile is { } profile ? Mo2SeparatorDialog.Rename(windows, profile, name) : Task.CompletedTask;
         IsMo2Profile = LiveProfile is not null;
-        CollectionName = mods.CollectionName;
+        CollectionName = IsMo2Profile ? _mo2CollectionName : mods.CollectionName;
+        CommandDeleteGroup = new(async (_, token) => {
+            if (LiveProfile is { } profile && CollectionKey is { Length: > 0 } key)
+                await Mo2Collections.Remove(windows, profile, key);
+        });
         CommandRenameGroup = new(async (_, token) => {
+            if (LiveProfile is { } profile && CollectionKey is { Length: > 0 } key) {
+                await Mo2Collections.Rename(windows, profile, key);
+                return;
+            }
             if (mods is not ScenarioInstalledMods fixtureMods) return;
             var result = await windows.ShowDialog(LoadoutDialogs.RenameCollection(mods.CollectionName.Value), NexusMods.App.UI.Dialog.Enums.DialogWindowType.Modal);
             if (result.ButtonId == NexusMods.UI.Sdk.Dialog.ButtonDefinitionId.Accept && !string.IsNullOrWhiteSpace(result.InputText))
                 fixtureMods.Rename(result.InputText.Trim());
         });
         IsCollection = isCollection;
-        TabTitle = IsMo2Profile ? "Mods" : isCollection ? "My Mods" : "All"; TabIcon = IsMo2Profile || isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
+        TabTitle = IsMo2Profile ? "My Mods" : isCollection ? "My Mods" : "All"; TabIcon = IsMo2Profile || isCollection ? IconValues.CollectionsOutline : IconValues.FormatAlignJustify;
         SelectedSubTab = selected;
         RulesSectionViewModel = new ScenarioRules(services, order);
         var filter = new LoadoutFilter { LoadoutId = default, CollectionGroupId = default };
@@ -98,7 +114,12 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         this.WhenActivated(disposables => {
             Adapter.Activate().AddTo(disposables);
             if (IsCollection) mods.CollectionName.Subscribe(name => TabTitle = name).AddTo(disposables);
-            mods.CountLoadoutItems(filter).ToObservable().Subscribe(count => _count.Value = count).AddTo(disposables);
+            if (LiveProfile is { } collectionProfile && CollectionKey is not null) {
+                void UpdateCount() => _count.Value = Mo2Collections.Build(collectionProfile.Mods).FirstOrDefault(x => x.Key == CollectionKey)?.Mods.Count ?? 0;
+                collectionProfile.Changed += UpdateCount;
+                System.Reactive.Disposables.Disposable.Create(() => collectionProfile.Changed -= UpdateCount).AddTo(disposables);
+                UpdateCount();
+            } else mods.CountLoadoutItems(filter).ToObservable().Subscribe(count => _count.Value = count).AddTo(disposables);
             Adapter.SelectedModels.ObserveCountChanged(notifyCurrentCount: true).Subscribe(count => _selected.Value = count).AddTo(disposables);
             Adapter.MessageSubject.Subscribe(message => message.Switch(
                 toggle => mods.Toggle(toggle.Ids),

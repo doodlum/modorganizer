@@ -2,7 +2,7 @@
 from pathlib import Path
 import os
 import mobase
-from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
+from PyQt6.QtCore import QObject, QEvent, QTimer, Qt, QSettings, QStandardPaths, QCoreApplication
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from .core import Bridge
@@ -11,6 +11,7 @@ from .downloads import Downloads
 from .profiles import Profiles
 from .executables import Executables
 from .mod_actions import ModActions
+from .protocols import quiet_registration
 
 
 class FrontendVisibility(QObject):
@@ -56,6 +57,10 @@ class NexusFrontendBridge(mobase.IPluginTool):
     def init(self, organizer):
         # Suppress unsolicited host windows until the user explicitly opens MO2.
         self.visibility = FrontendVisibility(os.environ.get('MO2_FRONTEND_HOST') == '1')
+        if self.visibility.hidden:
+            quiet_registration(QCoreApplication.applicationDirPath(),
+                Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)).parent / 'ModOrganizer',
+                lambda path: QSettings(path, QSettings.Format.IniFormat))
         QApplication.instance().installEventFilter(self.visibility)
         states = mobase.PluginState
         active = getattr(states, 'ACTIVE', None)
@@ -66,7 +71,13 @@ class NexusFrontendBridge(mobase.IPluginTool):
             inactive = states.inactive
         self.bridge = Bridge(organizer, Path(organizer.pluginDataPath()) / 'frontend-bridge', {True: active, False: inactive}, NexusCredentials(), Downloads(organizer))
         self.timer = QTimer()
-        self.timer.timeout.connect(self.bridge.poll)
+        # The bridge decides how soon it wants to be asked again: quickly while the
+        # frontend is sending actions, back to its idle tick once it goes quiet.
+        def tick():
+            wanted = self.bridge.poll()
+            if wanted and self.timer.interval() != wanted:
+                self.timer.setInterval(wanted)
+        self.timer.timeout.connect(tick)
         # Profile and plugin APIs are only safe once the host has finished setup.
         # Startup dialogs run nested event loops, so starting the timer in init
         # could otherwise expose an incompletely initialized OrganizerCore.
@@ -85,7 +96,7 @@ class NexusFrontendBridge(mobase.IPluginTool):
             self.bridge.downloads.window = window
             self.bridge.profiles = Profiles(organizer, window)
             self.bridge.executables = Executables(organizer, window)
-            self.timer.start(100)
+            self.timer.start(self.bridge.idle_interval)
         organizer.onUserInterfaceInitialized(ready)
         return True
 

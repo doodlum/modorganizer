@@ -42,8 +42,7 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             foreach (var group in entries.GroupBy(x => x.Instance!.Game)) {
                 var game = group.Key;
                 var item = new ImageButtonViewModel {
-                    Name = game, Image = Mo2GameArt.Icon(game),
-                    LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = "" },
+                    Name = game, Image = Mo2GameArt.PlatedIcon(game),
                     Click = ReactiveCommand.CreateFromTask(async () => {
                         var available = shell.CatalogEntries.Where(x => x.Instance?.Game == game && x.Instance.Profiles.Length > 0).ToArray();
                         if (available.Length == 0) { shell.OpenLoadouts(game); return; }

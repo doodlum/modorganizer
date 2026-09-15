@@ -35,14 +35,19 @@ internal sealed class Mo2LogsView : ReactiveUserControl<Mo2LogsPage>
     public Mo2LogsView()
     {
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(16) };
-        root.Children.Add(new PageHeader { Title = "Logs", Description = "Live log output from MO2 and its extensions.", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/logs.svg") });
+        var header = new PageHeader { Title = "Logs", Description = "Live log output from MO2 and its extensions.", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/logs.svg") };
+        root.Children.Add(header);
         var bar = new WrapPanel { Margin = new Thickness(0,12,0,8) };
         bar.Children.Add(_files); bar.Children.Add(_level); bar.Children.Add(_filter);
-        var refresh = new Button { Content = "Refresh" }; bar.Children.Add(refresh);
+        // Shared icon action, matching every other panel's header line.
+        // The action goes through IconButton: it marks Click handled, so a Click
+        // handler attached afterwards would never run.
+        var refresh = Mo2TableRow.IconButton("mdi-refresh", "Refresh logs", async () => await Refresh());
         foreach (var child in bar.Children) child.Margin = new Thickness(0,0,8,6);
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_log,3); root.Children.Add(_log); Content = root;
+        Mo2PanelChrome.Apply(this, root, header, _files, _level, _filter, refresh);
         _level.SelectionChanged += (_,_) => Render(); _filter.TextChanged += (_,_) => Render();
-        _files.SelectionChanged += async (_,_) => { if (!_updating) await Refresh(); }; refresh.Click += async (_,_) => await Refresh();
+        _files.SelectionChanged += async (_,_) => { if (!_updating) await Refresh(); };
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             void Changed() {

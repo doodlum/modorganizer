@@ -56,7 +56,16 @@ internal sealed class Mo2InstanceCatalog
         File.WriteAllText(_config + ".tmp", JsonSerializer.Serialize(_registrations, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(_config + ".tmp", _config, true);
     }
-    public IReadOnlyList<Mo2CatalogEntry> Read() => _registrations.Select(registration => {
+    public Mo2Registration[] Registrations => _registrations.ToArray();
+    public IReadOnlyList<Mo2CatalogEntry> Read() => Read(Registrations);
+    public Task<IReadOnlyList<Mo2CatalogEntry>> ReadAsync()
+    {
+        // Capture registrations on the caller's thread; only filesystem reads
+        // run in the worker, never enumeration of the mutable registration list.
+        var registrations = Registrations;
+        return Task.Run(() => Read(registrations));
+    }
+    private static IReadOnlyList<Mo2CatalogEntry> Read(Mo2Registration[] registrations) => registrations.Select(registration => {
         try { return new Mo2CatalogEntry(registration, Mo2ProfileFiles.Read(registration.Directory), null); }
         catch (Exception error) { return new Mo2CatalogEntry(registration, null, error.Message); }
     }).ToArray();

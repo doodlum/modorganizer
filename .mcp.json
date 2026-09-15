@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "avalonia-docs": {
+      "type": "http",
+      "url": "https://docs-mcp.avaloniaui.net/mcp"
+    },
+    "avalonia_devtools": {
+      "command": "/home/deck/.dotnet/tools/avdt",
+      "args": ["mcp"],
+      "env": {
+        "DOTNET_ROOT": "/home/deck/mo2/.tools/dotnet",
+        "PATH": "/home/deck/mo2/.tools/dotnet:/home/deck/.dotnet/tools:/usr/local/bin:/usr/bin:/bin",
+        "AVALONIA_TOOLS_LICENSE_KEY": "${AVALONIA_TOOLS_LICENSE_KEY}"
+      }
+    }
+  }
+}

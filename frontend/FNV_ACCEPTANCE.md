@@ -148,3 +148,21 @@ with MO2_VERIFY_LAUNCH=NVSE or the native sidebar PLAY button with NVSE selected
 
 Runtime screenshots, downloaded mods, and local snapshots are ignored artifacts
 kept in this workspace, not redistributed in the source repository.
+
+## Current frontend run — 2026-09-14
+
+The collapsed-sidebar executable picker selected NVSE and executed the sidebar
+launch model. The isolated test save loaded; the console showed xNVSE 6.4.8 and
+MCM index 0A, matching the current 11-plugin profile. Forward movement changed
+the view and displayed the HUD. The pause menu did **not** show Mod Configuration
+in this run. Author Examples is disabled; its effect on that absence is not yet
+verified. The fresh nvse.log reports MCM.dll loaded correctly.
+
+Evidence: current-gameplay-loaded.png, current-gameplay-mod-index.png,
+current-gameplay-movement.png, current-gameplay-pause.png,
+current-gameplay-mcm-evidence.json and current-gameplay-restoration.json under
+artifacts. Console qqq exited normally; current-gameplay-compact.log reports
+NVSE exited (code 0). All 12 backed-up profile files were restored byte-for-byte;
+only the temporary controller preference differed during the run. Four save
+files were unchanged and no new save files appeared. Normal frontend restored.
+This did not repeat every plugin index or the three example menus.

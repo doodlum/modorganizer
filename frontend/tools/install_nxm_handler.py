@@ -41,8 +41,11 @@ wrapper.write_text('#!/bin/sh\n'
                   'fi\nexit 1\n')
 wrapper.chmod(0o700)
 applications = data / 'applications'; applications.mkdir(parents=True, exist_ok=True)
-# Desktop Entry Exec quoting differs from shell quoting; URL stays a single %u.
+# Encode the quoted argument first, then the desktop entry's string value.
+# The desktop loader unescapes the string before parsing Exec arguments.
+# URL stays a single %u; literal percent characters in the path are doubled.
 quoted = str(wrapper).replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%')
+quoted = quoted.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
 (applications / desktop_id).write_text('[Desktop Entry]\nType=Application\nName=Nexus Mods — MO2 downloads\n'
     f'Exec=/bin/sh "{quoted}" %u\nTerminal=false\nNoDisplay=true\nStartupNotify=false\nMimeType=x-scheme-handler/nxm;\n')
 subprocess.run(['xdg-mime', 'default', desktop_id, 'x-scheme-handler/nxm'], check=True)

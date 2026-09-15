@@ -24,6 +24,7 @@ internal sealed class ScenarioPlugin : ReactiveObject, IReactiveSortItem
     public bool CanMove { get; init; } = true;
     public string Diagnostics { get; init; } = "";
     public bool HasWarning { get; init; }
+    public bool IsLocked { get; init; }
     public Avalonia.Media.Imaging.Bitmap? ModArt { get; init; }
     public string GameArt { get; init; } = "";
     public string ModIndex { get; init; } = "";

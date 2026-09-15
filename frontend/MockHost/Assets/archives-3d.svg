@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none">
+<defs>
+ <linearGradient id="front" x1="39" y1="84" x2="106" y2="178" gradientUnits="userSpaceOnUse"><stop stop-color="#FDBA74"/><stop offset=".5" stop-color="#FB923C"/><stop offset="1" stop-color="#C65B23"/></linearGradient>
+ <linearGradient id="side" x1="168" y1="90" x2="107" y2="176" gradientUnits="userSpaceOnUse"><stop stop-color="#FDBA74"/><stop offset=".65" stop-color="#D96B27"/><stop offset="1" stop-color="#8E431F"/></linearGradient>
+ <radialGradient id="lid" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(64 44) rotate(30) scale(122 89)"><stop offset=".15" stop-color="white"/><stop offset=".58" stop-color="#E9EAFF"/><stop offset=".78" stop-color="#7D88ED"/><stop offset="1" stop-color="#F1F0FF"/></radialGradient>
+ <linearGradient id="edge" x1="36" y1="73" x2="164" y2="105" gradientUnits="userSpaceOnUse"><stop stop-color="#F4F2FF"/><stop offset=".5" stop-color="#929BD9"/><stop offset="1" stop-color="#545D99"/></linearGradient>
+</defs>
+<!-- Isometric archive box, with the same 200px canvas and inset as NMA pictograms. -->
+<path d="M38 81L104 117V178L38 139Z" fill="url(#front)"/>
+<path d="M104 117L164 80V140L104 178Z" fill="url(#side)"/>
+<path d="M32 68L103 109L169 68V86L103 127L32 86Z" fill="url(#edge)"/>
+<path d="M32 68L98 27L169 68L103 109Z" fill="url(#lid)"/>
+<path d="M32 68L103 109L169 68" stroke="white" stroke-opacity=".38" stroke-width="1.2"/>
+<!-- Recessed archive label slot on the front face. -->
+<path d="M55 113L85 130V144L55 126Z" fill="#793D24" fill-opacity=".5"/>
+<path d="M57 114L83 129V140L57 125Z" fill="#FFF3DC"/>
+<path d="M62 121L78 130" stroke="#B77F50" stroke-width="2" stroke-linecap="round"/>
+</svg>

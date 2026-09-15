@@ -648,3 +648,271 @@ original New Vegas window appears and disappears. The captured original window
 and fourteen active plugins. Two runs pass after the refresh-lock fix. The
 returned instances-page render is artifacts/original-ui.png. Seventeen bridge contract checks pass;
 the incremental build passes with the existing OpenTelemetry NU1902 warning.
+
+
+### Separator collections
+
+The live frontend maps MO2 separators to local collections. `My Mods` shows all installed mods, while each collection page filters to the mods after its separator and before the next separator in ascending native priority. `Ungrouped` represents mods before the first separator and creates no files. Separators and Overwrite are excluded from mod rows/counts.
+
+The sidebar uses NMA's original collection navigation/toggle controls; creation uses its `Name your Collection` dialog and invokes MO2's own separator action with the entered name. Collection switches set all toggleable members to the requested state, leaving essential game content alone. `Move to collection` appends selected managed mods to a collection by changing native MO2 priorities. Empty collections remain visible. Collection page identity persists with panel layouts and is scoped by the workspace's game/profile.
+
+Verified on FNV: native separator creation from the NMA dialog, mixed-state collection enable/disable, moving a mod into another collection, cleanup and restoration of original activation/priorities. Verified navigation to Skyrim and back at 1280×750. `--check-collections` covers separator boundaries, sorting, empty groups, ungrouped membership, priority movement, and Overwrite exclusion. These are local MO2 groups; Nexus collection publishing/import metadata is not implemented by this mapping.
+
+### Shared Nexus login foundation
+
+`connectNexusAccount` accepts a private key-file path, validates the key before applying it, then uses MO2's native manual login path. Settings, key entry, and the specific restart/Continue task dialog are handled without mapping their Qt windows. Success requires the native account ID to match the validated account and the persisted Windows credential to match the supplied key. The operation is guarded by the bridge session and is instance-global rather than profile-specific. API responses are whitelisted; neither keys nor native account-log text are returned.
+
+Runtime verification reauthenticated the authorized existing key on FNV (MO2 2.5.2) and Skyrim (2.5.0), confirmed native identities and persistence, and completed without restarting either host. This does not yet prove switching to a different account.
+
+`Mo2NexusSso` implements the deployed MO2 client's protocol-2 SSO exchange with bounded, fragmented text messages, cancellation, and errors that omit response bodies. `--check-nexus-sso` covers protocol behavior; `--check-nexus-sso-connection` verified initialization with the live service and cancellation before browser authorization. The transport is now connected to the top-bar login command through the original NMA login view. The shared workflow and its verification are described below.
+
+Source references: [MO2 v2.5.2 account UI](https://raw.githubusercontent.com/ModOrganizer2/modorganizer/v2.5.2/src/settingsdialognexus.cpp), [MO2 SSO transport](https://raw.githubusercontent.com/ModOrganizer2/modorganizer/v2.5.2/src/nxmaccessmanager.cpp), [MO2 shared Qt task dialog](https://raw.githubusercontent.com/ModOrganizer2/modorganizer-uibase/master/src/report.cpp).
+
+
+### Shared login popup and all-instance application
+
+The top-bar Nexus account action opens NMA's original login overlay in a centered modal window. Its copy-link and Cancel controls are bound to the MO2 SSO session. Successful authorization applies the returned key to every registered instance through `connectNexusAccount`. The account indicator is populated from confirmed native identities and validated account membership; it reports logged-in state only when all registered instances use the same account. `Connect MO2 instances…` in the account menu allows authorization again.
+
+Credential handoff uses a newly created private directory (0700) and file (0600) on Linux. Only its path enters bridge requests. The file is removed after operations finish. Cancellation interrupts the SSO wait, or lets an already-submitted account operation finish and skips later instances. Failures are reported per instance with generic text, without logging raw backend replies or credentials. A timeout is not retried automatically.
+
+Validation: `--check-shared-nexus-login` covers handoff permissions/cleanup, partial failure isolation, and cancellation after submission. `MO2_VERIFY_LOGIN_POPUP=1` verified the native overlay fits the 1280×750 Steam Deck window, its Cancel command closes it, and it can reopen. `--check-shared-nexus-live` applied the authorized existing key to all three registered installations (FNV, Skyrim, and `/home/deck/ModOrganizer2`), then independently confirmed the same native account in all three. The older Skyrim installation now has the bridge and a launcher using its own Proton prefix. A complete browser-authorized SSO roundtrip remains unverified; the live SSO handshake/cancellation and the post-authorization all-instance workflow were verified separately.
+
+
+### Collection removal and container launcher locking
+
+Separator-backed collection sidebar entries now offer NMA's `Remove collection…` context menu and confirmation dialog. The wording states that MO2 removes the separator across its profiles while retaining installed mods and their enabled states. `Ungrouped` cannot be removed. The bridge rejects non-separators and stale profile/session requests; after frontend confirmation, it matches MO2's exact native confirmation using the displayed separator name and acknowledges only that dialog. It then uses MO2's original removal/profile-cleanup path. Successful removal returns navigation to My Mods.
+
+Live FNV checks verified ordinary mods are rejected, native separator creation/removal preserves the original priorities and enabled states, frontend Cancel keeps the separator, and frontend confirmation removes it without leaving a native confirmation open. Temporary test collections were removed. The updated bridge is deployed to all three registered instances.
+
+A runtime issue found during deployment is also fixed: Steam's container closes inherited descriptors, so `exec` into it released the per-prefix launch lock prematurely. The launcher shell now remains alive holding the lock while its child runs. A regression test explicitly closes inherited descriptors in a fake runtime; the real FNV launcher also rejected a second start while its host was running. Existing runtime selection and spaced-path checks continue to pass.
+
+### Archive extraction
+
+The Archives panel's `Extract…` button invokes MO2's original archive context action, destination picker, parser, and progress UI. Requests identify both the filename and originating mod, and reject a changed origin, profile, or bridge session before extraction. The bridge reports that the action opened; cancelling the native picker is not reported as successful extraction.
+
+Live FNV verification extracted all 142 entries from `Fallout - Misc.bsa` into an isolated temporary directory, compared that count with the archive header, and removed the test output. A changed origin was rejected. At 1280×750, frontend selection remained active through Refresh and filtering, and `Extract…` opened the original folder picker. Escape cancelled it and returned to the selected row with Browse and Extract enabled. The toolbar wraps for narrow panels; split-panel layout and Skyrim extraction still need runtime verification.
+
+### Collection rename
+
+Collection rename now uses NMA's original rename dialog and MO2's original inline model edit. The bridge requires an existing separator, validates the new name and collisions, and checks profile/session identity before dispatch. Native rename owns directory changes and cross-profile references. The frontend updates collection keys in open panels and stored layouts for that instance; Ungrouped cannot be renamed.
+
+The incremental frontend build and 23 bridge contract checks pass. A live Skyrim 2.5.0 check created, renamed, and removed a temporary separator, then confirmed all original mod enabled states and priorities were preserved. The immediate rename after creation was rejected as busy; a later request, after the native UI settled, succeeded. The updated bridge is deployed and running on all three registered installations. Each live host responded to a snapshot and rejected a missing-separator rename through the new action; source files match the deployed copies.
+
+Rendered verification found collection pages were incorrectly constructed with `isCollection=false`, hiding the upstream status/menu bar. The factory now identifies them as collections, and the menu bar is visible in the two-panel Steam Deck layout. The panel deletion action now uses the same confirmed native removal as the sidebar (see panel removal below).
+
+The apparent immediate menu closure was traced to `Button.OnKeyDown`: X11 reported Escape held (keycode 9). Releasing it allowed the original menu to remain open. Temporary click/stack tracing was removed. The original NMA rename dialog rendered at 320×223, and Cancel preserved the separator. `MO2_VERIFY_COLLECTION_RENAME=1` then exercised the actual dialog commands in-app: Cancel preserved native state, Accept renamed the separator and updated multiple open panel identities, and a second accepted rename restored the test name. Saved layout keys independently matched the restored name in multiple panels. The temporary separator was removed; all original native mod states and priorities matched the pre-test snapshot. This check requires the explicitly named temporary separator and should run with an isolated `MO2_FRONTEND_LAYOUT` file.
+
+Ungrouped now hides the collection action bar, since its placeholder has no rename/delete action. The two-panel 1280×750 collection view was inspected with the Skyrim mod and plugin lists visible. The incremental build passes.
+
+### Conflicts involving multiple providers
+
+Selection highlighting now uses the full native origin ordering instead of only the final winner. `OrganizerCore::getFileOrigins` returns the winner followed by the ascending alternatives vector; `AdvancedConflictsTab::createItem` uses the same alternatives to identify providers before and after the selected mod. The bridge preserves that order, including native archive precedence, without splitting display strings or sorting by mod priority.
+
+The 24 bridge contract checks include a four-provider case, names containing commas, missing origins, and duplicate self-origins. A live FNV check used three temporary enabled mods supplying the same unique test file. Selecting each low, middle, and high provider returned exactly the expected winning/losing mod sets. The fixtures and their profile entries were removed; an independent snapshot after restarting the host matched the original profile, every mod's state, and every mod's priority. Archive/loose mixed conflict combinations and rendered highlight colors still require a broader runtime audit.
+
+Color mapping was corrected against `ModListView::markerColor` and `ColorSettings` in the MO2 source: mods overwriting the selected mod are red; mods overwritten by the selected mod are green. The frontend retains its existing muted tints and purple plugin links. Native archive-specific colors and customized MO2 colors are not yet reflected.
+
+The conflict update is deployed to both Skyrim installations as well as FNV. Both restarted Skyrim hosts returned live snapshots and empty selection-link results; their deployed Python sources matched the worktree. The frontend build and 24 bridge checks passed, and the rebuilt frontend is running. Deployment exposed another lifecycle limitation: the legacy Skyrim container retained an `nxmhandler.exe` after MO2 exited, so its old launcher held the prefix lock. After confirming MO2 was gone, the owned stale launcher process group was terminated and the instance restarted successfully. The launcher supervision change below addresses this case for subsequent launches.
+
+
+### Native host lifetime supervision
+
+The launcher now holds its prefix lock until the observed native MO2 process exits, rather than until every process in the Steam container exits. A host-side Python observer matches the exact instance executable and Wine prefix, excludes zombie processes, and checks a cached process first to avoid repeatedly scanning the whole desktop while MO2 is running. It keeps the lock during startup; a timed-out bridge request is never treated as an exited host. When no native host was observed, the inner command completion marker or container exit supplies the startup outcome. Python 3 is checked before starting the host.
+
+The completion wrapper runs inside the container, since containers close inherited descriptors. Only the outer launcher holds the lock. Surviving game/tool/Steam processes are left running; neither the observer nor launcher sends termination signals to them. Temporary completion directories are removed when the launcher finishes.
+
+Seven launcher checks cover runtime selection/spaced paths, missing runtime, descriptors closed by the container, preserved command exit status, a surviving container, a surviving Proton stub, duplicate launch rejection, prefix isolation, zombie processes and PID reuse. The first real attempt demonstrated that Proton's Steam stub itself could remain after MO2 exited, so observing only the Proton command was insufficient. With native-process supervision, the legacy Skyrim host connected, closed, and its launcher exited while its original container remained alive. A replacement launcher then connected successfully without killing the surviving container. The other registered instance scripts share this launcher and will use the updated supervisor on their next launch.
+
+
+### Collection removal from panels
+
+NMA's collection overflow menu now offers `Remove collection…`, bound to the existing separator confirmation and native MO2 removal path. Both sidebar and panel removal publish the same collection-removal event. All open collection panels in that MO2 instance switch to My Mods, and saved layouts replace the removed collection references with the My Mods page identity. Ungrouped retains no removal action.
+
+The live collection dialog check now covers removal as well as renaming. With multiple collection panels open, Cancel preserved the native separator and page identities; Accept removed the separator and switched every tested panel to My Mods. The saved test layout contained no removed collection keys. An independent native snapshot matched the original profile and all original mod states/priorities. The test used a separate layout file, and the temporary separator was removed through the tested frontend action. The build and 24 bridge checks passed.
+
+### Collection navigation history
+
+Collection identity changes now update Back/Forward history as well as open panels and saved layouts. The NMA UI fork exposes `PanelTabViewModel.ReplaceHistoryPages`, backed by a small `TabHistory.ReplacePages` method that changes stored page references without moving the history position or adding visits. The MO2 workspace applies replacements only to the affected instance's collection entries.
+
+The live dialog check navigated from a temporary collection to Ungrouped, then renamed the collection from another panel. Back opened the renamed collection and Forward still opened Ungrouped. After removal, Back opened My Mods and Forward remained usable. Both the UI dependency and frontend built successfully, and the final native snapshot matched the original profile and all mod states/priorities. These checks used an isolated layout file and removed the temporary collection. The two UI-fork source changes are under `frontend/upstream/src/NexusMods.App.UI/WorkspaceSystem/PanelTab` and must be included when rebuilding the dependency.
+
+### Overwrite refresh and selection
+
+Overwrite now preserves file selection through filtering and refresh, retains read errors when the filter changes, disposes replaced table sources, and checks the current profile target when enabling actions. Files smaller than 1 KiB display their byte count instead of rounding to `0 KB`.
+
+`MO2_VERIFY_OVERWRITE_REFRESH=1` verified the original Mods search/clear, selection/deselect, and activation/restore commands, followed by Overwrite filter/clear/refresh selection retention against two temporary files in the isolated FNV instance. The older Mods check was updated to require Overwrite exclusion and a hidden Rules tab, matching the user's current layout requirements. The Overwrite panel was inspected at 1280×750 beside Plugins. Both temporary files were removed, and independent reads confirmed the original Overwrite file list and every native mod state/priority were restored. The frontend build passed. Read-error persistence was reviewed in the rendering path; an injected connection-failure UI check has not been run.
+
+### Shared account indicator refresh (2026-09-13)
+
+The top bar now rechecks registered MO2 account state every 30 seconds and when
+its instance catalog changes. Reads are serialized and superseded results are
+ignored. Starting login invalidates an older status read; finishing or cancelling
+login requests a fresh native check. Both account entry points share the same
+login guard. An unconfirmed account clears the username and paid role. Closing
+the frontend stops its account timer and suppresses pending updates.
+
+Verification: `--check-account-monitor` passed catalog-change and login races,
+serialization, disposal, and sanitized read failures. `--check-account-status-live`
+performed two read-only checks against the running catalog and confirmed the same
+account across 3/3 native instances both times. The incremental frontend build
+passed with the existing OpenTelemetry NU1902 warning. These checks do not prove
+a browser-authorized SSO roundtrip or shared logout; those remain outstanding.
+
+### Shared native logout (2026-09-13)
+
+The original NMA Sign out menu command is now connected to shared MO2 logout.
+It uses the same account-operation guard and NMA popup styling as login, hides
+the browser-link section, and reports per-instance failures. Closed instances are
+started through the normal host launcher before disconnecting. Cancellation waits
+for the submitted native operation and skips subsequent instances.
+
+The session-guarded `disconnectNexusAccount` bridge action invokes the original
+MO2 Disconnect button in its hidden settings dialog, waits for queued account UI
+updates, and verifies both disconnected runtime state and absence of the saved
+Windows credential. The native restart prompt is completed using Continue after
+successful disconnection. The original native action owns credential removal.
+
+Verification: 25 bridge contract tests and shared logout tests passed, including
+stored-credential/runtime mismatches, stale sessions, deduplicated instances,
+startup ordering, partial failure and cancellation. FNV native disconnect/readback/
+reconnect passed. `MO2_VERIFY_SHARED_LOGOUT=1` exercised the original NMA Sign out
+command against all three running hosts, verified the cleared top bar, restored
+the existing account, and verified the periodic monitor picked up that restoration.
+The UI check uses an explicit credential-file path environment variable and prints
+only counts and pass/fail messages. `/tmp/mo2-logout-ui-check.log` contains both
+runtime passes. Profiles and mod/plugin activation/priorities matched their native
+baselines by name after restart (native enumeration order can change).
+
+The updated bridge was loaded in all three hosts, now running through the launcher
+lifetime supervisor. The frontend builds with the existing OpenTelemetry warning.
+Full browser-authorized SSO remains unverified. Partial account state currently
+hides the signed-in account menu; retry access in that state still needs attention.
+
+### Partial account recovery controls (2026-09-13)
+
+Connections now exposes Connect Nexus and Sign out of all instances independently
+of the top bar's fully-authenticated state. Both controls use the same guarded
+account workflow as the original NMA account menu. A reactive count reports how
+many registered instances are connected; its updates do not depend on mod-list
+changes. The view subscribes only while active, including when restored from a
+saved workspace before the top bar is created.
+
+After a system restart, the frontend rebuilt and all three native hosts reopened.
+Repeated native reads confirmed 3/3 persisted accounts. The live partial-account
+check disconnected one host, waited for the signed-in menu to disappear, verified
+the Connections sign-out control remained enabled and correctly bound, and used
+it to disconnect every remaining account. It also verified the Connections count
+immediately became zero, restored the existing account across all hosts, and
+observed the running frontend detect the restored login. The final check log is
+`frontend/artifacts/partial-account-ui-check-final.log`. The rendered controls and
+zero-connected status fit the 1280×750 screen; screenshot:
+`frontend/artifacts/partial-account-controls.png`.
+
+Build, account-monitor/shared-logout checks, 25 bridge tests and whitespace checks
+passed. The existing OpenTelemetry build warning remains. This resolves the
+partial-account recovery limitation noted above; full browser-authorized SSO is
+still unverified.
+
+### Browser-authorized SSO and visible account menu (2026-09-13)
+
+The upstream top bar now uses its existing Account icon when no avatar image is
+available. The original binding previously rendered an empty image for null,
+leaving the signed-in account button blank. This is a one-line change in the
+upstream UI submodule, alongside its existing local history hooks; preserve those
+submodule edits with the frontend source. The UI dependency and frontend rebuilt
+successfully (existing warnings only). Mouse input opened the visible account
+menu and selected Connect MO2 instances.
+
+The live Nexus browser flow completed successfully using the existing browser
+session. `MO2_VERIFY_BROWSER_SSO=1` then independently exercised the real SSO
+websocket through the original NMA popup: it observed the browser handoff and
+receipt of the credential, confirmed native application to all 3 registered MO2
+instances, and performed a separate native account readback. The check passed in
+`frontend/artifacts/browser-sso-ui-check.log`. It logs only counts and pass/fail,
+never the credential or SSO message bodies. This supersedes earlier notes that
+the full browser-authorized roundtrip was unverified.
+
+Rendered evidence: `frontend/artifacts/account-icon.png`, `account-menu.png`, and
+`browser-sso-success.png`. The temporary UI check used an isolated layout; the
+normal frontend was restored afterward. A separate native MO2 registration prompt
+was dismissed with its No, don't ask again action. Linux's current nxm handler
+remained `mo2-nexus-frontend-nxm.desktop`; broader routing regression coverage is
+still part of the overall completion audit.
+
+### Linux NXM desktop-entry quoting (2026-09-13)
+
+The NXM installer now applies both escaping layers required for a quoted Exec
+argument: command argument quoting, followed by desktop-entry string escaping.
+Previously a wrapper path containing backslashes, quotes, dollar signs or
+backticks could generate an invalid desktop entry. The GIO launcher reproduced
+this as “Desktop file didn't specify Exec field” for a temporary path containing
+those characters; the same launch passed after the fix.
+
+`/usr/bin/python3 frontend/tools/check_nxm_handler.py` runs four isolated tests
+using GIO's real desktop launcher and a fake runtime: normal and reserved-character
+paths preserve the exact synthetic NXM URL as one argument, runtime failure is
+reported without leaking its output or URL and is invoked only once, and restoring
+a previous association respects a newer user selection. No real association or
+Nexus download is changed by these tests. The existing `--check-nxm` game-routing,
+ambiguous/stale-target, parser and signed-parameter checks passed too.
+
+The corrected installer was run for the installed frontend. FNV and Skyrim route
+preferences point to existing registered hosts, and Linux retains the frontend's
+NXM desktop entry. These checks do not yet establish a fresh end-to-end native
+download from a browser NXM click for both games.
+
+Specification used: https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html
+
+
+### Fresh NXM downloads for both games (2026-09-13)
+
+Invoked the installed desktop handler using `xdg-open` with fresh unsigned file
+links, under the existing authenticated Premium native accounts. FNV file
+42507/1000001534 downloaded MCM BugFix 2 (18,141 bytes); Skyrim SE file 32444/795955
+downloaded the offsets archive (2,182,132 bytes). Official Nexus file metadata
+supplied expected filenames/sizes. Each archive was absent before its trial,
+appeared as a completed native download afterward, and passed `7z t`. Separate
+post-download snapshots confirmed responsive hosts and identical mod/plugin data
+to pre-download baselines. Neither archive was installed. The frontend remained
+on its current game while the Skyrim link routed to the registered Skyrim host.
+
+Durable evidence, including hashes and explicit scope:
+`frontend/artifacts/nxm-live-two-game-downloads.json`. No credentials or signed
+URLs are present. The earlier native host exits were not reproduced in these
+trials, and no cause has been established. The observed pressure-vessel assertion
+also appears in older successful startup logs, so it does not establish causation.
+
+This proves fresh desktop NXM routing and native completion for both games with a
+Premium account. It does not prove live free-account signed-link completion,
+duplicate-download prompt handling, installation, or gameplay. The exact signed
+query preservation remains covered by parser/desktop-launch tests only.
+
+
+### Restoring multi-tab panels (2026-09-13)
+
+Reproduced the Overwrite+Plugins startup crash in an isolated saved layout. The
+upstream PanelView's ScrollChanged handler alternated overflow true/false while
+viewport width was zero: the inline Add button changed extent 32→0→32 indefinitely.
+A guard defers that decision until viewport width is positive. After rebuilding
+upstream UI and MockHost, the same saved layout restored successfully. The live
+`MO2_VERIFY_TAB_RESTORE=1` check switched both tab selections repeatedly at
+1280/900/640px and confirmed selected-header visual state without a layout loop.
+Log and screenshot: `frontend/artifacts/tab-layout-fixed.log` and
+`frontend/artifacts/tab-layout-fixed.png`. No native mod mutations were required.
+
+
+September 13 installed-interaction validation: `MO2_VERIFY_INSTALLED_INTERACTIONS=1`
+passes against the isolated FNV Frontend Test profile and a separate layout. It
+checks separator modal ownership/cancel/create, multi-row native ordering through
+the real drop handlers, context menus, a partially collapsed description after
+40px of scrolling, full collapse after multiple lines, restoration, narrow-list
+thumbnails, and visible tab bars when headers are hidden. Evidence:
+`frontend/artifacts/installed-interactions-responsive.log` (paths are repository-relative).
+
+Real UInput pointer drags from the left grips also passed for both lists: MCM Author
+Examples moved before The Mod Configuration Menu; MercenaryPack.esm moved before
+TribalPack.esm. Native priorities changed and were restored. Complete mod and plugin
+records matched their pre-gesture snapshots afterward. Screenshots:
+`frontend/artifacts/mods-grip-drag.png` and `frontend/artifacts/plugins-grip-drag.png`;
+summary: `frontend/artifacts/physical-grip-check.json`. The pure mod-order planner
+passes 7,172 selection/target cases. No game launch was part of these UI checks.

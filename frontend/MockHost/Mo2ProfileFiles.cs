@@ -13,6 +13,13 @@ internal sealed record Mo2InstanceSnapshot(string Directory, string Game, string
 // belong to the MO2 host; this reader never rewrites its files.
 internal static class Mo2ProfileFiles
 {
+    public static string ReadGameDirectory(string root)
+    {
+        var value = File.ReadLines(Path.Combine(root, "ModOrganizer.ini"))
+            .Select(line => line.Trim()).FirstOrDefault(line => line.StartsWith("gamePath=", StringComparison.OrdinalIgnoreCase));
+        if (value is null) throw new InvalidOperationException("MO2 has no configured game folder.");
+        return Resolve(value[(value.IndexOf('=') + 1)..], root);
+    }
     public static Mo2InstanceSnapshot Read(string root)
     {
         root = Path.GetFullPath(root);

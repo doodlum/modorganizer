@@ -10,7 +10,7 @@ using R3;
 
 namespace Mo2.Frontend;
 
-internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
+internal sealed class ScenarioOrderProvider(Mo2LiveProfile? profile = null) : ILoadOrderDataProvider
 {
     private static readonly ComponentKey CanMoveKey = ComponentKey.From("MO2.PluginCanMove");
     private static readonly ComponentKey CountKey = ComponentKey.From("MO2.PluginCount");
@@ -18,6 +18,7 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
     {
         var id = variety.GetSortOrderIdFor(loadout).Value;
         var orderChanged = false;
+        var itemCount = 0;
         CompositeItemModel<ISortItemKey> Create(IReactiveSortItem item) {
             var model = new CompositeItemModel<ISortItemKey>(item.Key);
             if (item is ScenarioPlugin { GameArt.Length: > 0 } gameItem) model.Add(LoadOrderColumns.DisplayNameColumn.ImageComponentKey, new ImageComponent(Mo2GameArt.Thumbnail(gameItem.GameArt)));
@@ -27,7 +28,7 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
             model.Add(LoadOrderColumns.IsActiveComponentKey, new ValueComponent<bool>(item.IsActive));
             var index = new ValueComponent<int>(item.SortIndex);
             var canMove = new ValueComponent<bool>(item is not ScenarioPlugin plugin || plugin.CanMove);
-            var count = new ValueComponent<int>(variety.GetSortOrderItems(id).Count);
+            var count = new ValueComponent<int>(itemCount);
             model.Add(CanMoveKey, canMove); model.Add(CountKey, count);
             model.Add(LoadOrderColumns.IndexColumn.IndexComponentKey, new SharedComponents.IndexComponent(
                 index, new ValueComponent<string>((item.SortIndex + 1).Ordinalize()),
@@ -43,14 +44,22 @@ internal sealed class ScenarioOrderProvider : ILoadOrderDataProvider
             model.Get<StringComponent>(LoadOrderColumns.ModNameColumn.ModNameComponentKey).Value.Value = item.ModName;
             model.Get<ValueComponent<bool>>(LoadOrderColumns.IsActiveComponentKey).Value.Value = item.IsActive;
             model.Get<ValueComponent<bool>>(CanMoveKey).Value.Value = item is not ScenarioPlugin plugin || plugin.CanMove;
-            model.Get<ValueComponent<int>>(CountKey).Value.Value = variety.GetSortOrderItems(id).Count;
+            model.Get<ValueComponent<int>>(CountKey).Value.Value = itemCount;
             var index = model.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
             orderChanged |= index.Index.Value.Value != item.SortIndex;
             index.Index.Value.Value = item.SortIndex;
             index.DisplaySortIndexComponent.Value.Value = (item.SortIndex + 1).Ordinalize();
         }
         // Preserve native row identity and selection when MO2 reports state changes.
-        return variety.GetSortOrderItemsChangeSet(id).TransformWithInlineUpdate(Create, Update)
+        var changes = profile is not null && ReferenceEquals(variety, profile.Order)
+            ? profile.ObservePresentationPlugins(profile.CurrentTarget)
+            : variety.GetSortOrderItemsChangeSet(id);
+        return changes
+            // The native snapshot is already committed before a batch arrives.
+            // Count once, rather than sorting/materializing the complete order
+            // again for every row's movement-boundary component.
+            .Do(_ => itemCount = variety.GetSortOrderItems(id).Count)
+            .TransformWithInlineUpdate(Create, Update)
             .Where(changes => {
                 // NMA sorts on every list change; that resets row selection. State-only
                 // changes already flow through the existing reactive components.

@@ -18,6 +18,7 @@ namespace Mo2.Frontend;
 
 internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
 {
+    private static readonly NexusMods.App.UI.Converters.SizeToStringTypeConverter SizeFormatter = new();
     private readonly SourceCache<(DownloadId Key, Mo2Download File, Mo2LiveProfile Profile, Mo2ProfileTarget Target), DownloadId> _rows = new(x => x.Key);
     private readonly Dictionary<string, DownloadId> _ids = new();
     private readonly Dictionary<DownloadId, Mo2Download> _values = new();
@@ -26,7 +27,7 @@ internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
     private Mo2ProfileTarget? _target;
     public void Refresh(Mo2LiveProfile profile)
     {
-        if (_target != profile.CurrentTarget) { _rows.Clear(); _values.Clear(); _target = profile.CurrentTarget; }
+        if (_target != profile.CurrentTarget) { _rows.Clear(); _values.Clear(); _ids.Clear(); _target = profile.CurrentTarget; }
         var visible = profile.IsConnected ? profile.Downloads : [];
         var keep = new HashSet<DownloadId>();
         foreach (var file in visible) {
@@ -36,17 +37,18 @@ internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
             _values[id] = file;
             _rows.AddOrUpdate((id, file, profile, profile.CurrentTarget));
         }
-        foreach (var id in _values.Keys.Where(x => !keep.Contains(x)).ToArray()) { _rows.RemoveKey(id); _values.Remove(id); }
+        foreach (var id in _values.Keys.Where(x => !keep.Contains(x)).ToArray()) { _rows.RemoveKey(id); _ids.Remove(_values[id].Path); _values.Remove(id); }
     }
     public IObservable<IChangeSet<CompositeItemModel<DownloadId>, DownloadId>> ObserveDownloads(DownloadsFilter filter) => _rows.Connect().Transform(value => {
             var (id, file, profile, capturedTarget) = value;
             var row = new CompositeItemModel<DownloadId>(id);
             row.Add(DownloadColumns.Name.NameComponentKey, new NameComponent(file.Name));
             row.Add(DownloadColumns.Game.ComponentKey, new DownloadComponents.GameComponent(profile.GameName));
-            row.Add(BytesKey, new ValueComponent<string>($"{file.Bytes / 1048576d:0.0} MB"));
-            var state = file.Partial ? file.Paused ? JobStatus.Paused : JobStatus.Running : JobStatus.Completed;
+            SizeFormatter.TryConvert(NexusMods.Paths.Size.From(checked((ulong)file.Bytes)), typeof(string), null, out var bytes);
+            row.Add(BytesKey, new ValueComponent<string>((string)bytes));
+            var state = file.Failed ? JobStatus.Failed : file.Partial ? file.Paused ? JobStatus.Paused : JobStatus.Running : JobStatus.Completed;
             var progress = file.Partial ? Percent.Zero : Percent.One;
-            var status = new DownloadComponents.StatusComponent(progress, state, Observable.Return(progress), Observable.Return(state));
+            var status = new DownloadComponents.StatusComponent(progress, state, Observable.Return(progress), Observable.Return(state), canRetryFailed: true, canCancelInactive: false);
             var target = capturedTarget;
             status.PauseCommand.SubscribeAwait(async (_, _) => await profile.ControlDownload(file.Path, "pause", target));
             status.ResumeCommand.SubscribeAwait(async (_, _) => await profile.ControlDownload(file.Path, "resume", target));
@@ -102,16 +104,16 @@ internal sealed class Mo2DownloadsPage : APageViewModel<IDownloadsPageViewModel>
     public Mo2Download[] Selected => Adapter.SelectedModels.Select(x => Provider.Find(x.Key)).OfType<Mo2Download>().ToArray();
     private void UpdateSelection() {
         var selected = Selected;
-        _running.Value = Profile.CanUseDownloads && Profile.Downloads.Any(x => x.Partial && !x.Paused);
-        _paused.Value = Profile.CanUseDownloads && Profile.Downloads.Any(x => x.Partial && x.Paused);
-        _selectedRunning.Value = Profile.CanUseDownloads && selected.Any(x => x.Partial && !x.Paused);
-        _selectedPaused.Value = Profile.CanUseDownloads && selected.Any(x => x.Partial && x.Paused);
-        _active.Value = Profile.CanUseDownloads && selected.Any(x => x.Partial);
+        _running.Value = Profile.CanUseDownloads && Profile.Downloads.Any(x => x.CanControl("pause"));
+        _paused.Value = Profile.CanUseDownloads && Profile.Downloads.Any(x => x.CanControl("resume"));
+        _selectedRunning.Value = Profile.CanUseDownloads && selected.Any(x => x.CanControl("pause"));
+        _selectedPaused.Value = Profile.CanUseDownloads && selected.Any(x => x.CanControl("resume"));
+        _active.Value = Profile.CanUseDownloads && selected.Any(x => x.CanControl("cancel"));
         this.RaisePropertyChanged(nameof(SelectionCount));
     }
     private async Task Control(string operation, bool selected) {
         var target = Profile.CurrentTarget;
-        var files = (selected ? Selected : Profile.Downloads).Where(x => x.Partial && (operation == "cancel" || x.Paused == (operation == "resume"))).ToArray();
+        var files = (selected ? Selected : Profile.Downloads).Where(x => x.CanControl(operation)).ToArray();
         foreach (var file in files) await Profile.ControlDownload(file.Path, operation, target);
     }
 }

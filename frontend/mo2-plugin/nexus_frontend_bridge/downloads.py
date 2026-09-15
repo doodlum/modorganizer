@@ -1,13 +1,74 @@
 """MO2's download directory plus its existing downloader/installer entry points."""
+from collections import OrderedDict
 import configparser
 import re
 from pathlib import Path
+
+
+def wine_unix_path(path):
+    """Ask this host's Wine runtime to resolve its own drive mappings."""
+    import ctypes
+    import os
+    if os.name != 'nt':
+        return None
+    try:
+        # Same CDECL export and heap ownership used by Wine's winepath utility.
+        convert = ctypes.CDLL('kernel32').wine_get_unix_file_name
+        convert.argtypes = [ctypes.c_wchar_p]
+        convert.restype = ctypes.c_void_p
+        kernel = ctypes.WinDLL('kernel32')
+        kernel.GetProcessHeap.restype = ctypes.c_void_p
+        kernel.HeapFree.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p]
+        kernel.HeapFree.restype = ctypes.c_int
+        pointer = convert(path)
+        if not pointer:
+            return None
+        try:
+            resolved = ctypes.string_at(pointer).decode('utf-8')
+            return resolved if resolved.startswith('/') else None
+        finally:
+            kernel.HeapFree(kernel.GetProcessHeap(), 0, pointer)
+    except (AttributeError, OSError, UnicodeError):
+        # Native Windows and unavailable mappings retain the original result.
+        return None
 
 
 class Downloads:
     def __init__(self, organizer):
         self.organizer = organizer
         self.window = None
+        self._failures = OrderedDict()
+        self._canceled = set()
+        manager = organizer.downloadManager()
+        manager.onDownloadFailed(self._on_failed)
+        manager.onDownloadComplete(self._on_complete)
+
+    def _on_failed(self, identifier):
+        # Callbacks run before MO2 can remove a retry-exhausted row. Keep only
+        # a filename: paths, signed URLs and metadata never enter notifications.
+        try:
+            path = str(self.organizer.downloadManager().downloadPath(identifier))
+        except RuntimeError:
+            path = ''  # Pending Nexus lookups may have no file yet.
+        key = path.casefold()
+        if key and key in self._canceled:
+            self._canceled.discard(key)
+            return
+        name = path.replace('\\', '/').rsplit('/', 1)[-1] if path else 'A download'
+        self._failures[identifier] = name
+        self._failures.move_to_end(identifier)
+        while len(self._failures) > 50:
+            self._failures.popitem(last=False)
+
+    def _on_complete(self, identifier):
+        self._failures.pop(identifier, None)
+
+    def warnings(self):
+        return [{'title': 'Download interrupted',
+                 'details': name + ': MO2 reported an unsuccessful download. It may retry automatically. '
+                            'Check Downloads or Logs; a download removed after its retries must be downloaded again.'}
+                for name in reversed(self._failures.values())]
+
 
     def game_domain(self):
         game = self.organizer.managedGame()
@@ -18,6 +79,7 @@ class Downloads:
         result = []
         if not directory.is_dir():
             return result
+        failed = self._failed_paths()
         for path in sorted(directory.iterdir(), key=lambda item: item.name.casefold()):
             if not path.is_file() or path.suffix.casefold() == '.meta':
                 continue
@@ -31,13 +93,42 @@ class Downloads:
             result.append({'name': path.name, 'path': str(path), 'bytes': path.stat().st_size,
                            'partial': partial, 'installed': values.get('installed', 'false') == 'true',
                            'hidden': values.get('removed', 'false') == 'true',
-                           'paused': values.get('paused', 'false') == 'true'})
+                           'paused': values.get('paused', 'false') == 'true',
+                           'failed': partial and str(path).casefold() in failed})
         return result
+
+    def _failed_paths(self):
+        # Metadata writes paused=true for both STATE_PAUSED and STATE_ERROR.
+        # Read the original model's translated status rather than guessing from it.
+        if self.window is None:
+            return set()
+        from PyQt6.QtCore import QAbstractProxyModel, QCoreApplication, Qt
+        from PyQt6.QtWidgets import QTreeView
+        view = self.window.findChild(QTreeView, 'downloadView')
+        if view is None:
+            return set()
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel):
+            model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'DownloadList':
+            return set()
+        error_label = QCoreApplication.translate('DownloadList', 'Error')
+        failed = set()
+        manager = self.organizer.downloadManager()
+        for row in range(model.rowCount()):
+            if model.data(model.index(row, 1), Qt.ItemDataRole.DisplayRole) != error_label:
+                continue
+            try:
+                path = str(Path(manager.downloadPath(row))).casefold()
+            except RuntimeError:
+                continue  # Pending rows do not have an archive/download index.
+            failed.update((path, path + '.unfinished', path + '.part'))
+        return failed
 
     def control(self, filename, action):
         from PyQt6.QtCore import QAbstractProxyModel, QMetaObject, Q_ARG, Qt
         from PyQt6.QtWidgets import QTreeView
-        slots = {'pause': 'issuePause', 'resume': 'issueResume', 'cancel': 'issueCancel'}
+        slots = {'pause': 'issuePause', 'resume': 'issueResume', 'cancel': 'issueCancel', 'delete': 'issueDelete'}
         if action not in slots or not isinstance(filename, str):
             raise ValueError('Choose a supported download action and archive')
         if self.window is None:
@@ -63,6 +154,11 @@ class Downloads:
             # Same slots used by the original context menu. The manager validates
             # the current transfer state. Resolve the row immediately before use;
             # never store row numbers in frontend state or requests.
+            if action == 'cancel':
+                if len(self._canceled) >= 50: self._canceled.clear()
+                self._canceled.add(host_path.casefold())
+            elif action == 'resume':
+                self._canceled.discard(host_path.casefold())
             QMetaObject.invokeMethod(view, slots[action], Qt.ConnectionType.DirectConnection, Q_ARG(int, row))
             return {'requested': action}
         raise ValueError('MO2 no longer manages this download; refresh the list')
@@ -116,4 +212,11 @@ class Downloads:
             raise ValueError('The selected file is not a completed archive')
         # MO2 chooses its existing installer plugin and owns any Qt dialogs.
         installed = self.organizer.installMod(filename)
-        return {'installed': installed is not None, 'modName': installed.name() if installed is not None else None}
+        result = {'installed': installed is not None,
+                'modName': installed.name() if installed is not None else None,
+                'modPath': installed.absolutePath() if installed is not None else None}
+        if installed is not None:
+            unix_path = wine_unix_path(result['modPath'])
+            if unix_path is not None:
+                result['modUnixPath'] = unix_path
+        return result

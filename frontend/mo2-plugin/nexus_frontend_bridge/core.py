@@ -1,6 +1,7 @@
 """MO2-owned operations; no frontend state store and no direct profile-file writes."""
 import json
 import os
+import time
 from pathlib import Path
 import uuid
 
@@ -18,6 +19,16 @@ class Bridge:
         self.profiles = profiles
         self.downloads = downloads
         self._polling = False
+        # How often the host looks for frontend requests. A flat 100ms tick charged
+        # every action up to that much before MO2 even saw it, which the frontend
+        # then paid again waiting for the reply. Ticking quickly for a short while
+        # after each request keeps a burst of actions responsive without leaving the
+        # host reading its request folder 60 times a second while nothing is going on.
+        self.idle_interval = 100
+        self.busy_interval = 16
+        self.busy_for = 0.6
+        self.interval = self.idle_interval
+        self._busy_until = 0.0
         self.credentials = credentials
         self.organizer = organizer
         self.directory = Path(directory)
@@ -41,6 +52,8 @@ class Bridge:
         plugins = organizer.pluginList()
         return {
             'executableIcons': self.executables.icons() if self.executables is not None else {},
+            'canSortPlugins': getattr(self.mod_actions, 'can_sort_plugins', lambda: False)(),
+            'sortPluginsUnavailableReason': getattr(self.mod_actions, 'sort_unavailable_reason', lambda: 'Plugin sorting is unavailable in this MO2 host.')(),
             'selectedExecutable': self.executables.selector().currentText() if self.executables is not None else '',
             'executables': self.executables.snapshot() if self.executables is not None else [],
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
@@ -61,11 +74,37 @@ class Bridge:
         if request.get('protocol') != 1 or request.get('session') != self.session:
             raise ValueError('Bridge session changed; reconnect before issuing commands')
         action = request.get('action')
-        if action == 'importNexusKey':
+        if action == 'readNativeNexusAccount':
+            if self.mod_actions is None: raise ValueError('MO2 account state is unavailable')
+            return self.mod_actions.nexus_account_state()
+        if action == 'disconnectNexusAccount':
+            if self.credentials is None or self.mod_actions is None:
+                raise ValueError('MO2 account integration is unavailable')
+            result = self.mod_actions.nexus_account_state(disconnect_account=True)
+            if result.get('connected') is not False or self.credentials._read_key() is not None:
+                raise ValueError('MO2 account disconnection was not confirmed')
+            self.credentials._restart_required = False
+            return {'disconnected': True}
+        if action == 'connectNexusAccount':
+            if self.credentials is None or self.mod_actions is None:
+                raise ValueError('MO2 account integration is unavailable')
+            filename = request.get('path')
+            if not isinstance(filename, str): raise ValueError('A Nexus API key file path is required')
+            key = self.credentials._key_from_file(filename)
+            account = self.credentials._validate_key(key)
+            result = self.mod_actions.connect_nexus_account(key, account)
+            if self.credentials._read_key() != key:
+                raise ValueError('MO2 did not persist the validated Nexus credential')
+            self.credentials._restart_required = False
+            return result
+        if action == 'readNexusAccount':
+            if self.credentials is None: raise ValueError('Nexus account integration is unavailable')
+            return self.credentials.account_status()
+        if action in ('importNexusKey', 'importValidatedNexusKey'):
             filename = request.get('path')
             if self.credentials is None or not isinstance(filename, str):
                 raise ValueError('Nexus credential import is unavailable or missing a file path')
-            return self.credentials.import_file(filename)
+            return self.credentials.import_validated_file(filename) if action == 'importValidatedNexusKey' else self.credentials.import_file(filename)
         if action == 'snapshot':
             return self.snapshot()
         if request.get('profilePath') != self.organizer.profilePath():
@@ -77,9 +116,21 @@ class Bridge:
                 raise ValueError('MO2 interface is unavailable or visibility is not a boolean')
             self.interface.set_visible(request['visible'])
             return self.snapshot()
+        if action == 'sortPlugins':
+            if self.mod_actions is None: raise ValueError('MO2 plugin sorting is unavailable')
+            return self.mod_actions.sort_plugins()
+        if action == 'orderBackup':
+            if self.mod_actions is None: raise ValueError('MO2 backup integration is unavailable')
+            return self.mod_actions.order_backup(request.get('list'), request.get('operation'))
+        if action == 'setPluginLocked':
+            if self.mod_actions is None: raise ValueError('MO2 plugin locking is unavailable')
+            return self.mod_actions.set_plugin_locked(request.get('name'), request.get('locked'))
         if action == 'manageExecutables':
             if self.mod_actions is None: raise ValueError('MO2 tools are unavailable')
             return self.mod_actions.manage_executables()
+        if action == 'openOriginal':
+            if self.mod_actions is None: raise ValueError('MO2 window actions are unavailable')
+            return self.mod_actions.open_original(request.get('name'))
         if action in ('listTools', 'runTool'):
             if self.mod_actions is None:
                 raise ValueError('MO2 tools are unavailable')
@@ -89,18 +140,32 @@ class Bridge:
             from .overwrite import Overwrite
             overwrite = Overwrite(self.organizer, self.mod_actions.window)
             return overwrite.read() if action == 'readOverwrite' else overwrite.action(request.get('operation'))
-        if action in ('readArchives', 'previewArchive'):
+        if action in ('readSaves', 'saveAction'):
+            if self.mod_actions is None: raise ValueError('MO2 save integration is unavailable')
+            from .saves import read_saves, save_action, preview_save_details
+            if action == "saveAction" and request.get("operation") == "details": return preview_save_details(self.organizer, self.mod_actions.window, request.get("file"))
+            return read_saves(self.mod_actions.window) if action == 'readSaves' else save_action(self.mod_actions.window, request.get('file'), request.get('operation'))
+        if action == 'readDataDirectory':
+            from .data_files import read_directory
+            return read_directory(self.organizer, request.get('directory', ''))
+        if action in ('readArchives', 'previewArchive', 'extractArchive', 'previewDataFile', 'dataFileAction'):
             if self.mod_actions is None: raise ValueError('MO2 archive integration is unavailable')
             from .archives import Archives
             archives = Archives(self.organizer, self.mod_actions.window)
+            if action == 'dataFileAction': return archives.preview_file(request.get('directory'), request.get('name'), request.get('origins'), request.get('operation'))
+            if action == 'previewDataFile': return archives.preview_file(request.get('directory'), request.get('name'), request.get('origins'))
+            if action == 'extractArchive': return archives.extract(request.get('name'), request.get('mod'))
             return archives.read() if action == 'readArchives' else archives.preview(request.get('name'))
         if action in ('selectionLinks', 'createSeparator'):
             if self.mod_actions is None: raise ValueError('MO2 mod integration is unavailable')
-            return self.mod_actions.selection_links(request.get('names')) if action == 'selectionLinks' else self.mod_actions.create_separator(request.get('name'))
+            return self.mod_actions.selection_links(request.get('names')) if action == 'selectionLinks' else self.mod_actions.create_separator(request.get('name'), request.get('collectionName'))
         if action == 'healthCheck':
             if self.mod_actions is None:
                 raise ValueError('MO2 health checks are unavailable')
-            return self.mod_actions.health_check()
+            result = self.mod_actions.health_check()
+            if self.downloads is not None:
+                result['problems'] = result['problems'] + self.downloads.warnings()
+            return result
         if action == 'launch':
             if self.executables is None:
                 raise ValueError('MO2 launch integration is unavailable')
@@ -113,9 +178,17 @@ class Bridge:
             if self.mod_actions is None:
                 raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.details(request.get('name'))
+        if action == 'renameSeparator':
+            if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
+            return self.mod_actions.rename_separator(request.get('name'), request.get('collectionName'))
+        if action == 'removeSeparator':
+            if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
+            return self.mod_actions.remove_separator(request.get('name'))
         if action == 'removeMod':
             if self.mod_actions is None:
                 raise ValueError('MO2 mod management is unavailable')
+            if request.get('confirmed') is True:
+                return self.mod_actions.remove_confirmed(request.get('name'))
             return self.mod_actions.remove(request.get('name'))
         if action in ('selectProfile', 'manageProfiles', 'manageProfile'):
             if self.profiles is None:
@@ -169,7 +242,10 @@ class Bridge:
                 enabled = request.get('enabled')
                 if type(enabled) is not bool:
                     raise ValueError('enabled must be a boolean')
-                target.setState(name, self.states[enabled])
+                if self.mod_actions is not None:
+                    self.mod_actions.set_plugin_active(name, enabled)
+                else:
+                    target.setState(name, self.states[enabled])
             else:
                 priority = request.get('priority')
                 if type(priority) is not int or priority < 0 or priority >= len(target.pluginNames()):
@@ -188,12 +264,20 @@ class Bridge:
             return
         self._polling = True
         try:
-            self._poll_requests()
+            handled = self._poll_requests()
         finally:
             self._polling = False
+        now = time.monotonic()
+        if handled:
+            self._busy_until = now + self.busy_for
+        self.interval = self.busy_interval if now < self._busy_until else self.idle_interval
+        return self.interval
 
     def _poll_requests(self):
         # Invoked by a QTimer on the host UI thread; do not call MO2 from workers.
+        # Reports whether it did anything, which is what decides how soon the host
+        # looks again.
+        handled = False
         for path in sorted((self.directory / 'requests').glob('*.json'))[:8]:
             try:
                 identifier = str(uuid.UUID(path.stem))
@@ -212,3 +296,5 @@ class Bridge:
                 result = {'id': identifier, 'session': self.session, 'ok': False, 'error': str(error)}
             self.write(response, result)
             path.unlink(missing_ok=True)
+            handled = True
+        return handled

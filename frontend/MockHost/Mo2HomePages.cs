@@ -64,9 +64,10 @@ internal static class Mo2GameArt
     public static Bitmap Thumbnail(string game) {
         if (Thumbnails.TryGetValue(game,out var ready)) return ready;
         using var art = Cover(game);
-        return Thumbnails[game] = Compose(art);
+        return Thumbnails[game] = Compose(art, blurBackground: false);
     }
     public static Bitmap? ModThumbnail(string game,int nexusId) {
+        using var timing = Mo2UiLatencyProbe.Measure("Load mod thumbnail");
         var key = $"{game}/{nexusId}";
         if (Thumbnails.TryGetValue(key,out var ready)) return ready;
         var root = Environment.GetEnvironmentVariable("XDG_CACHE_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),".cache");
@@ -74,22 +75,25 @@ internal static class Mo2GameArt
         if (!File.Exists(path)) return null;
         try { using var art = new Bitmap(path); return Thumbnails[key] = Compose(art); } catch { return null; }
     }
-    private static Bitmap Compose(Bitmap art) {
+    private static Bitmap Compose(Bitmap art, bool blurBackground = true) {
         using var png = new MemoryStream(); art.Save(png); png.Position = 0;
         using var source = SkiaSharp.SKBitmap.Decode(png);
         using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(184,104));
         var canvas = surface.Canvas;
-        canvas.Clear(SkiaSharp.SKColor.Parse("#38383A"));
+        // Game art is letterboxed onto a white plate, as Vortex and NMA both show it.
+        canvas.Clear(SkiaSharp.SKColors.White);
+        if (blurBackground) {
         // Render the blur into pixels: unattached Avalonia effect controls do not
         // reliably render their effect into a RenderTargetBitmap.
         using var blur = SkiaSharp.SKImageFilter.CreateBlur(16,16);
         using var background = new SkiaSharp.SKPaint { IsAntialias = true, ImageFilter = blur };
         var scale = Math.Max(184f / source.Width,104f / source.Height) * 1.35f;
-        var width = source.Width * scale; var height = source.Height * scale;
-        canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),background);
+        var backgroundWidth = source.Width * scale; var backgroundHeight = source.Height * scale;
+        canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-backgroundWidth)/2,(104-backgroundHeight)/2,backgroundWidth,backgroundHeight),background);
+        }
         using var foreground = new SkiaSharp.SKPaint { IsAntialias = true };
         var fit = Math.Min(184f / source.Width,104f / source.Height);
-        width = source.Width * fit; height = source.Height * fit;
+        var width = source.Width * fit; var height = source.Height * fit;
         canvas.DrawBitmap(source,SkiaSharp.SKRect.Create((184-width)/2,(104-height)/2,width,height),foreground);
         using var composed = surface.Snapshot(); using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png,100);
         using var bytes = encoded.AsStream();
@@ -108,6 +112,54 @@ internal static class Mo2GameArt
         }
         return new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusMods.App.UI/Assets/mod-thumbnail-fallback.png")));
     }
+    // Game icons sit on white, never on black. A transparent Steam icon only needed
+    // a white plate behind it — that is the Fallout one, and it fills the plate.
+    // Skyrim's is opaque artwork with the black baked in, so a plate behind it was
+    // never visible and the icon stayed a black square. Keying the black out would
+    // erase a logo that is white on black, and every piece of Steam art for that
+    // game is dark (its cover averages 31 of 255), so there is no lighter source to
+    // switch to. Opaque artwork is inset instead: the plate reads as the icon's
+    // background, the artwork as a tile on it.
+    private const int PlateSize = 96;
+    private const float OpaqueInset = .78f;
+    private static readonly Dictionary<string,Bitmap> Plated = new();
+    public static Bitmap PlatedIcon(string game)
+    {
+        if (Plated.TryGetValue(game, out var ready)) return ready;
+        using var art = Icon(game);
+        using var png = new MemoryStream(); art.Save(png); png.Position = 0;
+        using var source = SkiaSharp.SKBitmap.Decode(png);
+        using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(PlateSize, PlateSize));
+        surface.Canvas.Clear(SkiaSharp.SKColors.White);
+        using var paint = new SkiaSharp.SKPaint { IsAntialias = true };
+        var span = Opaque(source) ? PlateSize * OpaqueInset : PlateSize;
+        var fit = Math.Min(span / source.Width, span / source.Height);
+        var width = source.Width * fit; var height = source.Height * fit;
+        var target = SkiaSharp.SKRect.Create((PlateSize-width)/2, (PlateSize-height)/2, width, height);
+        surface.Canvas.Save();
+        // Rounded, so an inset tile reads as part of the icon rather than a photo
+        // dropped on it. Harmless for artwork that already has its own silhouette.
+        surface.Canvas.ClipRoundRect(new SkiaSharp.SKRoundRect(target, 12, 12), antialias: true);
+        surface.Canvas.DrawBitmap(source, target, paint);
+        surface.Canvas.Restore();
+        using var composed = surface.Snapshot();
+        using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        using var bytes = encoded.AsStream();
+        return Plated[game] = new Bitmap(bytes);
+    }
+
+    // Opaque here means "the plate behind it can never show", which is what decides
+    // whether a white plate is worth anything. Sampled on a grid rather than every
+    // pixel: a 256px icon is 65k reads and this runs for every game at startup.
+    private static bool Opaque(SkiaSharp.SKBitmap bitmap)
+    {
+        if (bitmap.Width == 0 || bitmap.Height == 0) return true;
+        var step = Math.Max(1, Math.Min(bitmap.Width, bitmap.Height) / 32);
+        for (var y = 0; y < bitmap.Height; y += step)
+            for (var x = 0; x < bitmap.Width; x += step)
+                if (bitmap.GetPixel(x, y).Alpha < 200) return false;
+        return true;
+    }
     public static Bitmap Cover(string game)
     {
         var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830" : "22380";
@@ -117,16 +169,18 @@ internal static class Mo2GameArt
 }
 internal sealed class Mo2LoadoutsPage : APageViewModel<IMyLoadoutsViewModel>, IMyLoadoutsViewModel
 {
-    public string? Game { get; }
+    public string? Game { get; private set; }
+    public bool GameScoped { get; }
     public ReadOnlyObservableCollection<IGameLoadoutsSectionEntryViewModel> GameSectionViewModels { get; }
-    public Mo2LoadoutsPage(IWindowManager windows, Mo2LiveWorkspace shell, string? game) : base(windows)
+    public Mo2LoadoutsPage(IWindowManager windows, Mo2LiveWorkspace shell, string? game, bool gameScoped = false) : base(windows)
     {
-        Game = game; TabTitle = game is null ? "My Loadouts" : "Profiles"; TabIcon = IconValues.Package;
+        Game = game; GameScoped = gameScoped || game is not null; TabTitle = GameScoped ? "Profiles" : "My Loadouts"; TabIcon = IconValues.Package;
         var sections = new ObservableCollection<IGameLoadoutsSectionEntryViewModel>();
         GameSectionViewModels = new(sections);
         void Refresh() {
             sections.Clear();
-            foreach (var group in shell.CatalogEntries.Where(x => x.Instance is not null && (game is null || x.Instance.Game == game)).GroupBy(x => x.Instance!.Game))
+            if (GameScoped && Game is null) Game = shell.CatalogEntries.FirstOrDefault(x => x.Registration.Endpoint == shell.Profile.Endpoint)?.Instance?.Game;
+            foreach (var group in shell.CatalogEntries.Where(x => x.Instance is not null && (!GameScoped || (Game is not null && x.Instance.Game == Game))).GroupBy(x => x.Instance!.Game))
                 sections.Add(new Mo2LoadoutsSection(shell, group.Key, group));
         }
         Refresh();
@@ -190,7 +244,9 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
         CloneLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "copy"));
         DeleteLoadoutCommand = ReactiveCommand.CreateFromTask(() => shell.Profile.ManageProfile(Registration, Profile, "remove"),
             Observable.Return(!IsLastLoadout && entry.Instance.SelectedProfile != profile.Name));
-        LoadoutImage = Mo2GameArt.Icon(entry.Instance!.Game);
+        // Plated, like the spine: the Steam icons are transparent, and the card's
+        // image section is otherwise the panel's own dark surface behind them.
+        LoadoutImage = Mo2GameArt.PlatedIcon(entry.Instance!.Game);
         LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = number.ToString() };
         VisitLoadoutCommand = ReactiveCommand.CreateFromTask(async () => {
             if (await shell.Profile.SelectProfile(Registration, profile)) shell.ShowProfile();
@@ -205,7 +261,7 @@ internal sealed class Mo2GameLoadoutsFactory(IWindowManager windows, Mo2LiveWork
     public PageData Data => new() { FactoryId = Id, Context = new Mo2GamePageContext(Id, null) };
     public DynamicData.Kernel.Optional<OpenPageBehaviorType> DefaultOpenPageBehavior => default;
     public Page Create(IPageFactoryContext context) => new() {
-        ViewModel = new Mo2LoadoutsPage(windows, shell, ((Mo2GamePageContext)context).Game),
+        ViewModel = new Mo2LoadoutsPage(windows, shell, ((Mo2GamePageContext)context).Game, gameScoped: true),
         PageData = new PageData { FactoryId = Id, Context = context }
     };
     public IEnumerable<PageDiscoveryDetails?> GetDiscoveryDetails(IWorkspaceContext context) {

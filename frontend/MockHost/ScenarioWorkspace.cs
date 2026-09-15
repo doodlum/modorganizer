@@ -169,7 +169,7 @@ internal sealed class FixtureWindows : IWindowManager
     }
 }
 
-internal sealed class MemorySettings(IServiceProvider services) : ISettingsManager
+internal sealed class MemorySettings(IServiceProvider services, Mo2AlertPreferences? alertPreferences = null) : ISettingsManager
 {
     private readonly Dictionary<(Type, string?), object> _values = new();
     private readonly Dictionary<(Type, string?), object> _changes = new();
@@ -184,9 +184,17 @@ internal sealed class MemorySettings(IServiceProvider services) : ISettingsManag
     public T GetDefault<T>() where T : class, ISettings, new() => Configs.TryGetValue(typeof(T), out var config) ? (T)config.DefaultValueFactory(services) : new();
     public T Get<T>(string? key = null) where T : class, ISettings, new() => TryGet<T>(out var value, key) ? value : GetDefault<T>();
     public bool TryGet<T>([NotNullWhen(true)] out T? value, string? key = null) where T : class, ISettings, new()
-    { value = _values.GetValueOrDefault((typeof(T), key)) as T; return value is not null; }
+    {
+        if (typeof(T) == typeof(NexusMods.App.UI.Settings.AlertSettings) && key is null && alertPreferences is not null && !_values.ContainsKey((typeof(T), key)))
+            _values[(typeof(T), key)] = alertPreferences.Read();
+        value = _values.GetValueOrDefault((typeof(T), key)) as T; return value is not null;
+    }
     public void Set<T>(T value, string? key = null) where T : class, ISettings, new()
-    { _values[(typeof(T), key)] = value; if (_changes.TryGetValue((typeof(T), key), out var changes)) ((R3.Subject<T>)changes).OnNext(value); }
+    {
+        _values[(typeof(T), key)] = value;
+        if (value is NexusMods.App.UI.Settings.AlertSettings alerts && key is null) alertPreferences?.Save(alerts);
+        if (_changes.TryGetValue((typeof(T), key), out var changes)) ((R3.Subject<T>)changes).OnNext(value);
+    }
     public T Update<T>(Func<T, T> updater, string? key = null) where T : class, ISettings, new()
     { var value = updater(Get<T>(key)); Set(value, key); return value; }
     public R3.Observable<T> GetChanges<T>(string? key = null, bool prependCurrent = false) where T : class, ISettings, new()

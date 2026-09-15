@@ -1,3 +1,41 @@
+# Current shared-component audit — 2026-09-14
+
+This section is the current source comparison. The dated sections below are
+historical and may describe UI choices superseded by later user requests.
+
+Compared the working tree against commit
+`3b0244e7d21ea19afabcc3d81539c9e11ae8d642` in `../reference-fnv`, using
+committed reference contents rather than relying on a branch name or screenshots.
+Of fifteen shared source files examined, six are byte-identical: panel markup,
+workspace markup, both divider files, and both Nexus login overlay files.
+
+| Shared code with intentional changes | Reason |
+| --- | --- |
+| StandardButton.cs | Update rendered labels when ShowLabel or ShowIcon changes at responsive widths. |
+| DownloadComponents.cs | Optional failed-transfer retry and running-only cancellation for MO2; dispose the paused-state subscription with the component. Default NMA action rules remain unchanged. |
+| PanelView.axaml.cs | Ignore zero-width viewport notifications that could create a restored-panel layout loop. |
+| WorkspaceViewModel.cs | Arrange restored panel instances even when the workspace dimensions have not changed. |
+| SearchControl.axaml.cs | Optional MO2 search syntax/refresh support; retain focus in the page when closing search so Ctrl+F can reopen it. |
+| WorkspaceController.cs | Resolve early sidebar navigation before deferred panel selection activates, including empty workspaces. |
+| WorkspaceView.axaml.cs | Optional host panel factory permits deferred construction; the original native PanelView remains the default and is used inside the host wrapper. |
+| PanelTabViewModel.cs and TabHistory.cs | Update Back/Forward page references after resource rename/removal without adding navigation history. |
+
+Exact file hashes are in [the source comparison](artifacts/current-fnv-source-comparison.json)
+and all nine file differences are in [the patch](artifacts/current-fnv-shared-components.patch).
+This comparison does not imply that MO2-specific page bodies or host styles are
+identical to NMA, or that the entire upstream checkout is unchanged.
+
+The current Release executable passed restored-tab switching at verified client
+widths1280/900/640/1280, selected-tab highlight checks, native panel geometry,
+deferred row detachment/reattachment, and selection-preserving sorting with native
+plugin state unchanged. See [runtime check](artifacts/current-fnv-panel-check.log)
+and [rendered result](artifacts/current-fnv-panel-check.png). The screenshot uses an
+isolated test layout; sorting verification navigated its active tab to Plugins.
+Normal user layout was restored afterward. This does not supersede the measured
+cold-switch input pause or constitute full feature-parity acceptance.
+
+---
+
 # Navigation and Tools follow-up — 2026-09-13
 
 This follow-up supersedes the earlier Rules-tab and per-profile-spine descriptions below.
@@ -601,3 +639,41 @@ open in the active integration goal.
 The Mods sidebar/tab/page-picker use the FNV reference’s **My Mods**
 `CollectionsOutline` icon. Its header uses `PictogramCollection3D`, matching the
 reference’s writable-collection header while retaining the requested Mods name.
+
+Downloads now adds its MO2 actions to the reference Toolbar beneath the header,
+using native StandardButtons and toolbar sizing rather than a separate plain
+button row. Compact labels were blocked by the reference StandardButton's
+missing ShowLabel property-change handling. The local control now refreshes its
+label for ShowLabel changes and transitions to/from ShowIcon.IconOnly; its
+template and styling remain unchanged. The current source comparison includes
+this file (14 compared, 6 identical, 8 documented differences). Physical
+1280→640→1280 resizing confirms labels hide and reappear; the moved archive
+picker and Nexus-link flyout both open from the compact toolbar.
+
+Icon-name class resolution now differs internally from the pinned FNV theme.
+The original 160 `UnifiedIcon.<name>` Value rules are consolidated into
+`Extensions/IconClassAliases.cs` and one dynamic selector. All name/value mappings
+and their rule order match the reference; foreground severity styles, icon
+controls, glyphs and assets remain unchanged. The resolver preserves dynamic
+class changes, last-rule precedence, local values/nulls and scoped overrides.
+`icon-alias-behavior-check.log` compares all original rules and lifecycle behavior.
+The opt-in check takes `MO2_ICON_ALIAS_REFERENCE` pointing to the original
+`reference-fnv/src/NexusMods.Themes.NexusFluentDark/Styles/Controls/Icons/IconsStyles.axaml`.
+This reduces global style frames applied to every icon; it does not replace
+UnifiedIcon or flatten the native panel/toolbar templates.
+
+Shared Alert lifecycle correction: Alert.axaml.cs reconnects its settings
+subscription when a retained panel loads again, while disposing it on unload.
+Visual templates are unchanged. The actual Plugins help command and repeated
+reload/dismiss/show cycles pass in artifacts/alert-lifecycle-fixed.log; the
+original help preference is restored. Earlier source-comparison counts predate
+this additional shared-control difference.
+
+Panel loading and responsiveness: the frontend prepares original NMA control
+templates across background dispatcher turns before revealing a new panel.
+Their real resource ancestry, namescopes, templates, styles and artwork remain
+in use. A loading overlay stays visible during preparation; cached bodies retain
+identity. Final layout/filter/highlight/help and cancellation checks are recorded
+in artifacts/template-preparation-final-*.log. The same-build native-pointer
+comparison measured454.8ms with preparation disabled and288.9ms enabled; cold
+stalls remain, so this is an improvement rather than completed responsiveness.

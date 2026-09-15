@@ -10,7 +10,8 @@ namespace Mo2.Frontend;
 internal sealed class Mo2WorkspaceLayout
 {
     internal sealed record Tab(string Factory, string? Game, string Search, bool SearchExpanded, int SubTab,
-        string? DiagnosticTitle, string? DiagnosticEndpoint, string? DiagnosticProfile);
+        string? DiagnosticTitle, string? DiagnosticEndpoint, string? DiagnosticProfile, string? CollectionKey = null,
+        string DataDirectory = "", bool DataConflictsOnly = false);
     internal sealed record Panel(double X, double Y, double Width, double Height, bool Active, int Selected, Tab[] Tabs);
     internal sealed record Workspace(string Endpoint, string ProfilePath, Panel[] Panels);
     internal sealed record Layout(int Version, Workspace[] Workspaces);
@@ -59,9 +60,13 @@ internal sealed class Mo2WorkspaceLayout
                     throw new InvalidDataException("Overlapping panels");
             foreach (var tab in p.Tabs) {
                 if (tab.Search is null || !Enum.IsDefined(typeof(LoadoutPageSubTabs), tab.SubTab)) throw new InvalidDataException("Invalid tab state");
+                if (tab.DataDirectory is null || tab.DataDirectory.IndexOfAny([':', '\0']) >= 0 || tab.DataDirectory.StartsWith('/') || tab.DataDirectory.StartsWith('\\') || tab.DataDirectory.Split(['/', '\\']).Contains(".."))
+                    throw new InvalidDataException("Invalid saved Data directory");
                 if (tab.Factory == _detailsFactory.ToString()) {
                     if (tab.DiagnosticTitle is null || tab.DiagnosticEndpoint is null || tab.DiagnosticProfile is null)
                         throw new InvalidDataException("Missing diagnostic profile context");
+                } else if (tab.Factory == Mo2CollectionFactory.StaticId.ToString()) {
+                    if (tab.CollectionKey is null) throw new InvalidDataException("Missing collection identity");
                 } else if (!_pages.ContainsKey(tab.Factory) && tab.Factory != NewTabPageFactory.StaticId.ToString())
                     throw new InvalidDataException("Unsupported saved page");
             }
@@ -78,6 +83,7 @@ internal sealed class Mo2WorkspaceLayout
                 var tabs = panel.Tabs.Select(tab => {
                     PageData page;
                     if (tab.Factory == NewTabPageFactory.StaticId.ToString()) page = controller.GetDefaultPageData(workspace.Id);
+                    else if (tab.Factory == Mo2CollectionFactory.StaticId.ToString()) page = _pages["bcde2778-955d-4b57-a14e-85a878b82101"];
                     else if (tab.Factory == _detailsFactory.ToString()) page = new PageData { FactoryId = _detailsFactory,
                         Context = new Mo2HealthDetailsContext(new Diagnostic { Id = new DiagnosticId("MO2", 1), Title = tab.DiagnosticTitle!, Severity = DiagnosticSeverity.Warning,
                             Summary = DiagnosticMessage.From(""), Details = DiagnosticMessage.From(""), DataReferences = [] }, tab.DiagnosticEndpoint!, tab.DiagnosticProfile!) };
@@ -100,6 +106,16 @@ internal sealed class Mo2WorkspaceLayout
                         mods.Mo2SearchText = state.Tabs[j].Search; mods.Mo2SearchExpanded = state.Tabs[j].SearchExpanded;
                         mods.SelectedSubTab = LoadoutPageSubTabs.Mods;
                     }
+                    if (panel.Tabs[j].Contents.ViewModel is ScenarioLoadOrderPage plugins) {
+                        plugins.Mo2SearchText = state.Tabs[j].Search; plugins.Mo2SearchExpanded = state.Tabs[j].SearchExpanded;
+                    }
+                    if (panel.Tabs[j].Contents.ViewModel is Mo2DataPage files) {
+                        files.SearchText = state.Tabs[j].Search;
+                        files.Directory = state.Tabs[j].DataDirectory;
+                        files.ConflictsOnly = state.Tabs[j].DataConflictsOnly;
+                    }
+                    if (panel.Tabs[j].Contents.ViewModel is Mo2ArchivesPage archives)
+                        archives.SearchText = state.Tabs[j].Search;
                     panel.Tabs[j].Header.IsSelected = j == state.Selected;
                 }
                 panel.IsSelected = state.Active;
@@ -109,6 +125,57 @@ internal sealed class Mo2WorkspaceLayout
             Error = "Could not restore panel layouts: " + error.Message;
         }
     }
+    public void ReplaceCollection(string endpoint, string oldName, PageData replacement)
+    {
+        foreach (var key in _saved.Keys.Where(x => x.Endpoint == endpoint).ToArray()) {
+            var workspace = _saved[key];
+            _saved[key] = workspace with { Panels = workspace.Panels.Select(panel => panel with {
+                Tabs = panel.Tabs.Select(tab => tab.Factory == Mo2CollectionFactory.StaticId.ToString() && tab.CollectionKey == oldName
+                    ? tab with { Factory = replacement.FactoryId.ToString(), CollectionKey = (replacement.Context as Mo2CollectionContext)?.Key } : tab).ToArray()
+            }).ToArray() };
+        }
+    }
+    internal static Workspace Capture(IWorkspaceViewModel workspace)
+    {
+        var key = Key(workspace);
+        return new Workspace(key.Endpoint, key.Path, workspace.Panels.Select(panel => {
+            var tabs = panel.Tabs.Select(tab => {
+                var page = tab.Contents.PageData;
+                var mods = tab.Contents.ViewModel as ScenarioInstalledPage;
+                var plugins = tab.Contents.ViewModel as ScenarioLoadOrderPage;
+                var files = tab.Contents.ViewModel as Mo2DataPage;
+                var archives = tab.Contents.ViewModel as Mo2ArchivesPage;
+                var details = page.Context as Mo2HealthDetailsContext;
+                return new Tab(page.FactoryId.ToString(), (page.Context as Mo2GamePageContext)?.Game, mods?.Mo2SearchText ?? plugins?.Mo2SearchText ?? files?.SearchText ?? archives?.SearchText ?? "", mods?.Mo2SearchExpanded ?? plugins?.Mo2SearchExpanded ?? false,
+                    (int)(mods?.SelectedSubTab ?? LoadoutPageSubTabs.Mods), details?.Diagnostic.Title, details?.Endpoint, details?.ProfilePath, (page.Context as Mo2CollectionContext)?.Key,
+                    files?.Directory ?? "", files?.ConflictsOnly ?? false);
+            }).ToArray();
+            return new Panel(panel.LogicalBounds.X, panel.LogicalBounds.Y, panel.LogicalBounds.Width, panel.LogicalBounds.Height, panel.IsSelected,
+                panel.Tabs.ToList().FindIndex(t => t.Id == panel.SelectedTab.Id), tabs);
+        }).ToArray());
+    }
+    private readonly Dictionary<(string Endpoint, string Path), Workspace> _undo = new();
+    public bool CanUndo(IWorkspaceViewModel workspace) => _undo.ContainsKey(Key(workspace));
+    public void UseMo2Layout(IWorkspaceViewModel workspace, IWorkspaceController controller, PageData mods, params PageData[] rightPages)
+    {
+        if (!_canSave || workspace.Context is not Mo2WorkspaceContext) return;
+        var previous = Capture(workspace); var key = Key(workspace);
+        Tab Entry(PageData page) => new(page.FactoryId.ToString(), null, "", false, (int)LoadoutPageSubTabs.Mods, null, null, null);
+        _saved[key] = new Workspace(key.Endpoint, key.Path, [
+            new Panel(0,0,.5,1,true,0,[Entry(mods)]),
+            new Panel(.5,0,.5,1,false,0,rightPages.Select(Entry).ToArray())]);
+        Restore(workspace, controller);
+        if (!_canSave) { _saved[key] = previous; return; }
+        _undo[key] = previous; Save([workspace]);
+    }
+    public void UndoPreset(IWorkspaceViewModel workspace, IWorkspaceController controller)
+    {
+        var key = Key(workspace);
+        if (!_canSave) return;
+        if (!_undo.TryGetValue(key, out var previous)) return;
+        _saved[key] = previous; Restore(workspace, controller);
+        if (_canSave) { _undo.Remove(key); Save([workspace]); }
+    }
     public void Save(IEnumerable<IWorkspaceViewModel> workspaces)
     {
         if (_path is null || !_canSave) return;
@@ -116,17 +183,7 @@ internal sealed class Mo2WorkspaceLayout
             foreach (var workspace in workspaces) {
                 if (workspace.Context is Mo2WorkspaceContext { ProfilePath.Length: 0 }) continue;
                 var key = Key(workspace);
-                var saved = new Workspace(key.Endpoint, key.Path, workspace.Panels.Select(panel => {
-                    var tabs = panel.Tabs.Select(tab => {
-                        var page = tab.Contents.PageData;
-                        var mods = tab.Contents.ViewModel as ScenarioInstalledPage;
-                        var details = page.Context as Mo2HealthDetailsContext;
-                        return new Tab(page.FactoryId.ToString(), (page.Context as Mo2GamePageContext)?.Game, mods?.Mo2SearchText ?? "", mods?.Mo2SearchExpanded ?? false,
-                            (int)(mods?.SelectedSubTab ?? LoadoutPageSubTabs.Mods), details?.Diagnostic.Title, details?.Endpoint, details?.ProfilePath);
-                    }).ToArray();
-                    return new Panel(panel.LogicalBounds.X, panel.LogicalBounds.Y, panel.LogicalBounds.Width, panel.LogicalBounds.Height, panel.IsSelected,
-                        panel.Tabs.ToList().FindIndex(t => t.Id == panel.SelectedTab.Id), tabs);
-                }).ToArray());
+                var saved = Capture(workspace);
                 Validate(saved); _saved[key] = saved;
             }
             var json = JsonSerializer.Serialize(new Layout(2, _saved.Values.OrderBy(x => x.Endpoint).ThenBy(x => x.ProfilePath).ToArray()), new JsonSerializerOptions { WriteIndented = true });

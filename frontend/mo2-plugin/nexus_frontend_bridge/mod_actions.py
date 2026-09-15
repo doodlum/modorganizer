@@ -1,6 +1,21 @@
 """Use the original mod model's confirmed uninstall and profile cleanup."""
 
 
+def conflict_neighbors(name, origins):
+    """Split MO2's winner-first, ascending-alternatives origin sequence.
+
+    OrganizerCore::getFileOrigins preserves the native alternatives vector;
+    AdvancedConflictsTab uses that vector for before/after relationships.
+    Do not sort by mod priority: native precedence also accounts for archives.
+    """
+    if len(origins) < 2 or name not in origins:
+        return set(), set()
+    if origins[0] == name:
+        return set(), set(origins[1:]) - {name}
+    position = origins.index(name, 1)
+    return ({origins[0]} | set(origins[position + 1:])) - {name}, set(origins[1:position]) - {name}
+
+
 class ModActions:
     def __init__(self, organizer, window):
         self.organizer = organizer
@@ -36,9 +51,9 @@ class ModActions:
                                     for row in range(model.rowCount()):
                                         path = str(model.index(row, 0).data() or '').lstrip('/\\')
                                         origins = list(self.organizer.getFileOrigins(path))
-                                        if len(origins) < 2 or name not in origins: continue
-                                        if origins[0] == name: losers.update(origins[1:])
-                                        else: winners.add(origins[0])
+                                        above, below = conflict_neighbors(name, origins)
+                                        winners.update(above)
+                                        losers.update(below)
                                 captured.append(True)
                             except Exception as error: errors.append(str(error))
                             finally: watched.reject()
@@ -54,18 +69,32 @@ class ModActions:
             if not captured: raise ValueError('Native conflict details did not complete')
         return {'plugins': plugins, 'winningMods': sorted(winners - selected), 'losingMods': sorted(losers - selected)}
 
-    def create_separator(self, name=None):
+    def create_separator(self, name=None, collection_name=None):
         from PyQt6.QtCore import QAbstractProxyModel, QCoreApplication, QEvent, QObject, QPoint, QTimer, Qt
-        from PyQt6.QtWidgets import QApplication, QMenu, QTreeView
+        from PyQt6.QtWidgets import QApplication, QInputDialog, QMenu, QTreeView
         if not self.window.isEnabled(): raise ValueError('MO2 is busy')
         view = self.window.findChild(QTreeView, 'modList')
         if view is None: raise ValueError('MO2 mod list is unavailable')
+        if collection_name is not None:
+            if not isinstance(collection_name, str) or not collection_name.strip() or len(collection_name) > 120 or any(ord(c) < 32 or c in '<>:"/\\|?*' for c in collection_name) or collection_name.endswith(('.', ' ')):
+                raise ValueError('Choose a valid collection name (up to 120 characters)')
+            existing = {n.casefold() for n in self.organizer.modList().allMods()}
+            if collection_name.casefold() in existing or (collection_name + '_separator').casefold() in existing:
+                raise ValueError('A mod or collection with this name already exists')
         # Invoke the native global menu: it owns name validation and creation.
         invoked, errors = [], []
         expected = QCoreApplication.translate('ModListGlobalContextMenu', 'Create separator').replace('&', '')
         class Capture(QObject):
             armed = True
+            entered = False
             def eventFilter(inner, watched, event):
+                if collection_name is not None and not inner.entered and isinstance(watched, QInputDialog) and event.type() == QEvent.Type.Polish:
+                    inner.entered = True
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def accept_name():
+                        watched.setTextValue(collection_name)
+                        watched.accept()
+                    QTimer.singleShot(0, accept_name)
                 if inner.armed and isinstance(watched, QMenu) and event.type() == QEvent.Type.Polish:
                     inner.armed = False
                     watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
@@ -83,7 +112,7 @@ class ModActions:
         app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
         visible = self.window.isVisible()
         try:
-            self.window.show()
+            if collection_name is None: self.window.show()
             view.customContextMenuRequested.emit(QPoint(-1, -1))
         finally:
             app.removeEventFilter(capture)
@@ -100,6 +129,75 @@ class ModActions:
         if not self.window.isEnabled() or action is None or not action.isEnabled():
             raise ValueError('MO2 executable settings are unavailable')
         action.trigger()
+        return {'opened': True}
+
+    # MO2's own main-window entries that the frontend has no page of its own for.
+    # Allowlisted by name rather than taking one from the request: this triggers
+    # real menu actions in the host, and the set it may reach has to be a decision
+    # made here, not by whatever asked.
+    ORIGINAL_ACTIONS = {
+        'settings': 'actionSettings',
+        'notifications': 'actionNotifications',
+        'endorse': 'actionEndorseMO',
+        'nexus': 'actionNexus',
+        'help': 'actionHelp',
+        'update': 'actionUpdate',
+    }
+
+    def open_original(self, name):
+        from PyQt6.QtGui import QAction
+        if name not in self.ORIGINAL_ACTIONS:
+            raise ValueError('Unsupported MO2 window action')
+        action = self.window.findChild(QAction, self.ORIGINAL_ACTIONS[name])
+        if not self.window.isEnabled() or action is None or not action.isEnabled():
+            raise ValueError('That MO2 window action is unavailable; close its current dialog first')
+        action.trigger()
+        return {'opened': True}
+
+    def order_backup(self, target, operation):
+        from PyQt6.QtWidgets import QPushButton
+        buttons = {('mods', 'backup'): 'saveModsButton', ('mods', 'restore'): 'restoreModsButton',
+                   ('plugins', 'backup'): 'saveButton', ('plugins', 'restore'): 'restoreButton'}
+        if not isinstance(target, str) or not isinstance(operation, str) or (target, operation) not in buttons:
+            raise ValueError('Choose mod-list or plugin-order backup or restore')
+        button = self.window.findChild(QPushButton, buttons[target, operation])
+        if not self.window.isEnabled() or button is None or not button.isEnabled():
+            raise ValueError('MO2 backup or restore is unavailable; close its current dialog first')
+        # Native slots flush current state, keep the original retention policy,
+        # and own the restore picker, cancellation, writes and refresh.
+        button.click()
+        return {'opened': True}
+
+    def can_sort_plugins(self):
+        from PyQt6.QtWidgets import QPushButton
+        button = self.window.findChild(QPushButton, 'sortButton')
+        return self.window.isEnabled() and button is not None and button.isEnabled()
+
+    def sort_unavailable_reason(self):
+        from PyQt6.QtWidgets import QPushButton
+        if not self.window.isEnabled():
+            return 'MO2 is busy; close its current dialog first.'
+        button = self.window.findChild(QPushButton, 'sortButton')
+        if button is None:
+            return 'This MO2 version does not expose its plugin sort control.'
+        if button.isEnabled():
+            return ''
+        game = self.organizer.managedGame()
+        if (game.name() == 'Fallout NV Support Plugin' and
+                not self.organizer.pluginSetting(game.name(), 'enable_loot_sorting')):
+            return ('LOOT sorting is disabled by the Fallout NV Support Plugin. '
+                    'Its default follows the FNV modding community recommendation. '
+                    'To opt in, open MO2 Settings > Plugins > Fallout NV Support Plugin '
+                    'and enable enable_loot_sorting. Manual plugin ordering remains available.')
+        return button.toolTip() or 'Plugin sorting is disabled in MO2.'
+
+    def sort_plugins(self):
+        from PyQt6.QtWidgets import QPushButton
+        if not self.can_sort_plugins():
+            raise ValueError('MO2 plugin sorting is unavailable or busy')
+        # The original slot owns LOOT, its progress/confirmation dialogs,
+        # masterlist updates and writing the resulting plugin order.
+        self.window.findChild(QPushButton, 'sortButton').click()
         return {'opened': True}
 
     def _tools(self):
@@ -121,7 +219,11 @@ class ModActions:
                     yield from leaves(item.menu(), key)
                 else:
                     yield key, item
-        return list(leaves(menu, []))
+        tools = list(leaves(menu, []))
+        settings = self.window.findChild(QAction, 'actionSettings')
+        if settings is not None and settings.isVisible():
+            tools.append((['MO2', 'Settings'], settings))
+        return tools
 
     def list_tools(self):
         from .icons import icon_png
@@ -222,6 +324,11 @@ class ModActions:
                 'priorityText': str(model.index(row, 9).data(Qt.ItemDataRole.DisplayRole) or ''),
                 'overwrite': name in overwrite_names,
                 'nexusId': mods.getMod(name).nexusId(),
+                'version': str(model.index(row, 7).data(Qt.ItemDataRole.DisplayRole) or ''),
+                # MO2 tracks the newest known version on the mod itself, not in the
+                # list model. Older builds may not expose it, so failure is not fatal.
+                'newestVersion': newest_version(mods.getMod(name)),
+                'category': str(model.index(row, 4).data(Qt.ItemDataRole.DisplayRole) or ''),
                 'separator': mods.getMod(name).isSeparator(),
                 'conflicts': plain(model.index(row, 1).data(Qt.ItemDataRole.ToolTipRole)),
                 'flags': plain(model.index(row, 2).data(Qt.ItemDataRole.ToolTipRole)),
@@ -258,6 +365,7 @@ class ModActions:
                 'masters': list(plugins.masters(name)), 'origin': plugins.origin(name),
                 'diagnostics': document.toPlainText(),
                 'hasWarning': ':/MO/gui/warning' in (index.data(int(Qt.ItemDataRole.UserRole) + 1) or []),
+                'locked': ':/MO/gui/locked' in (index.data(int(Qt.ItemDataRole.UserRole) + 1) or []),
                 'modIndex': str(model.index(row, 3).data(Qt.ItemDataRole.DisplayRole) or ''),
                 'canToggle': bool(flags & Qt.ItemFlag.ItemIsUserCheckable),
                 'canMove': bool(flags & Qt.ItemFlag.ItemIsDragEnabled),
@@ -265,6 +373,228 @@ class ModActions:
         if len(result) != len(expected):
             raise ValueError('MO2 plugin list changed; refresh before reading details')
         return result
+
+    def set_plugin_active(self, name, enabled):
+        from PyQt6.QtCore import QAbstractProxyModel, Qt
+        from PyQt6.QtWidgets import QTreeView
+        if not isinstance(name, str) or type(enabled) is not bool:
+            raise ValueError('Select a plugin and its requested activation state')
+        if not self.window.isEnabled(): raise ValueError('Close MO2’s current dialog first')
+        tree = self.window.findChild(QTreeView, 'espList')
+        if tree is None: raise ValueError('MO2 plugin list is unavailable')
+        model = tree.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'PluginList':
+            raise ValueError('Unsupported MO2 plugin list model')
+        matches = [model.index(row, 0) for row in range(model.rowCount())
+                   if model.index(row, 0).data(Qt.ItemDataRole.DisplayRole) == name]
+        if len(matches) != 1: raise ValueError('Plugin no longer exists')
+        index = matches[0]
+        if not model.flags(index) & Qt.ItemFlag.ItemIsUserCheckable:
+            raise ValueError('MO2 does not allow changing this plugin’s activation')
+        # IPluginList.setState only changes the in-memory flag. The native
+        # checkbox path also writes the lists, refreshes indexes and notifies
+        # game extensions and missing-master diagnostics.
+        state = Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
+        if not model.setData(index, state.value, Qt.ItemDataRole.CheckStateRole):
+            raise ValueError('MO2 rejected the plugin activation change')
+
+    def set_plugin_locked(self, name, locked):
+        from PyQt6.QtCore import QCoreApplication, QEvent, QItemSelectionModel, QObject, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QMenu, QTabWidget, QTreeView, QWidget
+        if not isinstance(name, str) or type(locked) is not bool:
+            raise ValueError('Select a plugin and its requested lock state')
+        if not self.window.isEnabled(): raise ValueError('Close MO2’s current dialog first')
+        rows = [p for p in self.plugin_snapshot() if p['name'] == name]
+        if len(rows) != 1: raise ValueError('Plugin no longer exists')
+        if rows[0]['locked'] == locked: return {'locked': locked}
+        tree = self.window.findChild(QTreeView, 'espList')
+        tabs = self.window.findChild(QTabWidget, 'tabWidget')
+        page = self.window.findChild(QWidget, 'espTab')
+        search = self.window.findChild(QLineEdit, 'espFilterEdit')
+        if tree is None or tabs is None or page is None: raise ValueError('MO2 plugin controls are unavailable')
+        previous = tabs.currentIndex(); old_search = search.text() if search else None
+        selected = [str(i.data()) for i in tree.selectionModel().selectedRows()]
+        scroll = tree.verticalScrollBar().value()
+        expected = QCoreApplication.translate('PluginListContextMenu', 'Lock load order' if locked else 'Unlock load order')
+        failures, invoked = [], []
+        class Capture(QObject):
+            armed = True
+            def eventFilter(inner, watched, event):
+                if inner.armed and isinstance(watched, QMenu) and event.type() == QEvent.Type.Polish:
+                    inner.armed = False
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def run():
+                        actions = [a for a in watched.actions() if a.text().replace('&', '') == expected.replace('&', '') and a.isEnabled()]
+                        watched.close()
+                        if len(actions) != 1:
+                            failures.append('MO2 does not allow changing this plugin lock'); return
+                        invoked.append(True); actions[0].trigger()
+                    QTimer.singleShot(0, run)
+                return False
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        try:
+            if search: search.clear()
+            tabs.setCurrentWidget(page)
+            model = tree.model()
+            matches = [model.index(r, 0) for r in range(model.rowCount()) if model.index(r, 0).data() == name]
+            if len(matches) != 1: raise ValueError('MO2 cannot resolve the selected plugin row')
+            tree.selectionModel().clearSelection()
+            tree.setCurrentIndex(matches[0]); tree.scrollTo(matches[0]); tree.doItemsLayout()
+            tree.customContextMenuRequested.emit(tree.visualRect(matches[0]).center())
+        finally:
+            app.removeEventFilter(capture)
+            if search is not None: search.setText(old_search)
+            tabs.setCurrentIndex(previous)
+            tree.selectionModel().clearSelection()
+            model = tree.model()
+            for r in range(model.rowCount()):
+                index = model.index(r, 0)
+                if str(index.data()) in selected: tree.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+            tree.verticalScrollBar().setValue(scroll)
+        if failures: raise ValueError(failures[0])
+        if not invoked or next((p['locked'] for p in self.plugin_snapshot() if p['name'] == name), None) != locked:
+            raise ValueError('MO2 did not apply the requested plugin lock')
+        return {'locked': locked}
+
+    def connect_nexus_account(self, key, expected):
+        """Validate and apply a key through the native connection UI, without mapping it."""
+        from PyQt6.QtCore import QCoreApplication, QElapsedTimer, QEvent, QObject, QTimer, Qt
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QLabel, QListWidget, QPlainTextEdit, QPushButton
+        action = self.window.findChild(QAction, 'actionSettings')
+        if not self.window.isEnabled() or action is None or not action.isEnabled():
+            raise ValueError('MO2 is busy; wait before connecting its account')
+        results, failures = [], []
+        success = QCoreApplication.translate('NexusConnectionUI', 'Linked with Nexus successfully.')
+        restart_title = QCoreApplication.translate('MainWindow', 'Restart Mod Organizer')
+        continue_text = QCoreApplication.translate('MainWindow', 'Continue').replace('&', '')
+        class Capture(QObject):
+            entered = False
+            settings = None
+            def eventFilter(inner, watched, event):
+                if not isinstance(watched, QDialog) or event.type() != QEvent.Type.Polish: return False
+                if watched.objectName() == 'TaskDialog' and watched.windowTitle() == restart_title and results:
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def continue_without_restart():
+                        buttons = [b for b in watched.findChildren(QAbstractButton) if b.text().replace('&', '') == continue_text]
+                        if len(buttons) == 1: buttons[0].click()
+                        else:
+                            failures.append('Unable to finish the native account confirmation')
+                            watched.reject()
+                    QTimer.singleShot(0, continue_without_restart)
+                elif watched.objectName() == 'NexusManualKeyDialog'  and inner.settings is not None and not inner.entered:
+                    inner.entered = True
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def fill():
+                        field = watched.findChild(QPlainTextEdit, 'key')
+                        if field is None:
+                            failures.append('This MO2 version does not expose manual account login')
+                            watched.reject(); inner.settings.reject(); return
+                        field.setPlainText(key)
+                        watched.accept()
+                        field.clear()
+                    QTimer.singleShot(0, fill)
+                elif watched.objectName() == 'SettingsDialog' and inner.settings is None:
+                    inner.settings = watched
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def begin():
+                        manual = watched.findChild(QPushButton, 'nexusManualKey')
+                        disconnect = watched.findChild(QPushButton, 'nexusDisconnect')
+                        log = watched.findChild(QListWidget, 'nexusLog')
+                        user = watched.findChild(QLabel, 'nexusUserID')
+                        if any(x is None for x in (manual, disconnect, log, user)) or not (manual.isEnabled() or disconnect.isEnabled()):
+                            failures.append('Native MO2 account login is unavailable or busy'); watched.reject(); return
+                        elapsed = QElapsedTimer(); elapsed.start()
+                        timer = QTimer(watched); timer.setInterval(100)
+                        def poll():
+                            # Compare a known success marker; never return or log native log text.
+                            linked = any(log.item(i).text() == success for i in range(log.count()))
+                            identity = user.text().strip()
+                            if linked and identity.isdecimal() and int(identity) == expected['userId'] and disconnect.isEnabled():
+                                results.append({'connected': True, 'account': expected})
+                                timer.stop(); watched.reject()
+                            elif elapsed.elapsed() > 20000 or failures:
+                                failures.append('MO2 did not finish connecting the requested Nexus account')
+                                # Native manual action doubles as cancel while validation runs.
+                                if inner.entered and manual.isEnabled() and not disconnect.isEnabled(): manual.click()
+                                timer.stop(); watched.reject()
+                        timer.timeout.connect(poll); timer.start()
+                        # A connected account disables the manual button, but its native slot
+                        # accepts a replacement and preserves the old credential on failure.
+                        manual.clicked.emit()
+                        if not inner.entered:
+                            failures.append('MO2 did not open its manual account dialog')
+                    QTimer.singleShot(0, begin)
+                return False
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        try: action.trigger()
+        finally:
+            app.removeEventFilter(capture)
+        if failures or len(results) != 1:
+            raise ValueError(failures[0] if failures else 'Native MO2 account login did not complete')
+        return results[0]
+
+    def nexus_account_state(self, disconnect_account=False):
+        """Read the original client's account identity without exposing its settings."""
+        from PyQt6.QtCore import QCoreApplication, QElapsedTimer, QEvent, QObject, QTimer, Qt
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QLabel, QPushButton
+        action = self.window.findChild(QAction, 'actionSettings')
+        if not self.window.isEnabled() or action is None or not action.isEnabled():
+            raise ValueError('MO2 is busy; wait before reading its account state')
+        results, failures = [], []
+        restart_title = QCoreApplication.translate('MainWindow', 'Restart Mod Organizer')
+        continue_text = QCoreApplication.translate('MainWindow', 'Continue').replace('&', '')
+        class Capture(QObject):
+            def eventFilter(inner, watched, event):
+                if not isinstance(watched, QDialog) or event.type() != QEvent.Type.Polish: return False
+                if watched.objectName() == 'TaskDialog' and watched.windowTitle() == restart_title and results and disconnect_account:
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def finish():
+                        buttons = [b for b in watched.findChildren(QAbstractButton) if b.text().replace('&', '') == continue_text]
+                        if len(buttons) == 1: buttons[0].click()
+                        else:
+                            failures.append('Unable to finish the native account confirmation')
+                            watched.reject()
+                    QTimer.singleShot(0, finish)
+                elif watched.objectName() == 'SettingsDialog':
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    elapsed = QElapsedTimer(); elapsed.start()
+                    timer = QTimer(watched); timer.setInterval(50)
+                    requested = False
+                    def read():
+                        nonlocal requested
+                        try:
+                            user = watched.findChild(QLabel, 'nexusUserID')
+                            name = watched.findChild(QLabel, 'nexusName')
+                            disconnect = watched.findChild(QPushButton, 'nexusDisconnect')
+                            if user is None or name is None or disconnect is None:
+                                raise ValueError('This MO2 version does not expose its account state')
+                            if disconnect_account and not requested:
+                                requested = True
+                                if disconnect.isEnabled():
+                                    disconnect.click()
+                                    # Native identity labels update via a queued signal.
+                                    return
+                            identity = user.text().strip()
+                            connected = identity.isdecimal() and int(identity) > 0 and disconnect.isEnabled()
+                            if disconnect_account and (connected or disconnect.isEnabled()):
+                                if elapsed.elapsed() < 3000: return
+                                raise ValueError('MO2 did not finish disconnecting its Nexus account')
+                            results.append({'connected': connected, 'userId': int(identity) if connected else None,
+                                            'name': name.text() if connected else None})
+                        except Exception as error: failures.append(str(error))
+                        if results or failures:
+                            timer.stop(); watched.reject()
+                    timer.timeout.connect(read); timer.start()
+                return False
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        try: action.trigger()
+        finally: app.removeEventFilter(capture)
+        if failures: raise ValueError(failures[0])
+        if len(results) != 1: raise ValueError('MO2 account state did not complete')
+        return results[0]
 
     def nexus_settings(self):
         from PyQt6.QtCore import QTimer
@@ -353,6 +683,73 @@ class ModActions:
             raise ValueError('MO2 did not open a mod detail dialog; wait and try again')
         return {'opened': True, 'modName': name}
 
+    def rename_separator(self, name, collection_name):
+        from PyQt6.QtCore import QAbstractProxyModel, Qt
+        from PyQt6.QtWidgets import QTreeView
+        mods = self.organizer.modList()
+        names = list(mods.allMods())
+        if not isinstance(name, str) or name not in names or not mods.getMod(name).isSeparator():
+            raise ValueError('Collection separator no longer exists')
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        if not isinstance(collection_name, str) or not collection_name.strip() or len(collection_name) > 120 or any(ord(c) < 32 or c in '<>:"/\\|?*' for c in collection_name) or collection_name.endswith(('.', ' ')):
+            raise ValueError('Choose a valid collection name (up to 120 characters)')
+        new_name = collection_name + '_separator'
+        existing = {n.casefold() for n in names if n != name}
+        if collection_name.casefold() in existing or new_name.casefold() in existing:
+            raise ValueError('A mod or collection with this name already exists')
+        view = self.window.findChild(QTreeView, 'modList')
+        if view is None or not view.isEnabled(): raise ValueError('MO2 mod list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'ModList':
+            raise ValueError('Unsupported MO2 mod list model')
+        row = names.index(name)
+        index = model.index(row, 0)
+        if not index.isValid() or index.data(int(Qt.ItemDataRole.UserRole) + 1) != row:
+            raise ValueError('MO2 mod row changed; refresh before renaming')
+        # The original inline editor owns suffix handling, directory rename,
+        # and modRenamed notifications that update every native profile.
+        view.selectionModel().clear()
+        accepted = model.setData(index, collection_name, Qt.ItemDataRole.EditRole)
+        if not accepted or new_name not in mods.allMods():
+            raise ValueError('MO2 did not rename the collection')
+        return {'renamed': True, 'oldName': name, 'name': new_name}
+
+    def remove_separator(self, name):
+        mods = self.organizer.modList()
+        if not isinstance(name, str) or name not in mods.allMods() or not mods.getMod(name).isSeparator():
+            raise ValueError('Separator no longer exists')
+        return self.remove_confirmed(name)
+
+    def remove_confirmed(self, name):
+        from PyQt6.QtCore import QCoreApplication, QEvent, QObject, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+        mods = self.organizer.modList()
+        if not isinstance(name, str) or name not in mods.allMods() :
+            raise ValueError('Mod no longer exists')
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        title = QCoreApplication.translate('ModList', 'Confirm')
+        display_name = next(m['displayName'] for m in self.snapshot() if m['name'] == name)
+        messages = {QCoreApplication.translate('ModList', text).replace('%1', display_name) for text in (
+            'Are you sure you want to remove "%1"?', "Are you sure you want to remove '%1'?")}
+        captured = []
+        class Capture(QObject):
+            def eventFilter(inner, watched, event):
+                if isinstance(watched, QMessageBox) and event.type() == QEvent.Type.Polish and watched.windowTitle() == title and watched.text() in messages:
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def confirm():
+                        # The frontend already confirmed removal of this specific
+                        # mod. Never acknowledge other native dialogs.
+                        captured.append(True)
+                        watched.done(int(QMessageBox.StandardButton.Yes))
+                    QTimer.singleShot(0, confirm)
+                return False
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        try: result = self.remove(name)
+        finally: app.removeEventFilter(capture)
+        if not captured: raise ValueError('MO2 did not present the expected mod confirmation')
+        return result
+
     def remove(self, name):
         from PyQt6.QtCore import QAbstractProxyModel, Qt
         from PyQt6.QtWidgets import QTreeView
@@ -387,3 +784,15 @@ class ModActions:
         view.selectionModel().clear()
         model.removeRow(row)
         return {'removed': name not in mods.allMods(), 'modName': name}
+
+
+def newest_version(mod):
+    """Newest version MO2 knows about, or '' when it has none or cannot report one."""
+    try:
+        value = mod.newestVersion()
+    except Exception:
+        return ''
+    if value is None:
+        return ''
+    text = getattr(value, 'displayString', None)
+    return str(text() if callable(text) else value)

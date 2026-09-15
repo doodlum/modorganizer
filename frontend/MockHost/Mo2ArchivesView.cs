@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
+using Avalonia.Controls.Templates;
 using Avalonia.ReactiveUI;
 using NexusMods.App.UI.Controls.PageHeader;
 using NexusMods.App.UI.Windows;
@@ -17,62 +18,132 @@ internal sealed class Mo2ArchivesPage : APageViewModel<IMo2ArchivesPage>, IMo2Ar
 {
     public static readonly IconValue ArchiveIcon = new ProjektankerIcon("mdi-archive-outline");
     public Mo2LiveProfile Profile { get; }
+    public string SearchText { get; set; } = "";
     public Mo2ArchivesPage(IWindowManager windows,Mo2LiveProfile profile) : base(windows)
     { Profile = profile; TabTitle = "Archives"; TabIcon = ArchiveIcon; }
 }
 internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
 {
     private readonly TreeDataGrid _table = new() { Name = "ArchivesTable", ShowColumnHeaders = true };
-    private readonly TextBox _filter = new() { Name = "ArchivesFilter", Watermark = "Filter archives", MinWidth = 120 };
+    private readonly TextBox _filter = new() { Name = "ArchivesFilter", Watermark = "Search archives", MinWidth = 60 };
     private readonly TextBlock _status = new() { Name = "ArchivesStatus", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-    private readonly Button _browse = new() { Content = "Browse…", Name = "BrowseArchive", IsEnabled = false };
+    private readonly Button _browse;
+    private readonly Button _extract;
     private Mo2Archive[] _archives = [];
     private Mo2ProfileTarget? _target;
     private bool _reading;
-    public Mo2ArchivesView()
+    private long _revision = -1;
+    private string? _error;
+    private Mo2Archive? _selection;
+    private bool _showModColumn;
+    private readonly Func<Mo2ProfileTarget, Task<Mo2Archive[]>>? _read;
+    private bool _active;
+    private long _activation;
+    public Mo2ArchivesView() : this(null) { }
+    internal Mo2ArchivesView(Func<Mo2ProfileTarget, Task<Mo2Archive[]>>? read)
     {
+        _read = read;
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
-        root.Children.Add(new PageHeader { Title = "Archives", Description = "Browse BSA and BA2 archives in this profile.", Icon = IconValues.PictogramLibrary });
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0,12,0,8) };
-        bar.Children.Add(_filter); Grid.SetColumn(_browse,1); _browse.Margin = new Thickness(8,0); bar.Children.Add(_browse);
-        var refresh = new Button { Content = "Refresh" }; Grid.SetColumn(refresh,2); bar.Children.Add(refresh);
-        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_table,3); root.Children.Add(_table);
-        _table.Classes.Add("MainListsStyling"); Content = root;
-        _filter.TextChanged += (_,_) => Render(); refresh.Click += async (_,_) => await Refresh();
-        _browse.Click += async (_,_) => {
+        _browse = Mo2ModRow.IconButton("mdi-folder-search-outline", "Browse selected archive", async () => {
             if (ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2Archive archive) return;
             await model.Profile.BrowseArchive(archive.Name,target); await Refresh();
+        });
+        _extract = Mo2ModRow.IconButton("mdi-archive-arrow-down-outline", "Extract selected archive", async () => {
+            if (ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2Archive archive) return;
+            await model.Profile.ExtractArchive(archive,target); await Refresh();
+        });
+        var header = new PageHeader { Title = "Archives", Description = "Browse BSA and BA2 archives in this profile.", Icon = new AvaloniaSvg("avares://MockHost/Assets/archives-3d.svg") };
+        root.Children.Add(header);
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Margin = new Thickness(0,8,0,8) };
+        _browse.Name = "BrowseArchive"; _extract.Name = "ExtractArchive";
+        _browse.IsEnabled = _extract.IsEnabled = false;
+        _filter.Margin = new Thickness(0,0,8,0);
+        bar.Children.Add(_filter); Grid.SetColumn(_browse,1); bar.Children.Add(_browse);
+        Grid.SetColumn(_extract,2); bar.Children.Add(_extract);
+        var refresh = Mo2ModRow.IconButton("mdi-refresh", "Refresh archives", async () => await Refresh());
+        refresh.Name = "RefreshArchives"; Grid.SetColumn(refresh,3); bar.Children.Add(refresh);
+        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_table,3); root.Children.Add(_table);
+        _table.Classes.Add("MainListsStyling"); Content = root;
+        _columns = new Mo2ColumnToggle("archives", Render);
+        Mo2PanelChrome.Apply(this, root, header, _filter, _browse, _extract, _columns.Action, refresh);
+        ToolTip.SetTip(_status, "Loading follows the game’s archive and plugin rules.");
+        LayoutUpdated += (_,_) => {
+            var showModColumn = Bounds.Width >= 520;
+            if (_showModColumn == showModColumn) return;
+            _showModColumn = showModColumn; Render();
+        };
+        _filter.TextChanged += (_,_) => {
+            if (ViewModel is { } model) model.SearchText = _filter.Text ?? "";
+            Render();
         };
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
-            void Changed() { if (_target != model.Profile.CurrentTarget || !model.Profile.IsConnected) _ = Refresh(); UpdateActions(); }
+            _active = true; ++_activation;
+            _filter.Text = model.SearchText;
+            var wasConnected = model.Profile.IsConnected;
+            void Changed() {
+                var connectionChanged = wasConnected != model.Profile.IsConnected;
+                wasConnected = model.Profile.IsConnected;
+                if (_target != model.Profile.CurrentTarget || connectionChanged || _revision != model.Profile.ContentRevision) _ = Refresh();
+                UpdateActions();
+            }
             model.Profile.Changed += Changed;
-            Disposable.Create(() => model.Profile.Changed -= Changed).DisposeWith(d);
+            Disposable.Create(() => { _active = false; ++_activation; model.Profile.Changed -= Changed; UpdateActions(); }).DisposeWith(d);
             _ = Refresh();
         });
     }
     internal async Task Refresh()
     {
-        if (_reading || ViewModel is not { } model) return;
-        _reading = true; _target = model.Profile.CurrentTarget; var target = _target.Value;
+        if (!_active || _reading || ViewModel is not { } model) return;
+        var activation = _activation;
+        _reading = true; _error = null;
+        if (_target != model.Profile.CurrentTarget) _selection = null;
+        _target = model.Profile.CurrentTarget; var target = _target.Value;
+        var wasConnected = model.Profile.IsConnected;
+        _revision = model.Profile.ContentRevision; var revision = _revision;
         _archives = []; Render(); _status.Text = "Reading MO2 archives…";
         try {
-            var archives = await model.Profile.ReadArchives(target);
-            if (target != model.Profile.CurrentTarget) return;
-            _archives = archives; Render();
-        } catch (Exception error) { _status.Text = error.Message; }
-        finally { _reading = false; UpdateActions(); if (target != model.Profile.CurrentTarget) await Refresh(); }
+            var archives = await (_read?.Invoke(target) ?? model.Profile.ReadArchives(target));
+            if (!_active || activation != _activation || target != model.Profile.CurrentTarget) return;
+            _archives = archives;
+            if (_selection is { } remembered && !archives.Any(x => x.Name == remembered.Name && x.Mod == remembered.Mod))
+                _selection = null;
+            Render();
+        } catch (Exception error) { if (_active && activation == _activation && target == model.Profile.CurrentTarget) _error = error.Message; }
+        finally {
+            _reading = false;
+            if (_active) {
+                if (activation != _activation || target != model.Profile.CurrentTarget || wasConnected != model.Profile.IsConnected || revision != model.Profile.ContentRevision) await Refresh();
+                else Render();
+            }
+        }
     }
-    private void UpdateActions() => _browse.IsEnabled = !_reading && ViewModel?.Profile.CanChangeOriginalUi == true && _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Archive;
+    private void UpdateActions() => _extract.IsEnabled = _browse.IsEnabled = _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true && _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Archive;
+    private Mo2ColumnToggle? _columns;
     private void Render()
     {
         var rows = _archives.Where(x => (x.Name + " " + x.Mod).Contains(_filter.Text ?? "",StringComparison.OrdinalIgnoreCase)).ToArray();
         var source = new FlatTreeDataGridSource<Mo2Archive>(rows);
-        source.Columns.Add(new TextColumn<Mo2Archive,string>("Archive",x => x.Name,width:new GridLength(1,GridUnitType.Star)));
-        source.Columns.Add(new TextColumn<Mo2Archive,string>("Mod",x => x.Mod,width:new GridLength(130)));
+        source.Columns.Add(new TemplateColumn<Mo2Archive>("Archive", new FuncDataTemplate<Mo2Archive>((archive,_) => {
+            var label = new TextBlock { Text = archive?.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            if (archive is not null) ToolTip.SetTip(label, $"{archive.Name}\nMod: {archive.Mod}\nLoaded: {(archive.Active ? "Yes" : "No")}");
+            return label;
+        }),width:new GridLength(1,GridUnitType.Star)));
+        if (_showModColumn) source.Columns.Add(new TextColumn<Mo2Archive,string>("Mod",x => x.Mod,width:new GridLength(130)));
         source.Columns.Add(new TextColumn<Mo2Archive,string>("Loaded",x => x.Active ? "Yes" : "No",width:new GridLength(70)));
-        source.RowSelection!.SelectionChanged += (_,_) => UpdateActions(); _table.Source = source;
-        _status.Text = _archives.Length == 0 ? "No archives reported by MO2." : $"{rows.Length} of {_archives.Length} archives · Loading follows the game’s archive and plugin rules.";
+        source.RowSelection!.SelectionChanged += (_,_) => {
+            if (ReferenceEquals(_table.Source, source)) _selection = source.RowSelection.SelectedItem;
+            UpdateActions();
+        };
+        _columns?.Apply(source.Columns);
+        var previous = _table.Source; _table.Source = source;
+        if (previous is IDisposable disposable) disposable.Dispose();
+        if (_selection is { } remembered) {
+            var index = Array.FindIndex(rows,x => x.Name == remembered.Name && x.Mod == remembered.Mod);
+            if (index >= 0) source.RowSelection.Select(new IndexPath(index));
+        }
+        _status.Text = _error ?? (_reading ? "Reading MO2 archives…" : _archives.Length == 0 ? "No archives reported by MO2." : $"{rows.Length} of {_archives.Length} archives");
         UpdateActions();
     }
 }

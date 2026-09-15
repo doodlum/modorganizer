@@ -9,4 +9,4 @@ else
     dotnet_cmd=dotnet
 fi
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
-exec "$dotnet_cmd" run --project "$frontend_root/MockHost/MockHost.csproj" -- "$@"
+exec "$dotnet_cmd" run --configuration "${MO2_BUILD_CONFIGURATION:-Release}" --project "$frontend_root/MockHost/MockHost.csproj" -- "$@"
