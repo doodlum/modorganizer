@@ -48,6 +48,21 @@ both start 24px into their page, with the status column 16px and the name column
 the native one — that second group was the source of the duplicated and unresponsive
 buttons — and the native Deselect empties the table's own selection.
 
+Dropping a tab on a panel's edge splits that panel, and the split is now checked
+against what the workspace can hold — two columns and two rows. Splitting a panel
+that is already half of something asked for a third of one or the other and drew
+four panels across three columns, which cannot be saved; such a drop is refused
+and the page joins the panel it was dropped on as a tab, which is also what the
+preview under the pointer now shows. A move puts back a maximised panel first,
+since maximising draws a panel over the whole canvas without changing its place in
+the layout. `MO2_VERIFY_TAB_DRAG=1` builds the workspace up to four panels and
+asserts after every drop — including eight driven 40ms apart, landing while the
+previous reflow animates — that the panels still cover it exactly once. The
+platform's own pointer path (press, move, release through the OS drag) is not
+driven by any check: synthetic X input under this compositor lands on the root
+window rather than the application. What is checked is the press that starts a
+drag resolving to the right tab, and everything from the drop onwards.
+
 Page headers give way in stages as a panel narrows: words, then the pictogram alone,
 then nothing, and only after that do the actions take a second row. The header keeps
 its title floor so its width cannot follow its own content (which fed back into the
