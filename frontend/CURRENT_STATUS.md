@@ -48,6 +48,15 @@ both start 24px into their page, with the status column 16px and the name column
 the native one — that second group was the source of the duplicated and unresponsive
 buttons — and the native Deselect empties the table's own selection.
 
+My Mods and Plugins are built from the same parts rather than merely behaving
+alike: one rail and scrollbar connection, one toolbar and pill, one selection
+group, one highlight wiring. Matching them behaviour by behaviour had left two
+implementations of each — Plugins carried its own thirty-line copy of the rail's
+scroll connection that had lost the line hiding the table's own scrollbar, so that
+list showed a scrollbar and a rail and the two pages scrolled differently.
+`MO2_VERIFY_SHARED_LISTS=1` compares what the pages are made of, including what
+each toolbar holds and in what order, and drives the rail in both directions.
+
 Selecting rows behaves the same in My Mods and Plugins. Plugins had no selection
 group at all — no count, no deselect, and no multi-row Enable/Disable since an
 earlier tidy-up removed those buttons — and marked nothing in the other table,
