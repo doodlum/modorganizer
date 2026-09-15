@@ -139,8 +139,13 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // active-plugin count beside them, and its filter field under the list.
         var qtSort = Mo2QtWidgets.Button("SortPluginsButton", "Sort", Mo2QtWidgets.SortTip, "mdi-sort-alphabetical-variant",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.SortPlugins(live.CurrentTarget); });
-        var qtRestore = Mo2QtWidgets.Button("RestorePluginsButton", "Restore", Mo2QtWidgets.RestoreTip, "mdi-backup-restore", () => { });
-        var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline", () => { });
+        // Restore and Save go through MO2's own backup buttons, which own the retention
+        // policy, the restore picker and the writes — the same route the order history
+        // menu already takes.
+        var qtRestore = Mo2QtWidgets.Button("RestorePluginsButton", "Restore", Mo2QtWidgets.RestoreTip, "mdi-backup-restore",
+            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "restore", live.CurrentTarget); });
+        var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
+            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "backup", live.CurrentTarget); });
         var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);
         var qtBar = new StackPanel { Name = "PluginsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
             Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };

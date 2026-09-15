@@ -457,6 +457,11 @@ public partial class MockApp : Application
                         try { await Mo2RowStyleCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_ROW_STYLE_SCREENSHOTS")); }
                         catch (Exception error) { Console.WriteLine("FAIL row style: " + error.Message); }
                     }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_WIDGETS") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2QtWidgetCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL MO2 widgets: " + error.Message); }
+                    }, TimeSpan.FromSeconds(2));
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LISTS") == "1")
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2SharedListCheck.Run(live, liveWindow); }

@@ -105,4 +105,35 @@ internal static class Mo2QtWidgets
     internal static TextBlock Note(string name, string text) =>
         new() { Name = name, Text = text, Opacity = .6, TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 6) };
+
+    // MO2's category filter: a checkable list beside the mod list, where ticking
+    // categories narrows it to mods in them. MO2 keeps a tree, because its categories
+    // nest; the ones this frontend gets from MO2 are a flat set of names, so this is
+    // the same control over the categories there actually are.
+    internal static Border Categories(string name, out ItemsControl items, out ScrollViewer scroller)
+    {
+        items = new ItemsControl { Name = name };
+        scroller = new ScrollViewer { Content = items, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        return new Border {
+            Name = name + "Group", CornerRadius = new CornerRadius(8), Padding = new Thickness(8),
+            BorderThickness = new Thickness(1), BorderBrush = Application.Current?.FindResource("StrokeTranslucentModerateBrush") as IBrush,
+            Child = new DockPanel { Children = {
+                Head(new TextBlock { Text = FiltersGroup, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 0, 0, 6) }),
+                scroller,
+            } },
+        };
+    }
+
+    private static Control Head(Control control) { DockPanel.SetDock(control, Dock.Top); return control; }
+
+    // One row of that list: the category, and how many mods are in it, as MO2 shows.
+    internal static CheckBox Category(string category, int count, bool active, Action<bool> changed)
+    {
+        var box = new CheckBox { Content = $"{category} ({count})", IsChecked = active, MinWidth = 0, Margin = new Thickness(0, 1) };
+        box.Tag = category;
+        ToolTip.SetTip(box, FiltersEditTip);
+        box.IsCheckedChanged += (_, _) => changed(box.IsChecked == true);
+        return box;
+    }
 }

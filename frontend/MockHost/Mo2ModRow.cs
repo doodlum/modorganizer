@@ -44,8 +44,14 @@ internal static class Mo2ModRow
         (Author, 104, 1120), (Uploader, 104, 1360), (NexusId, 74, 900), (SourceGame, 104, 1240),
         (Version, 78, 420), (Installation, 120, 1020), (Priority, 56, 380), (Notes, 110, 780)];
 
+    // Room the category filter takes out of the pane when it is showing. The column
+    // fitting below measures the panel, not the list, so without this the columns
+    // believed they had the whole width and the name column — the one column that is
+    // not optional — was squeezed to nothing to keep the others.
+    internal static double SideWidth;
+
     internal static void Fit(Grid grid, double width) =>
-        Mo2TableRow.Fit(grid, width, Optional, HiddenColumns.Contains);
+        Mo2TableRow.Fit(grid, Math.Max(0, width - SideWidth), Optional, HiddenColumns.Contains);
 
     // One of MO2's glyph columns. MO2 draws a small icon per condition and spells the
     // conditions out in the tooltip; the icon is shown only when there is something to
