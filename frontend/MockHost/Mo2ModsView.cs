@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Templates;
 using Avalonia.ReactiveUI;
@@ -28,8 +29,7 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     {
         _profile = services.GetRequiredService<IEnumerable<ILoadoutDataProvider>>().OfType<Mo2LiveProfile>().Single();
         ViewHierarchical.Value = false;
-        CustomSortComparer.Value = Comparer<CompositeItemModel<EntityId>>.Create((a, b) =>
-            a.Get<ValueComponent<int>>(PriorityKey).Value.Value.CompareTo(b.Get<ValueComponent<int>>(PriorityKey).Value.Value));
+        CustomSortComparer.Value = Comparer<CompositeItemModel<EntityId>>.Create(Compare);
     }
     private Mo2ProfileTarget? _dragTarget;
     private string[] _dragOrder = [];
@@ -74,10 +74,31 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
             if (mod.IsSeparator) collapsed = _collapsed.Contains(mod.Name);
             else if (collapsed) hidden.Add(mod.Id);
         }
-        _filter.OnNext(mod => mod.IsSeparator || (!hidden.Contains(mod.Id) && (_categoryChoice.Count == 0 || _categoryChoice.Contains(mod.Category)) && mod.DisplayName.Contains(_nameFilter, StringComparison.OrdinalIgnoreCase) && mod.Version.Contains(_versionFilter, StringComparison.OrdinalIgnoreCase) && mod.Category.Contains(_categoryFilter, StringComparison.OrdinalIgnoreCase) && (_endorsementFilter == 0 || (mod.NexusId > 0 && ((mod.State & 0x10) != 0) == (_endorsementFilter == 1))) && (choice switch {
-            1 => (mod.State & 2) != 0, 2 => (mod.State & 2) == 0 && (mod.State & 4) == 0,
-            3 => mod.Conflicts.Length > 0, 4 => mod.Conflicts.Length == 0, _ => true
-        })));
+        // MO2 lets a mod carry several categories; the column it reports them in lists
+        // them together, so a mod's categories are what that text separates.
+        bool InChosenCategories(Mo2LiveMod mod) {
+            if (_categoryChoice.Count == 0) return true;
+            var owned = mod.Category.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            return _matchAllCategories
+                ? _categoryChoice.All(chosen => owned.Contains(chosen, StringComparer.OrdinalIgnoreCase))
+                : owned.Any(_categoryChoice.Contains);
+        }
+        bool Wanted(Mo2LiveMod mod) => !hidden.Contains(mod.Id) && InChosenCategories(mod) &&
+            mod.DisplayName.Contains(_nameFilter, StringComparison.OrdinalIgnoreCase) &&
+            mod.Version.Contains(_versionFilter, StringComparison.OrdinalIgnoreCase) &&
+            mod.Category.Contains(_categoryFilter, StringComparison.OrdinalIgnoreCase) &&
+            (_endorsementFilter == 0 || (mod.NexusId > 0 && ((mod.State & 0x10) != 0) == (_endorsementFilter == 1))) &&
+            choice switch {
+                1 => (mod.State & 2) != 0, 2 => (mod.State & 2) == 0 && (mod.State & 4) == 0,
+                3 => mod.Conflicts.Length > 0, 4 => mod.Conflicts.Length == 0, _ => true
+            };
+        _filter.OnNext(mod => mod.IsSeparator
+            // A separator marks a place in the priority order, so a grouping that
+            // replaces that order stands them down, as MO2's own does.
+            ? _grouping == 0 && _separators switch {
+                1 => true, 2 => false,
+                _ => mod.DisplayName.Contains(_nameFilter, StringComparison.OrdinalIgnoreCase) }
+            : Wanted(mod));
     }
     private Mo2ProfileTarget? _presentationTarget;
     protected override IObservable<IChangeSet<CompositeItemModel<EntityId>,EntityId>> GetRootsObservable(bool viewHierarchical)
@@ -105,6 +126,41 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     public void SetColumnFilters(string name, string version, string category, int endorsed = 0) {
         _nameFilter = name; _versionFilter = version; _categoryFilter = category; _endorsementFilter = endorsed; RefreshFilter();
     }
+
+    // MO2's groupCombo: the mod list ordered by installation priority, by category or
+    // by Nexus ID. MO2 draws a parent row per group; this list is flat, so a grouping
+    // orders the rows into their groups and stands the separators down — they belong
+    // to the priority order, which a grouping replaces.
+    private int _grouping;
+    public int Grouping => _grouping;
+    public void SetGrouping(int choice) {
+        if (_grouping == choice) return;
+        _grouping = choice;
+        CustomSortComparer.Value = Comparer<CompositeItemModel<EntityId>>.Create(Compare);
+        RefreshFilter();
+    }
+    private string GroupOf(CompositeItemModel<EntityId> item) {
+        var mod = _profile.FindMod(item.Key);
+        return mod is null ? "" : _grouping == 1 ? mod.Category : mod.NexusId > 0 ? mod.NexusId.ToString("D9") : "";
+    }
+    private int Compare(CompositeItemModel<EntityId> a, CompositeItemModel<EntityId> b)
+    {
+        if (_grouping != 0) {
+            var group = string.Compare(GroupOf(a), GroupOf(b), StringComparison.OrdinalIgnoreCase);
+            if (group != 0) return group;
+        }
+        return a.Get<ValueComponent<int>>(PriorityKey).Value.Value.CompareTo(b.Get<ValueComponent<int>>(PriorityKey).Value.Value);
+    }
+
+    // MO2's filtersAnd/filtersOr: whether a mod has to carry every ticked category or
+    // only one of them. Its own default is And.
+    private bool _matchAllCategories = true;
+    public void SetCategoryMatchAll(bool all) { _matchAllCategories = all; RefreshFilter(); }
+
+    // MO2's filtersSeparators: separators subject to the filter, always shown, or
+    // never shown.
+    private int _separators;
+    public void SetSeparatorMode(int mode) { _separators = mode; RefreshFilter(); }
     private string _nameFilter = "", _versionFilter = "", _categoryFilter = "";
     private int _endorsementFilter;
     // The categories ticked in MO2's filter list. Empty means no category filter at
@@ -253,13 +309,23 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRowsPresenter>(x)) {
             Setters = { new Avalonia.Styling.Setter(Avalonia.Layout.Layoutable.MarginProperty, new Thickness(0)) },
         });
-        var list = new Grid { ColumnDefinitions = new ColumnDefinitions($"*,{Mo2TableRow.RailWidth}"), RowDefinitions = new RowDefinitions("Auto,*"),
-            Margin = new Thickness(Mo2PanelChrome.Padding, 0, Mo2PanelChrome.Padding, Mo2PanelChrome.Padding) };
-        var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6); columns.Height = Mo2TableRow.HeadingBand;
+        // The pane around the list carries the page's padding, not the list alone:
+        // MO2's widgets above and below the list line up with it, and a list that was
+        // the only thing inset left the profile box and the counter beside it running
+        // into the panel's edges.
+        var list = new Grid { ColumnDefinitions = new ColumnDefinitions($"*,{Mo2TableRow.RailWidth}"), RowDefinitions = new RowDefinitions("Auto,*") };
+        var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,4,0,4); columns.Height = Mo2TableRow.HeadingBand;
         // MO2's own headers, taken from the same table the row's columns come from so
-        // the two cannot describe different lists.
+        // the two cannot describe different lists. The three glyph columns take the
+        // glyph they hold as their heading, as MO2's own do — their names do not fit
+        // in a column one icon wide and were drawn as "C…" and "Fl…".
         foreach (var (column, label) in Mo2ModRow.Headers)
-            Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
+            Mo2ModRow.Add(columns, column switch {
+                Mo2ModRow.Conflicts => Mo2TableRow.GlyphHeading("mdi-swap-vertical-bold", label),
+                Mo2ModRow.Flags => Mo2TableRow.GlyphHeading("mdi-flag", label),
+                Mo2ModRow.Content => Mo2TableRow.GlyphHeading("mdi-package-variant-closed", label),
+                _ => Mo2TableRow.Heading(label),
+            }, column);
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
         var help = new StandardButton { Name = "ModsHelpButton", ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
             LeftIcon = IconValues.HelpOutline, Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None, Size = StandardButton.Sizes.Medium,
@@ -284,29 +350,167 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         Mo2TableRow.InstallRowStyles(table);
         var rail = Mo2ListRail.Create("ModsRailScrollBar", out var scroll);
         Grid.SetColumn(rail, 1); Grid.SetRow(rail, 1); list.Children.Add(table); list.Children.Add(rail);
-        // MO2's own mod pane furniture: the Filters group with its Clear and Edit
-        // actions, and the filter field under the list.
-        var qtBar = new StackPanel { Name = "ModsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 6, Margin = new Thickness(0,0,0,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-        qtBar.Children.Add(new TextBlock { Text = Mo2QtWidgets.FiltersGroup, Opacity = .6,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0,0,6,0) });
+        // MO2's own mod pane (src/mainwindow.ui): a row of actions above the list, the
+        // Filters group beside it, and the row of filters under it.
+        Mo2ModsAdapter Model() => (Mo2ModsAdapter)ViewModel!.Adapter;
         Action? clearFilters = null;
-        qtBar.Children.Add(Mo2QtWidgets.Button("ModsFiltersClear", Mo2QtWidgets.FiltersClear, Mo2QtWidgets.FiltersClear,
+        Border? categoriesRef = null;
+        TextBox? filterField = null;
+        ToggleButton? categoriesToggle = null;
+
+        // Above the list: the profile box, then the buttons MO2 puts on the right of
+        // that line and its count of active mods.
+        var qtBar = new Grid { Name = "ModsQtBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"),
+            Margin = new Thickness(0,0,0,6) };
+        var profileLabel = Mo2QtWidgets.Caption("ModsProfileLabel", Mo2QtWidgets.ProfileLabel);
+        profileLabel.Margin = new Thickness(0,0,6,0);
+        qtBar.Children.Add(profileLabel);
+        // Filling the box from the profile that is open must not read as the user
+        // picking one, or the frontend reselects the profile it is already on every
+        // time the list is refreshed.
+        var switching = false;
+        ComboBox? profileBoxRef = null;
+        var profileBox = Mo2QtWidgets.Choice("ModsProfileBox", Mo2QtWidgets.ProfileTip, [], 0, async choice => {
+            if (switching || choice < 0 || ViewModel?.LiveProfile is not { } live) return;
+            if (profileBoxRef?.SelectedItem is not string name) return;
+            var entry = ViewModel.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Endpoint);
+            if (entry?.Instance is null || name == live.CollectionName.Value) return;
+            if (entry.Instance.Profiles.FirstOrDefault(x => x.Name == name) is { } wanted)
+                await live.SelectProfile(entry.Registration, wanted);
+        });
+        profileBoxRef = profileBox;
+        profileBox.MinWidth = 120;
+        Grid.SetColumn(profileBox, 1); qtBar.Children.Add(profileBox);
+        var barActions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 2,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        Grid.SetColumn(barActions, 3); qtBar.Children.Add(barActions);
+        // MO2's listOptionsBtn: what to do with the list as a whole, and which of its
+        // columns to draw.
+        var listOptions = Mo2QtWidgets.Icon("ModsListOptionsButton", Mo2QtWidgets.ListOptionsTip, "mdi-cog-outline", () => { });
+        var listOptionsMenu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        listOptions.Flyout = listOptionsMenu;
+        listOptionsMenu.Opening += (_, _) => {
+            listOptionsMenu.Items.Clear();
+            var refresh = new MenuItem { Header = "Refresh" };
+            refresh.Click += async (_, _) => { if (ViewModel?.LiveProfile is { } live) await live.Refresh(); };
+            listOptionsMenu.Items.Add(refresh);
+            foreach (var (label, enable) in new[] { ("Enable all", true), ("Disable all", false) }) {
+                var item = new MenuItem { Header = label, IsEnabled = ViewModel?.LiveProfile?.CanChangeOriginalUi == true };
+                var wanted = enable;
+                item.Click += (_, _) => {
+                    if (ViewModel?.LiveProfile is not { } live) return;
+                    live.Toggle(live.Mods.Where(x => !x.IsSeparator && !x.IsOverwrite && x.CanManage && ((x.State & 2) != 0) != wanted)
+                        .Select(x => NexusMods.Abstractions.Loadouts.LoadoutItemId.From(x.Id)).ToArray());
+                };
+                listOptionsMenu.Items.Add(item);
+            }
+            listOptionsMenu.Items.Add(new Separator());
+            foreach (var (column, label) in Mo2ModRow.OptionalColumns) {
+                var target = column;
+                var item = new MenuItem { Header = label, StaysOpenOnClick = true,
+                    Icon = new CheckBox { IsChecked = !Mo2ModRow.HiddenColumns.Contains(column), IsHitTestVisible = false } };
+                item.Click += (_, _) => {
+                    if (!Mo2ModRow.HiddenColumns.Remove(target)) Mo2ModRow.HiddenColumns.Add(target);
+                    ((CheckBox)item.Icon!).IsChecked = !Mo2ModRow.HiddenColumns.Contains(target);
+                    Mo2ModColumnPreference.Save();
+                    columns.InvalidateMeasure(); columns.InvalidateArrange();
+                };
+                listOptionsMenu.Items.Add(item);
+            }
+        };
+        barActions.Children.Add(listOptions);
+        // MO2's openFolderMenu, over the folders this frontend knows the way to.
+        var openFolder = Mo2QtWidgets.Icon("ModsOpenFolderButton", Mo2QtWidgets.OpenFolderTip, "mdi-folder-open-outline", () => { });
+        var folderMenu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        openFolder.Flyout = folderMenu;
+        folderMenu.Opening += (_, _) => {
+            folderMenu.Items.Clear();
+            var live = ViewModel?.LiveProfile;
+            var entry = live is null ? null : ViewModel!.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Endpoint);
+            foreach (var (label, path) in new[] {
+                ("Open Profile folder", live is null ? null : Mo2InstanceCatalog.LocalPath(live.ProfilePath)),
+                ("Open Mods folder", entry?.Instance is null ? null : Mo2InstanceCatalog.LocalPath(entry.Instance.ModsDirectory)),
+                ("Open Downloads folder", live?.DownloadsDirectory is { } downloads ? Mo2InstanceCatalog.LocalPath(downloads) : null),
+                ("Open Instance folder", entry?.Registration.Directory),
+                ("Open Logs folder", live?.LogsDirectory is { } logs ? Mo2InstanceCatalog.LocalPath(logs) : null),
+            }) {
+                var item = new MenuItem { Header = label, IsEnabled = path is { Length: > 0 } && Directory.Exists(path) };
+                var folder = path;
+                item.Click += (_, _) => { if (folder is { Length: > 0 }) ViewModel?.OpenFolder(folder); };
+                folderMenu.Items.Add(item);
+            }
+        };
+        barActions.Children.Add(openFolder);
+        // MO2's restoreModsButton and saveModsButton: the backups of the mod order it
+        // keeps beside the list, which this frontend already reaches through MO2's own
+        // buttons.
+        var restoreMods = Mo2QtWidgets.Icon("RestoreModsButton", Mo2QtWidgets.RestoreModsTip, "mdi-backup-restore",
+            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("mods", "restore", live.CurrentTarget); });
+        var saveMods = Mo2QtWidgets.Icon("SaveModsButton", Mo2QtWidgets.SaveModsTip, "mdi-content-save-outline",
+            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("mods", "backup", live.CurrentTarget); });
+        barActions.Children.Add(restoreMods); barActions.Children.Add(saveMods);
+        var activeMods = Mo2QtWidgets.Counter("ActiveModsCounter", out var activeModsValue);
+        activeMods.Margin = new Thickness(8,0,0,0);
+        barActions.Children.Add(activeMods);
+
+        // Under the list: MO2's displayCategoriesBtn, what the list is filtered to,
+        // the grouping box and the filter field.
+        var filterBar = new Grid { Name = "ModsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*,Auto,Auto,Auto"),
+            Margin = new Thickness(0,6,0,0) };
+        categoriesToggle = Mo2QtWidgets.Toggle("ModsDisplayCategoriesButton", Mo2QtWidgets.DisplayCategoriesTip,
+            "mdi-filter-variant", true, on => { if (categoriesRef is not null) categoriesRef.IsVisible = on && Bounds.Width >= 420; });
+        filterBar.Children.Add(categoriesToggle);
+        var filterLabel = Mo2QtWidgets.Caption("ModsFilterLabel", Mo2QtWidgets.FilterLabel);
+        filterLabel.Margin = new Thickness(6,0,4,0);
+        Grid.SetColumn(filterLabel, 1); filterBar.Children.Add(filterLabel);
+        var currentCategory = Mo2QtWidgets.Caption("ModsCurrentCategoryLabel", "");
+        currentCategory.Opacity = .85;
+        Grid.SetColumn(currentCategory, 2); filterBar.Children.Add(currentCategory);
+        var clearAll = Mo2QtWidgets.Button("ModsClearFiltersButton", Mo2QtWidgets.ClearAllFilters, Mo2QtWidgets.ClearAllFilters,
+            "mdi-filter-remove-outline", () => clearFilters?.Invoke());
+        clearAll.IsVisible = false;
+        Grid.SetColumn(clearAll, 4); filterBar.Children.Add(clearAll);
+        var groupBox = Mo2QtWidgets.Choice("ModsGroupBox", "Group the mod list.", Mo2QtWidgets.GroupModes, 0,
+            choice => Model().SetGrouping(choice));
+        groupBox.Margin = new Thickness(6,0); groupBox.MinWidth = 96;
+        Grid.SetColumn(groupBox, 5); filterBar.Children.Add(groupBox);
+        var qtFilter = Mo2QtWidgets.Filter("ModsQtFilter", Mo2QtWidgets.ModFilterTip,
+            text => Model().SetColumnFilters(text, "", ""), out filterField);
+        qtFilter.MinWidth = 140;
+        Grid.SetColumn(qtFilter, 6); filterBar.Children.Add(qtFilter);
+
+        // MO2's category filter sits beside the list, not above it, so the pane is a
+        // column of categories and the list rather than the list alone. Its own two
+        // rows of controls — Clear and Edit, then how the ticks are combined and what
+        // to do with separators — sit inside the group, where MO2 puts them.
+        var filterActions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4,
+            Margin = new Thickness(0,4,0,0) };
+        filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersClear", Mo2QtWidgets.FiltersClear, Mo2QtWidgets.FiltersClear,
             "mdi-filter-remove-outline", () => clearFilters?.Invoke()));
         // Edit... shows and hides the category list, which is what MO2's own button
         // amounts to from this side: MO2 opens a dialog for managing the category
         // definitions themselves, which this frontend does not own.
-        Border? categoriesRef = null;
-        qtBar.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditTip,
-            "mdi-filter-cog-outline", () => { if (categoriesRef is not null) categoriesRef.IsVisible = !categoriesRef.IsVisible; }));
-        var qtFilter = Mo2QtWidgets.Filter("ModsQtFilter", Mo2QtWidgets.ModFilterTip,
-            text => ((Mo2ModsAdapter)ViewModel!.Adapter).SetColumnFilters(text, "", ""), out _);
-        qtFilter.Margin = new Thickness(0,8,0,0);
-        // MO2's category filter sits beside the list, not above it, so the pane is a
-        // column of categories and the list rather than the list alone.
-        var categoriesGroup = Mo2QtWidgets.Categories("ModCategories", out var categoryItems, out _);
+        filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditTip,
+            "mdi-filter-cog-outline", () => { if (categoriesToggle is not null) categoriesToggle.IsChecked = false; }));
+        // MO2 gives this row the group's full width and lets the separators box take
+        // what the two radios leave (stretch 1,1,2), which is what keeps it inside the
+        // group rather than running out of its right edge.
+        var filterOptions = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"), Margin = new Thickness(0,4,0,0) };
+        var andRadio = Mo2QtWidgets.Radio("ModsFiltersAnd", Mo2QtWidgets.FiltersAnd, Mo2QtWidgets.FiltersAndTip,
+            "ModCategoryMatch", true, on => { if (on) Model().SetCategoryMatchAll(true); });
+        var orRadio = Mo2QtWidgets.Radio("ModsFiltersOr", Mo2QtWidgets.FiltersOr, Mo2QtWidgets.FiltersOrTip,
+            "ModCategoryMatch", false, on => { if (on) Model().SetCategoryMatchAll(false); });
+        orRadio.Margin = new Thickness(4,0,4,0);
+        Grid.SetColumn(orRadio, 1);
+        filterOptions.Children.Add(andRadio); filterOptions.Children.Add(orRadio);
+        var separatorMode = Mo2QtWidgets.Choice("ModsFiltersSeparators", Mo2QtWidgets.SeparatorsTip, Mo2QtWidgets.SeparatorModes, 0,
+            choice => Model().SetSeparatorMode(choice));
+        separatorMode.MinWidth = 0;
+        separatorMode.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        Grid.SetColumn(separatorMode, 2); filterOptions.Children.Add(separatorMode);
+        var categoriesGroup = Mo2QtWidgets.Categories("ModCategories", out var categoryItems, out _, filterActions, filterOptions);
         categoriesGroup.Width = 190;
-        categoriesGroup.Margin = new Thickness(0,0,8,0);
+        categoriesGroup.Margin = new Thickness(0,0,6,0);
         var chosenCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void ApplyCategories() => ((Mo2ModsAdapter)ViewModel!.Adapter).SetCategoryChoice(chosenCategories);
         // Rebuilt from whatever categories the profile's mods actually carry, because
@@ -326,30 +530,44 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             }
         }
         categoriesRef = categoriesGroup;
-        // Clear empties both halves of MO2's filter: the categories ticked here and
-        // the text typed in the field below.
+        // Clear empties every half of MO2's filter: the categories ticked here, the
+        // text typed in the field below, and what the list is narrowed to.
         clearFilters = () => {
             chosenCategories.Clear();
             foreach (var box in categoryItems.Items.OfType<CheckBox>()) box.IsChecked = false;
-            ((Mo2ModsAdapter)ViewModel!.Adapter).SetColumnFilters("", "", "");
+            if (filterField is not null) filterField.Text = "";
+            Model().SetColumnFilters("", "", "");
             ApplyCategories();
         };
 
         var modsTab = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            Margin = new Thickness(Mo2PanelChrome.Padding, 0, Mo2PanelChrome.Padding, Mo2PanelChrome.Padding) };
         Grid.SetColumnSpan(qtBar, 2); modsTab.Children.Add(qtBar);
         Grid.SetRow(categoriesGroup,1); modsTab.Children.Add(categoriesGroup);
         Grid.SetRow(list,1); Grid.SetColumn(list,1); modsTab.Children.Add(list);
-        Grid.SetRow(qtFilter,2); Grid.SetColumn(qtFilter,1); modsTab.Children.Add(qtFilter);
+        Grid.SetRow(filterBar,2); Grid.SetColumn(filterBar,1); modsTab.Children.Add(filterBar);
         modsTab.LayoutUpdated += (_, _) => {
             RefreshCategories();
             // MO2 hides the category filter when there is no room for it beside the
-            // list. Set at 620 this never showed in a half-width panel, which is the
-            // default layout — so the filter was only ever there on a maximised window.
-            categoriesGroup.IsVisible = Bounds.Width >= 480;
+            // list, and its own button decides whether it is wanted at all. Set at 620
+            // this never showed in a half-width panel, which is the default layout — so
+            // the filter was only ever there on a maximised window.
+            categoriesGroup.IsVisible = categoriesToggle.IsChecked == true && Bounds.Width >= 420;
+            // MO2 puts this group behind a splitter, so it grows with the pane. A
+            // fixed 176 left its separators box drawn as "Fi" on every pane width.
+            var wanted = Math.Clamp(Math.Round(Bounds.Width * .3), 190, 260);
+            if (Math.Abs(categoriesGroup.Width - wanted) > .5) categoriesGroup.Width = wanted;
             // Tell the columns how much of the pane the filter is using, so they fit
             // into what is left rather than into the whole panel.
-            Mo2ModRow.SideWidth = categoriesGroup.IsVisible ? categoriesGroup.Width + 8 : 0;
+            Mo2ModRow.SideWidth = categoriesGroup.IsVisible ? categoriesGroup.Width + 6 : 0;
+            // What the list is narrowed to, which MO2 spells out beside the filter
+            // field and offers to clear only while there is something to clear.
+            var narrowed = chosenCategories.Count > 0 ? string.Join(", ", chosenCategories.OrderBy(x => x)) : "";
+            if ((filterField?.Text ?? "").Length > 0)
+                narrowed = narrowed.Length > 0 ? narrowed + " · \"" + filterField!.Text + "\"" : "\"" + filterField!.Text + "\"";
+            if (currentCategory.Text != narrowed) currentCategory.Text = narrowed;
+            clearAll.IsVisible = narrowed.Length > 0;
         };
         listContainer.Content = modsTab;
         Mo2ListRail.Connect(scroll, table);
@@ -387,6 +605,30 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 // is in the priority help beside the column headings.
                 header.Description = "Installed mods in priority order. Drag to reorder.";
                 separator.IsEnabled = install.IsEnabled = model.LiveProfile!.CanChangeOriginalUi;
+                // MO2's own counter beside the list: how many mods the profile has
+                // switched on.
+                var live = model.LiveProfile!;
+                // The same bits the row's own enable box is drawn from: MO2 counts a
+                // mod it keeps switched on as active too, and counting only the bit a
+                // profile sets reported one active mod out of twelve.
+                activeModsValue.Text = live.Mods.Count(x => !x.IsSeparator && !x.IsOverwrite && (x.State & 6) != 0).ToString();
+                restoreMods.IsEnabled = saveMods.IsEnabled = live.CanChangeOriginalUi;
+                // And its profile box, over the profiles of the instance this profile
+                // belongs to. Refilled only when the instance's profiles change, so a
+                // refresh does not close a list the user has open.
+                var entry = model.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Endpoint);
+                var names = entry?.Instance?.Profiles.Select(x => x.Name).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
+                switching = true;
+                try {
+                    if (!profileBox.Items.OfType<string>().SequenceEqual(names)) {
+                        profileBox.Items.Clear();
+                        foreach (var name in names) profileBox.Items.Add(name);
+                    }
+                    var current = live.CollectionName.Value;
+                    if ((string?)profileBox.SelectedItem != current)
+                        profileBox.SelectedIndex = Array.IndexOf(names, current);
+                    profileBox.IsEnabled = names.Length > 1 && live.CanChangeOriginalUi;
+                } finally { switching = false; }
             }
             ViewModel!.LiveProfile!.Changed += RefreshMods;
             System.Reactive.Disposables.Disposable.Create(() => ViewModel!.LiveProfile!.Changed -= RefreshMods).AddTo(disposables);

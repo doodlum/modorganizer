@@ -49,7 +49,10 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
     private readonly TextBox _search = Mo2FolderPage.Search("DataSearch", "Search this folder");
     private readonly TextBlock _path = new() { Text = "Data", TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
     private readonly TextBlock _status = Mo2FolderPage.Status("DataStatus");
-    private readonly CheckBox _conflicts = new() { Content = "Conflicts only" };
+    // MO2's own "Conflicts only" box, which this page used to draw twice: once
+    // beside the path and once in the row of MO2's filters. The one MO2 has is the
+    // one in that row, and this is it.
+    private readonly CheckBox _conflicts;
     private readonly Button _up;
     private readonly Button _open;
     private readonly Button _visibility;
@@ -64,7 +67,7 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
     private readonly Func<Mo2ProfileTarget, string, Task<Mo2DataEntry[]>>? _read;
     private bool _active;
     // What MO2's own dataTab checkboxes and filter field narrow the tree by.
-    private bool _onlyConflicts, _fromArchives = true, _hiddenFiles;
+    private bool _fromArchives = true, _hiddenFiles;
     private string _qtFilter = "";
     private long _activation;
     public Mo2DataView() : this(null) { }
@@ -86,14 +89,14 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         var refresh = Mo2ModRow.IconButton("mdi-refresh", "Refresh Data", async () => { _actionError = null; await Refresh(); });
         toolbar.Children.Add(_up); Grid.SetColumn(_search,1); toolbar.Children.Add(_search); Grid.SetColumn(_open,2); toolbar.Children.Add(_open); Grid.SetColumn(_reveal,3); toolbar.Children.Add(_reveal); Grid.SetColumn(_visibility,4); toolbar.Children.Add(_visibility); Grid.SetColumn(refresh,5); toolbar.Children.Add(refresh);
         Grid.SetRow(toolbar,1); root.Children.Add(toolbar);
-        var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") }; location.Children.Add(_path); Grid.SetColumn(_conflicts,1); location.Children.Add(_conflicts);
+        var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") }; location.Children.Add(_path);
         // MO2's own dataTab furniture: a Refresh, the three checkboxes that narrow what
         // the tree lists, and its filter field.
         var qtBar = new StackPanel { Name = "DataQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0,0,0,8) };
         qtBar.Children.Add(Mo2QtWidgets.Button("DataRefreshButton", "Refresh", Mo2QtWidgets.DataRefreshTip, "mdi-refresh",
             async () => { _actionError = null; await Refresh(); }));
-        qtBar.Children.Add(Mo2QtWidgets.Check("DataConflictsOnly", Mo2QtWidgets.ConflictsOnly, Mo2QtWidgets.ConflictsOnlyTip,
-            _onlyConflicts, value => { _onlyConflicts = value; Render(); }));
+        _conflicts = Mo2QtWidgets.Check("DataConflictsOnly", Mo2QtWidgets.ConflictsOnly, Mo2QtWidgets.ConflictsOnlyTip, false, _ => { });
+        qtBar.Children.Add(_conflicts);
         qtBar.Children.Add(Mo2QtWidgets.Check("DataFromArchives", Mo2QtWidgets.FromArchives, Mo2QtWidgets.FromArchivesTip,
             _fromArchives, value => { _fromArchives = value; Render(); }));
         qtBar.Children.Add(Mo2QtWidgets.Check("DataHiddenFiles", Mo2QtWidgets.HiddenFiles, Mo2QtWidgets.HiddenFilesTip,
@@ -205,7 +208,6 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         var rows = _entries.Where(x => (x.Name + " " + x.Source).Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase)
             && (_qtFilter.Length == 0 || x.Name.Contains(_qtFilter, StringComparison.OrdinalIgnoreCase))
             && (_conflicts.IsChecked != true || x.Directory || x.Origins.Distinct().Count() > 1)
-            && (!_onlyConflicts || x.Directory || x.Origins.Distinct().Count() > 1)
             && (_fromArchives || x.Directory || x.Archive.Length == 0)
             && (_hiddenFiles || x.Directory || !x.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase))).ToArray();
         var source = new FlatTreeDataGridSource<Mo2DataEntry>(rows);
@@ -222,7 +224,10 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
                 if (row is not null) ToolTip.SetTip(label, row.Details);
                 return label;
             }), width: width);
-        source.Columns.Add(Column("Mod", x => x.Source, new GridLength(1, GridUnitType.Star)));
+        // The mod a file comes from is a fixed column, as MO2 draws it: sharing the
+        // width evenly with the name left both halved, and every file in a folder of
+        // long names was drawn as "Carava…".
+        source.Columns.Add(Column("Mod", x => x.Source, new GridLength(150)));
         source.Columns.Add(Column("Type", x => x.Type, new GridLength(70)));
         source.Columns.Add(Column("Size", x => x.SizeText, new GridLength(90)));
         source.Columns.Add(Column("Date modified", x => x.ModifiedText, new GridLength(140)));

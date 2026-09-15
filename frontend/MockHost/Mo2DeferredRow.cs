@@ -11,7 +11,9 @@ internal sealed class Mo2DeferredRow : Decorator
     private readonly Func<Control> _create;
     private long _version;
 
-    internal Mo2DeferredRow(Func<Control> create) { _create = create; Height = 40; }
+    // One MO2 list line tall while the row is still a placeholder, so the table
+    // scrolls and measures at the height the built row will take.
+    internal Mo2DeferredRow(Func<Control> create) { _create = create; Height = Mo2Density.Row; }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {

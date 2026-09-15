@@ -23,13 +23,23 @@ internal static class Mo2QtWidgetCheck
     // three filter checkboxes, downloadTab's two buttons, bsaTab's note, and the
     // mod pane's own filter group.
     private static readonly (string Page, string[] Widgets)[] Wanted = [
-        ("my-mods", ["ModsQtBar", "ModsFiltersClear", "ModsFiltersEdit", "ModsQtFilter", "ModCategoriesGroup"]),
+        // The mod pane, top to bottom: the line above the list (profile box, list
+        // options, open folders, the two backups and the active count), the Filters
+        // group beside it with its own two rows of controls, and the line under the
+        // list (the button that shows the filter list, what the list is narrowed to,
+        // the grouping box and the filter field).
+        ("my-mods", ["ModsQtBar", "ModsProfileLabel", "ModsProfileBox", "ModsListOptionsButton",
+                     "ModsOpenFolderButton", "RestoreModsButton", "SaveModsButton", "ActiveModsCounter",
+                     "ModCategoriesGroup", "ModsFiltersClear", "ModsFiltersEdit", "ModsFiltersAnd",
+                     "ModsFiltersOr", "ModsFiltersSeparators",
+                     "ModsFilterBar", "ModsDisplayCategoriesButton", "ModsFilterLabel", "ModsGroupBox", "ModsQtFilter"]),
         ("plugins", ["PluginsQtBar", "SortPluginsButton", "RestorePluginsButton", "SavePluginsButton",
                      "ActivePluginsCounter", "PluginsQtFilter"]),
         ("data", ["DataQtBar", "DataRefreshButton", "DataConflictsOnly", "DataFromArchives",
                   "DataHiddenFiles", "DataQtFilter"]),
         ("archives", ["ManagedArchiveLabel"]),
-        ("downloads", ["DownloadsQtBar", "DownloadsRefreshButton", "DownloadsQueryButton"]),
+        ("downloads", ["DownloadsQtBar", "DownloadsRefreshButton", "DownloadsQueryButton",
+                       "DownloadsFilterBar", "DownloadsHiddenFiles", "DownloadsQtFilter"]),
     ];
 
     internal static async Task Run(Mo2LiveWorkspace live, Window window)

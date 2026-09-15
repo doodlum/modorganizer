@@ -135,21 +135,24 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
                 .Where(x => (x.Name + " " + x.Description).Contains(_search.Text ?? "", StringComparison.OrdinalIgnoreCase));
             if (section == "Pinned tools") entries = entries.OrderBy(x => _pins.IndexOf(PinKey(x.Key)));
             var items = entries.ToArray(); if (items.Length == 0) continue;
-            _rows.Children.Add(new TextBlock { Text = section, Opacity = .65, Margin = new Thickness(0,_rows.Children.Count == 0 ? 0 : 10,0,2) });
+            _rows.Children.Add(new TextBlock { Text = section, Opacity = .65, FontSize = Mo2Density.FontSize, Margin = new Thickness(0,_rows.Children.Count == 0 ? 0 : 6,0,2) });
             foreach (var entry in items) {
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*,Auto,Auto,Auto"), MinHeight = _compact ? 40 : 52, Margin = new Thickness(8,4) };
-                row.Children.Add(Mo2ToolIcons.Create(entry.Icon, _compact ? 28 : 32));
-                var label = new TextBlock { Text = entry.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8,0) };
+                // One MO2 list line and a little: this page lists the executables
+                // MO2 keeps in a drop-down, and drew each of them as a 52px card.
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*,Auto,Auto,Auto"),
+                    MinHeight = Mo2Density.Row + 4, Margin = new Thickness(6,1) };
+                row.Children.Add(Mo2ToolIcons.Create(entry.Icon, _compact ? 18 : 20));
+                var label = new TextBlock { Text = entry.Name, FontSize = Mo2Density.FontSize, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(6,0) };
                 ToolTip.SetTip(label, entry.Name + "\n" + entry.Description); Grid.SetColumn(label,1); row.Children.Add(label);
                 if (section == "Pinned tools") {
-                    var up = new Button { Content = "↑", Margin = new Thickness(2), IsEnabled = _pins.IndexOf(PinKey(entry.Key)) > 0 };
+                    var up = new Button { Content = "↑", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1), IsEnabled = _pins.IndexOf(PinKey(entry.Key)) > 0 };
                     ToolTip.SetTip(up, "Move pinned tool earlier"); up.Click += (_,_) => { var i = _pins.IndexOf(PinKey(entry.Key)); if (i > 0) { (_pins[i-1],_pins[i]) = (_pins[i],_pins[i-1]); SavePins(); Render(); } };
                     Grid.SetColumn(up,2); row.Children.Add(up);
                 }
-                var pin = new Button { Content = _pins.Contains(PinKey(entry.Key)) ? "Unpin" : "Pin", Margin = new Thickness(2) };
+                var pin = new Button { Content = _pins.Contains(PinKey(entry.Key)) ? "Unpin" : "Pin", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1) };
                 pin.Click += (_,_) => { if (!_pins.Remove(PinKey(entry.Key))) _pins.Add(PinKey(entry.Key)); SavePins(); Render(); };
                 Grid.SetColumn(pin,3); row.Children.Add(pin);
-                var launch = new Button { Content = "▶", Name = "LaunchToolButton", Tag = entry.Enabled, IsEnabled = entry.Enabled && profile.CanChangeOriginalUi, Margin = new Thickness(8,2,2,2) };
+                var launch = new Button { Content = "▶", Name = "LaunchToolButton", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Tag = entry.Enabled, IsEnabled = entry.Enabled && profile.CanChangeOriginalUi, Margin = new Thickness(6,1,1,1) };
                 ToolTip.SetTip(launch, "Open " + entry.Name); launch.Click += async (_,_) => await entry.Run();
                 Grid.SetColumn(launch,4); row.Children.Add(launch);
                 _rows.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse("#292C35")), CornerRadius = new CornerRadius(4), Child = row });

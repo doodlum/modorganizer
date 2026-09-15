@@ -242,6 +242,9 @@ public partial class MockApp : Application
     {
         if (Environment.GetEnvironmentVariable("MO2_UI_TEMPLATE_TIMING") == "1") Mo2TemplateTiming.Install();
         AvaloniaXamlLoader.Load(this);
+        // After the theme, so the sizes a Qt list is read at replace the card-sized
+        // ones the borrowed theme draws.
+        Mo2Density.Install(Styles);
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -523,6 +526,17 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_PADDING") == "1") {
                             try { await Mo2RowPaddingCheck.Live(live, liveWindow); }
                             catch (Exception error) { Console.WriteLine("FAIL row padding (live): " + error.Message); }
+                        }
+                        // Awaited here, like the page audit: it walks every page and
+                        // measures the rows each one draws, which takes longer than the
+                        // screenshot path waits before shutting the app down.
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEPARATOR_COLOR") == "1") {
+                            try { await Mo2SeparatorColorCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL separator colour: " + error.Message); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DENSITY") == "1") {
+                            try { await Mo2DensityCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL MO2 density: " + error.Message); }
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_AUDIT") == "1") {
                             try { await Mo2PageAuditCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_DIRECTORY")); }

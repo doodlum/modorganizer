@@ -26,7 +26,10 @@ internal sealed record Mo2ArchiveInstallResult(string ModName, string? ModDirect
 // The columns are MO2's own, so this frontend can show the list MO2 shows rather
 // than a subset chosen here. An MO2 without one of them sends "" for it.
 internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false, int NexusId = 0, bool IsSeparator = false, string Version = "", string Category = "", string NewestVersion = "",
-    string Content = "", string Author = "", string Uploader = "", string SourceGame = "", string InstallTime = "", string Notes = "")
+    string Content = "", string Author = "", string Uploader = "", string SourceGame = "", string InstallTime = "", string Notes = "",
+    // The colour MO2 draws the row in — a separator's own colour, and the colour of
+    // an ordinary mod's Notes cell. Empty when the user has not given the mod one.
+    string Color = "", string NotesColor = "")
 {
     public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0);
     // MO2 reports the newest version it knows about; an update is only claimed when
@@ -48,6 +51,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public Mo2LiveMod? FindMod(EntityId id) => _mods.Lookup(id).ValueOrDefault();
     public ScenarioPluginOrder Order { get; } = new(false);
     public IReadOnlyList<Mo2Download> Downloads { get; private set; } = [];
+    // The downloads MO2 has been told to hide, which its own Hidden files box shows.
+    public IReadOnlyList<Mo2Download> HiddenDownloads { get; private set; } = [];
     public string Endpoint { get; private set; }
     public bool SelectingProfile { get; private set; }
     public bool? OriginalUiVisible { get; private set; }
@@ -113,14 +118,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         DownloadsDirectory = snapshot.GetProperty("instance").TryGetProperty("downloadsPath", out var downloadsPath) && downloadsPath.GetString() is { } downloadFolder ? Mo2InstanceCatalog.LocalPath(downloadFolder) : null;
         OriginalUiVisible = snapshot.GetProperty("instance").TryGetProperty("uiVisible", out var visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null;
         NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
-        Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
-            .Where(x => !x.GetProperty("hidden").GetBoolean())
-            .Select(x => new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean(), x.TryGetProperty("failed", out var failed) && failed.ValueKind == JsonValueKind.True,
+        // MO2 keeps a download it has been told to hide and offers a box beside the
+        // list to show them again, so the hidden ones are read and set aside rather
+        // than dropped on the way in.
+        var allDownloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
+            .Select(x => (Hidden: x.GetProperty("hidden").GetBoolean(), Download: new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean(), x.TryGetProperty("failed", out var failed) && failed.ValueKind == JsonValueKind.True,
                 x.TryGetProperty("filetime", out var filetime) ? filetime.GetString() ?? "" : "",
                 x.TryGetProperty("modName", out var downloadMod) ? downloadMod.GetString() ?? "" : "",
                 x.TryGetProperty("version", out var downloadVersion) ? downloadVersion.GetString() ?? "" : "",
                 x.TryGetProperty("modId", out var downloadModId) ? downloadModId.GetString() ?? "" : "",
-                x.TryGetProperty("sourceGame", out var downloadGame) ? downloadGame.GetString() ?? "" : "")).ToArray() : [];
+                x.TryGetProperty("sourceGame", out var downloadGame) ? downloadGame.GetString() ?? "" : ""))).ToArray() : [];
+        Downloads = allDownloads.Where(x => !x.Hidden).Select(x => x.Download).ToArray();
+        HiddenDownloads = allDownloads.Where(x => x.Hidden).Select(x => x.Download).ToArray();
         var profile = snapshot.GetProperty("profile");
         if (ProfilePath != profile.GetProperty("path").GetString()) _selectedModNames = [];
         ProfilePath = profile.GetProperty("path").GetString()!;
@@ -143,7 +152,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 mod.TryGetProperty("category", out var category) ? category.GetString() ?? "" : "",
                 mod.TryGetProperty("newestVersion", out var newest) ? newest.GetString() ?? "" : "",
                 Text(mod, "content"), Text(mod, "author"), Text(mod, "uploader"),
-                Text(mod, "sourceGame"), Text(mod, "installTime"), Text(mod, "notes"));
+                Text(mod, "sourceGame"), Text(mod, "installTime"), Text(mod, "notes"),
+                Text(mod, "color"), Text(mod, "notesColor"));
         }).ToArray();
         _mods.Edit(cache => {
             var ids = mods.Select(x => x.Id).ToHashSet();
@@ -332,6 +342,21 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             if (!IsConnected || target != CurrentTarget) return;
             Status = "Opening MO2 " + (list == "mods" ? "mod-list " : "plugin-order ") + operation + "…"; Changed?.Invoke();
             await Client.SendAsync("orderBackup", new() { ["profilePath"] = target.ProfilePath, ["list"] = list, ["operation"] = operation }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+    // MO2's own "Select Color..." and "Reset Color", which colour the row a mod is
+    // drawn in — the whole row for a separator, the Notes cell for a mod. Passing no
+    // colour takes MO2's reset.
+    public async Task SetModColor(string name, string? color, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = (color is null ? "Resetting the colour of " : "Colouring ") + name + " in MO2"; Changed?.Invoke();
+            await Client.SendAsync("setModColor", new() { ["profilePath"] = target.ProfilePath, ["name"] = name, ["color"] = color });
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }

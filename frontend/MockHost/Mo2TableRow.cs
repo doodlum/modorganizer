@@ -18,8 +18,9 @@ internal static class Mo2TableRow
     internal const int GripColumn = 16;
     internal const int GripWidth = 20;
     // The status and actions columns are the same on both tables; only the columns
-    // between them differ, because the two pages describe different things.
-    internal const int StatusColumn = 46;
+    // between them differ, because the two pages describe different things. The
+    // status column is the enable box and the gap MO2 leaves after it.
+    internal const int StatusColumn = 24;
     internal const int ActionsColumn = 60;
 
     // The rail of scroll and conflict indicators beside the rows. Mods pinned this at
@@ -30,20 +31,20 @@ internal static class Mo2TableRow
     // The band the column headings sit in. Pinned, because each page puts something
     // else of its own in that band — Mods its priority help, Plugins its conflict
     // help — and whichever page's happened to be taller set where its headings sat.
-    internal const int HeadingBand = 24;
+    internal const double HeadingBand = Mo2Density.Heading;
 
     // One inset for everything that sits in a table cell, headings included. Mods
     // used 3px on its title and 4px on version, category and the update pill while
     // Plugins used 3px throughout, so the two tables did not line up with each other
     // and Mods did not line up with its own column headings.
-    internal static readonly Thickness CellMargin = new(3, 0);
+    internal static readonly Thickness CellMargin = Mo2Density.Cell;
 
     // A cell that fills its column: the shared inset, centred, and trimmed rather
     // than wrapped. Both rows build their text cells through this so neither can
     // drift from the other.
     internal static TextBlock Cell(string text, double opacity = 1)
     {
-        return new TextBlock { Text = text, Opacity = opacity, Margin = CellMargin,
+        return new TextBlock { Text = text, Opacity = opacity, Margin = CellMargin, FontSize = Mo2Density.FontSize,
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     }
 
@@ -54,8 +55,19 @@ internal static class Mo2TableRow
         // Centred like the cells below it. Left to stretch, a heading took the height
         // of whatever else shared its row — the help button on Mods, nothing on
         // Plugins — and the two tables' headings sat at different heights.
-        return new TextBlock { Text = text, Margin = CellMargin, FontWeight = FontWeight.SemiBold, FontSize = 12,
+        return new TextBlock { Text = text, Margin = CellMargin, FontWeight = FontWeight.SemiBold, FontSize = Mo2Density.FontSize,
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    }
+
+    // The heading of one of MO2's glyph columns, which is the glyph itself: the column
+    // is one icon wide, and a word in it is drawn as two letters and an ellipsis.
+    internal static Control GlyphHeading(string icon, string name)
+    {
+        var glyph = new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = Mo2Density.Glyph, Opacity = .75,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(glyph, name);
+        Avalonia.Automation.AutomationProperties.SetName(glyph, name);
+        return glyph;
     }
 
     internal static void Add(Grid grid, Control control, int column)
@@ -66,16 +78,16 @@ internal static class Mo2TableRow
 
     // One size for every action a row or a panel header draws, so the two never
     // drift apart. Panel chrome sizes its non-button controls to match.
-    internal const double ActionSize = 28;
+    internal const double ActionSize = 24;
 
     // The glyph inside an action, whatever draws the action. A button built by hand
     // with a UnifiedIcon and no size gets the icon's own default of 24, which is how
     // the same set of dots came out two different sizes on the two lists' toolbars.
-    internal const double GlyphSize = 16;
+    internal const double GlyphSize = Mo2Density.Glyph;
 
     internal static Button IconButton(string icon, string tip, Action click)
     {
-        var button = new Button { Width = ActionSize, Height = ActionSize, Padding = new Thickness(4), Background = Brushes.Transparent,
+        var button = new Button { Width = ActionSize, Height = ActionSize, Padding = new Thickness(2), Background = Brushes.Transparent,
             Content = new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = GlyphSize } };
         ToolTip.SetTip(button, tip);
         Avalonia.Automation.AutomationProperties.SetName(button, tip);
@@ -120,7 +132,7 @@ internal static class Mo2TableRow
             Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x)) {
             Setters = {
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, Brushes.Transparent),
-                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(Mo2Density.Corner)),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderThicknessProperty, new Thickness(0)),
             }
         });
@@ -136,7 +148,7 @@ internal static class Mo2TableRow
             Setters = {
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
                     Application.Current!.FindResource("SurfaceTranslucentLowBrush")),
-                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(Mo2Density.Corner)),
             }
         });
 
@@ -147,7 +159,7 @@ internal static class Mo2TableRow
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty,
                     Application.Current!.FindResource("StrokeTranslucentModerateBrush")),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderThicknessProperty, new Thickness(2)),
-                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(Mo2Density.Corner)),
             }
         });
 

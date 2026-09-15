@@ -181,6 +181,9 @@ class Bridge:
         if action == 'renameSeparator':
             if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
             return self.mod_actions.rename_separator(request.get('name'), request.get('collectionName'))
+        if action == 'setModColor':
+            if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.set_mod_color(request.get('name'), request.get('color'))
         if action == 'removeSeparator':
             if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
             return self.mod_actions.remove_separator(request.get('name'))

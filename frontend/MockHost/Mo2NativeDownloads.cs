@@ -35,10 +35,25 @@ internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
         ? DateTimeOffset.FromUnixTimeSeconds(value).LocalDateTime.ToString("yyyy-MM-dd HH:mm") : "";
     public Mo2Download? Find(DownloadId id) => _values.GetValueOrDefault(id);
     private Mo2ProfileTarget? _target;
+    // MO2's two filters under its download list: the text typed in downloadFilterEdit
+    // and whether showHiddenBox is ticked. Held here rather than in the view because
+    // this is what builds the rows the list is made of.
+    private string _filter = "";
+    private bool _hidden;
+    private Mo2LiveProfile? _last;
+    public void SetFilter(string text, bool hidden)
+    {
+        if (_filter == text && _hidden == hidden) return;
+        _filter = text; _hidden = hidden;
+        if (_last is { } profile) Refresh(profile);
+    }
     public void Refresh(Mo2LiveProfile profile)
     {
+        _last = profile;
         if (_target != profile.CurrentTarget) { _rows.Clear(); _values.Clear(); _ids.Clear(); _target = profile.CurrentTarget; }
-        var visible = profile.IsConnected ? profile.Downloads : [];
+        Mo2Download[] visible = !profile.IsConnected ? []
+            : (_hidden ? profile.Downloads.Concat(profile.HiddenDownloads) : profile.Downloads)
+                .Where(x => _filter.Length == 0 || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)).ToArray();
         var keep = new HashSet<DownloadId>();
         foreach (var file in visible) {
             if (!_ids.TryGetValue(file.Path, out var id)) _ids[file.Path] = id = DownloadId.From(Guid.NewGuid());

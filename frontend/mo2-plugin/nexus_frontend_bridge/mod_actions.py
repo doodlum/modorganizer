@@ -28,6 +28,24 @@ def plain_text(value):
     return document.toPlainText()
 
 
+def background_color(model, row, column):
+    """The colour the user gave a mod, as MO2 reports it.
+
+    ModList::data returns it as the row's background: the whole row for a
+    separator, and the Notes cell for an ordinary mod. Read from the model rather
+    than from ModInfo::color so an MO2 that decides a row's colour differently is
+    still read the way it draws.
+    """
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QBrush, QColor
+    value = model.index(row, column).data(Qt.ItemDataRole.BackgroundRole)
+    if isinstance(value, QBrush):
+        value = value.color()
+    if not isinstance(value, QColor) or not value.isValid():
+        return ''
+    return value.name()
+
+
 def model_columns(model):
     """Map a list model's header text to its column index.
 
@@ -344,6 +362,7 @@ class ModActions:
         def cell(row, header, role=Qt.ItemDataRole.DisplayRole):
             column = columns.get(header)
             return '' if column is None else str(model.index(row, column).data(role) or '')
+        notes_column = columns.get('Notes')
         result = []
         rows = {name: index for index, name in enumerate(names)}
         for name in ordered:
@@ -374,6 +393,8 @@ class ModActions:
                 'sourceGame': cell(row, 'Source Game'),
                 'installTime': cell(row, 'Installation'),
                 'notes': plain(cell(row, 'Notes', Qt.ItemDataRole.ToolTipRole)) or cell(row, 'Notes'),
+                'color': background_color(model, row, 0),
+                'notesColor': '' if notes_column is None else background_color(model, row, notes_column),
             })
         return result
 
@@ -768,6 +789,93 @@ class ModActions:
         if not accepted or new_name not in mods.allMods():
             raise ValueError('MO2 did not rename the collection')
         return {'renamed': True, 'oldName': name, 'name': new_name}
+
+    def set_mod_color(self, name, color):
+        """Give a mod or separator the colour MO2 draws its row in.
+
+        Through MO2's own "Select Color..." action rather than by writing the
+        colour into meta.ini: that action is what remembers the last colour
+        chosen, writes the file the way MO2 reads it back, and refreshes the
+        list. The colour dialog it opens is answered here, off screen, the same
+        way the separator creation above answers MO2's name prompt.
+
+        A colour of None takes MO2's "Reset Color", which is the action its own
+        menu offers on a mod that has one.
+        """
+        from PyQt6.QtCore import QAbstractProxyModel, QCoreApplication, QEvent, QObject, QItemSelectionModel, QPoint, QTimer, Qt
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtWidgets import QApplication, QColorDialog, QMenu, QTreeView
+        mods = self.organizer.modList()
+        names = list(mods.allMods())
+        if not isinstance(name, str) or name not in names:
+            raise ValueError('Mod no longer exists')
+        chosen = None
+        if color is not None:
+            if not isinstance(color, str) or not QColor(color).isValid():
+                raise ValueError('Choose a valid colour')
+            chosen = QColor(color)
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        view = self.window.findChild(QTreeView, 'modList')
+        if view is None or not view.isEnabled(): raise ValueError('MO2 mod list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'ModList':
+            raise ValueError('Unsupported MO2 mod list model')
+        row = names.index(name)
+        index = model.index(row, 0)
+        if not index.isValid() or index.data(int(Qt.ItemDataRole.UserRole) + 1) != row:
+            raise ValueError('MO2 mod row changed; refresh before colouring')
+        # The menu acts on the view's selection, so the row is selected through the
+        # view's own proxy chain rather than on the source model.
+        mapped = index
+        proxy = view.model()
+        chain = []
+        while isinstance(proxy, QAbstractProxyModel):
+            chain.append(proxy); proxy = proxy.sourceModel()
+        for step in reversed(chain):
+            mapped = step.mapFromSource(mapped)
+            if not mapped.isValid(): raise ValueError('MO2 is not showing this mod; clear its filters first')
+        view.selectionModel().select(mapped, QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
+        view.selectionModel().setCurrentIndex(mapped, QItemSelectionModel.SelectionFlag.NoUpdate)
+        wanted = QCoreApplication.translate('ModListContextMenu', 'Select Color...' if chosen is not None else 'Reset Color').replace('&', '')
+        invoked, errors = [], []
+
+        class Capture(QObject):
+            armed = True
+            answered = False
+            def eventFilter(inner, watched, event):
+                if chosen is not None and not inner.answered and isinstance(watched, QColorDialog) and event.type() == QEvent.Type.Polish:
+                    inner.answered = True
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def answer():
+                        watched.setCurrentColor(chosen)
+                        watched.accept()
+                    QTimer.singleShot(0, answer)
+                if inner.armed and isinstance(watched, QMenu) and event.type() == QEvent.Type.Polish:
+                    inner.armed = False
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def run():
+                        actions = [a for a in watched.actions() if a.text().replace('&', '') == wanted and a.isEnabled()]
+                        watched.close()
+                        if len(actions) != 1:
+                            errors.append('MO2 does not offer that colour action for this mod')
+                            return
+                        invoked.append(True)
+                        actions[0].trigger()
+                    QTimer.singleShot(0, run)
+                return False
+
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        visible = self.window.isVisible()
+        try:
+            rect = view.visualRect(mapped)
+            view.customContextMenuRequested.emit(rect.center() if rect.isValid() else QPoint(0, 0))
+        finally:
+            app.removeEventFilter(capture)
+            if not visible: self.window.hide()
+        if errors: raise ValueError(errors[0])
+        if not invoked: raise ValueError('MO2 did not open its mod menu')
+        return {'name': name, 'color': background_color(model, row, 0)}
 
     def remove_separator(self, name):
         mods = self.organizer.modList()

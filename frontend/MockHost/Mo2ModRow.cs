@@ -71,10 +71,10 @@ internal static class Mo2ModRow
     internal static Button IconButton(string icon, string tip, Action click) => Mo2TableRow.IconButton(icon, tip, click);
     internal static ToggleButton Activation(string name, string tag, bool active, bool enabled, Func<Task<bool>> change, Func<bool>? canChange = null)
     {
-        var toggle = new ToggleButton { Name = name, Tag = tag, Width = 30, Height = 28, MinWidth = 0, MinHeight = 0,
+        var toggle = new ToggleButton { Name = name, Tag = tag, Width = Mo2Density.Check, Height = Mo2Density.Check, MinWidth = 0, MinHeight = 0,
             Padding = new Thickness(0), IsChecked = active, IsEnabled = enabled, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
         toggle.Template = new FuncControlTemplate<ToggleButton>((control, _) => {
-            var check = new UnifiedIcon { Value = new ProjektankerIcon("mdi-check"), Size = 18, Foreground = Brush.Parse("#FB923C"), Opacity = control.IsChecked == true ? 1 : 0 };
+            var check = new UnifiedIcon { Value = new ProjektankerIcon("mdi-check"), Size = Mo2Density.Check - 2, Foreground = Brush.Parse("#FB923C"), Opacity = control.IsChecked == true ? 1 : 0 };
             void Refresh() => check.Opacity = control.IsChecked == true ? 1 : 0;
             void Changed(object? sender, AvaloniaPropertyChangedEventArgs e) { if (e.Property == ToggleButton.IsCheckedProperty) Refresh(); }
             check.AttachedToVisualTree += (_, _) => { control.PropertyChanged += Changed; Refresh(); };
@@ -101,7 +101,11 @@ internal static class Mo2ModRow
             Mo2EntryMenu.Action((mod.State & 2) != 0 ? "Disable" : "Enable", () => Run(() => profile.ToggleMod(mod.Id)), mod.CanManage && !mod.IsSeparator),
             Mo2EntryMenu.Action("Move earlier", () => Run(() => adapter.Move(mod.Id, -1)), mod.CanManage),
             Mo2EntryMenu.Action("Move later", () => Run(() => adapter.Move(mod.Id, 1)), mod.CanManage),
-            Mo2EntryMenu.Action("Remove…", () => Run(() => { profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]); return Task.CompletedTask; }), mod.CanManage)
+            Mo2EntryMenu.Action("Remove…", () => Run(() => { profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]); return Task.CompletedTask; }), mod.CanManage),
+            // MO2's own colour actions, which paint a separator's row and an ordinary
+            // mod's Notes cell.
+            Mo2EntryMenu.ColorMenu("Select Color...", mod.Color.Length > 0 || mod.NotesColor.Length > 0,
+                color => Run(() => profile.SetModColor(mod.Name, color, target)), !mod.IsOverwrite)
             ];
             actionSets.Add(items); RefreshActions(); return items;
         }
@@ -120,7 +124,8 @@ internal static class Mo2ModRow
         var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions);
         grip.Width = Mo2TableRow.GripWidth;
         if (mod.IsSeparator) {
-            var group = new Grid { ColumnDefinitions = new ColumnDefinitions("24,28,24,Auto,*"), Margin = new Thickness(0,2), MinHeight = 32 };
+            var group = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.GripWidth},{Mo2TableRow.ActionSize},18,Auto,*"),
+                Margin = new Thickness(0), Height = Mo2Density.Row };
             Add(group, grip, 0);
             var expand = IconButton(adapter.IsCollapsed(mod.Name) ? "mdi-chevron-right" : "mdi-chevron-down", "Expand or collapse separator", () => {
                 adapter.ToggleSeparator(mod.Name);
@@ -132,7 +137,8 @@ internal static class Mo2ModRow
             // beside it rather than the full-size row action icons.
             if (expand.Content is UnifiedIcon chevron) { chevron.Size = 14; chevron.Opacity = .65; }
             Add(group, expand, 1);
-            Add(group, new UnifiedIcon { Value = new ProjektankerIcon("mdi-tag-outline"), Size = 16, Opacity = .65 }, 2);
+            var tagIcon = new UnifiedIcon { Value = new ProjektankerIcon("mdi-tag-outline"), Size = Mo2Density.Glyph, Opacity = .65 };
+            Add(group, tagIcon, 2);
             var groupTitle = new TextBlock { Text = mod.DisplayName, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(6,0) };
             groupTitle.Name = "SeparatorTitle";
@@ -149,7 +155,7 @@ internal static class Mo2ModRow
             group.SizeChanged += (_, _) => groupTitle.MaxWidth = Math.Max(0, group.Bounds.Width - 130);
             // The reference draws a category as a filled, full-width rounded bar
             // rather than a bare row; conflict highlighting still paints over this.
-            var highlight = new Border { Name = "SeparatorHighlight", CornerRadius = new CornerRadius(8), IsHitTestVisible = false,
+            var highlight = new Border { Name = "SeparatorHighlight", CornerRadius = new CornerRadius(Mo2Density.Corner), IsHitTestVisible = false,
                 Background = (IBrush)Application.Current!.FindResource("SurfaceMidBrush")! };
             var separatorContent = new Grid(); separatorContent.Children.Add(highlight); separatorContent.Children.Add(group);
             // Full width, like the reference draws a category: the entries beside it no
@@ -158,8 +164,27 @@ internal static class Mo2ModRow
             // 16px, as this was, the bar sat visibly narrower than everything under it.
             // Its own surface is the one thing on the list that keeps one, which is what
             // separates a category from the entries it holds.
-            var separator = new Border { Name = "ModSeparatorBar", CornerRadius = new CornerRadius(8), Margin = new Thickness(0),
+            var separator = new Border { Name = "ModSeparatorBar", CornerRadius = new CornerRadius(Mo2Density.Corner), Margin = new Thickness(0),
                 Background = (IBrush)Application.Current!.FindResource("SurfaceMidBrush")!, Child = separatorContent };
+            // The colour the user gave the separator in MO2, which MO2 paints the whole
+            // row in. Without it every separator was the same grey bar and the colours
+            // a list is organised by — the reason for colouring them at all — were lost
+            // on the way across the bridge.
+            void Paint() {
+                var brush = Mo2Density.Brush(mod.Color);
+                separator.Background = brush ?? (IBrush)Application.Current!.FindResource("SurfaceMidBrush")!;
+                var ink = brush is SolidColorBrush solid ? Mo2Density.Ink(solid.Color) : null;
+                // Cleared rather than set to null when the separator has no colour of
+                // its own: a local null is a brush that paints nothing, which would
+                // leave the name and the count invisible rather than in the theme's ink.
+                void Write(AvaloniaObject part, AvaloniaProperty property) {
+                    if (ink is null) part.ClearValue(property); else part.SetValue(property, ink);
+                }
+                Write(groupTitle, TextBlock.ForegroundProperty);
+                Write(count, TextBlock.ForegroundProperty);
+                Write(expand, TemplatedControl.ForegroundProperty);
+                Write(tagIcon, TemplatedControl.ForegroundProperty);
+            }
             TreeDataGridRow? owner = null;
             void Highlight() => highlight.Background = owner?.IsSelected == true
                 ? (IBrush)Application.Current!.FindResource("SurfaceTranslucentMidBrush")!
@@ -173,7 +198,9 @@ internal static class Mo2ModRow
                 if (target != profile.CurrentTarget) return;
                 RefreshActions(); groupTitle.Text = mod.DisplayName;
                 count.Text = adapter.SeparatorCount(mod).ToString();
+                Paint();
             }
+            Paint();
             separator.AttachedToVisualTree += (_,_) => { profile.Changed += RefreshSeparator; RefreshSeparator(); };
             separator.DetachedFromVisualTree += (_,_) => profile.Changed -= RefreshSeparator;
             return separator;
@@ -208,6 +235,18 @@ internal static class Mo2ModRow
         var priority = Mo2TableRow.Cell(mod.PriorityText, .6);
         var notes = Mo2TableRow.Cell(mod.Notes, .6);
         if (mod.Notes.Length > 0) ToolTip.SetTip(notes, mod.Notes);
+        // MO2 paints an ordinary mod's colour behind its Notes cell rather than across
+        // the row, which is where a user who colours mods rather than separators looks
+        // for it.
+        var notesCell = new Border { Name = "ModNotesCell", Child = notes, Margin = new Thickness(0, 1), CornerRadius = new CornerRadius(3) };
+        void PaintNotes() {
+            var brush = Mo2Density.Brush(mod.NotesColor);
+            notesCell.Background = brush;
+            if (brush is SolidColorBrush solid) notes.Foreground = Mo2Density.Ink(solid.Color);
+            else notes.ClearValue(TextBlock.ForegroundProperty);
+            notes.Opacity = brush is null ? .6 : 1;
+        }
+        PaintNotes();
 
         var version = Mo2TableRow.Cell(mod.Version, .6);
         // MO2 marks an available update on the version itself rather than in a column
@@ -225,7 +264,7 @@ internal static class Mo2ModRow
         var versionCell = new Grid(); versionCell.Children.Add(version); versionCell.Children.Add(updatePill);
         Add(row, category, Category); Add(row, author, Author); Add(row, uploader, Uploader);
         Add(row, nexusId, NexusId); Add(row, sourceGame, SourceGame); Add(row, versionCell, Version);
-        Add(row, installation, Installation); Add(row, priority, Priority); Add(row, notes, Notes);
+        Add(row, installation, Installation); Add(row, priority, Priority); Add(row, notesCell, Notes);
         var isEndorsed = (mod.State & 0x10) != 0;
         // MO2 shows endorsement as one of the flag glyphs rather than a column, so it
         // rides along with the flags it belongs among.
@@ -242,7 +281,7 @@ internal static class Mo2ModRow
             author.Text = mod.Author; uploader.Text = mod.Uploader;
             nexusId.Text = mod.NexusId > 0 ? mod.NexusId.ToString() : "";
             sourceGame.Text = mod.SourceGame; installation.Text = mod.InstallTime;
-            priority.Text = mod.PriorityText; notes.Text = mod.Notes;
+            priority.Text = mod.PriorityText; notes.Text = mod.Notes; PaintNotes();
             ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
             var nextEndorsed = (mod.State & 0x10) != 0;
             if (nextEndorsed != isEndorsed) {

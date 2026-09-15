@@ -33,6 +33,12 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public Func<NexusMods.MnemonicDB.Abstractions.EntityId?, Task> CreateSeparatorDialog { get; }
     public Func<string, Task> RenameSeparatorDialog { get; }
     public Func<Task> CreateCollection { get; set; } = () => Task.CompletedTask;
+    // The instances the frontend is connected to, for MO2's own profile box above the
+    // mod list. Supplied by the workspace, which is what reads the catalogue; the page
+    // is given the reading rather than a second reader of its own.
+    public Func<IReadOnlyList<Mo2CatalogEntry>> Instances { get; set; } = () => [];
+    // MO2's open-folders menu, which hands a folder to the desktop.
+    public Action<string> OpenFolder { get; set; } = _ => { };
     public bool IsMo2Profile { get; }
     public Mo2LiveProfile? LiveProfile { get; }
     public string EmptyStateTitleText => "No mods installed";

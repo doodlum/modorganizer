@@ -55,6 +55,33 @@ internal static class Mo2EntryMenu
         };
         return menu;
     }
+    // MO2's "Select Color..." as a menu of the colours it starts from, plus its own
+    // "Reset Color". MO2 opens a Qt colour dialog; the frontend cannot draw that
+    // dialog inside MO2's process, so the choices are offered here and MO2's own
+    // action is what writes whichever one is picked.
+    internal static readonly (string Name, string Value)[] Colors = [
+        ("Red", "#B91C1C"), ("Orange", "#C2410C"), ("Yellow", "#A16207"), ("Green", "#15803D"),
+        ("Teal", "#0F766E"), ("Blue", "#1D4ED8"), ("Purple", "#6D28D9"), ("Grey", "#44444B"),
+    ];
+
+    public static MenuItem ColorMenu(string title, bool hasColor, Func<string?, Task> choose, bool enabled = true)
+    {
+        var item = new MenuItem { Header = title, IsEnabled = enabled };
+        foreach (var (name, value) in Colors) {
+            var swatch = new Avalonia.Controls.Shapes.Rectangle { Width = 12, Height = 12, RadiusX = 2, RadiusY = 2,
+                Fill = Brush.Parse(value), VerticalAlignment = VerticalAlignment.Center };
+            var choice = new MenuItem { Header = name, Icon = swatch };
+            var picked = value;
+            choice.Click += async (_, _) => await choose(picked);
+            item.Items.Add(choice);
+        }
+        item.Items.Add(new Separator());
+        var reset = new MenuItem { Header = "Reset Color", IsEnabled = hasColor };
+        reset.Click += async (_, _) => await choose(null);
+        item.Items.Add(reset);
+        return item;
+    }
+
     public static MenuItem Action(string title, Func<Task> action, bool enabled = true)
     {
         Mo2UiLatencyProbe.Count("Entry menu items created");

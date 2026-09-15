@@ -137,7 +137,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         services.Add(_database.GetRequiredService<NexusMods.MnemonicDB.Abstractions.IConnection>());
         services.Add<IEnumerable<ILoadoutDataProvider>>([Profile]);
         var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "My Mods", IconValues.CollectionsOutline,
-            () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads) { CreateCollection = () => Mo2Collections.Create(windows, Profile) });
+            () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads) {
+                CreateCollection = () => Mo2Collections.Create(windows, Profile), Instances = () => CatalogEntries,
+                OpenFolder = folder => DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder)) });
         var collections = new Mo2CollectionFactory(services, windows, Profile, OpenDownloads);
         _createCollection = () => Mo2Collections.Create(windows, Profile);
         _removeCollection = key => Mo2Collections.Remove(windows, Profile, key);

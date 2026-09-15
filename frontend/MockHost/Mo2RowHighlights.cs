@@ -41,8 +41,11 @@ internal static class Mo2RowHighlights
     {
         foreach (var row in FindRows(view)) {
             var visuals = RowDecorations(row).ToArray();
-            row.Height = row.MinHeight = 40;
-            row.CornerRadius = new Avalonia.CornerRadius(8);
+            // One MO2 list line. Written on the row itself rather than left to the
+            // shared density style because this pass writes a local value for the
+            // highlight colours, and a row it touched kept whatever height it had.
+            row.Height = row.MinHeight = Mo2Density.Row;
+            row.CornerRadius = new Avalonia.CornerRadius(Mo2Density.Corner);
             row.BorderThickness = new Avalonia.Thickness(0);
             foreach (var cell in visuals.OfType<TreeDataGridTemplateCell>()) cell.Padding = new Avalonia.Thickness(0);
             var table = row.FindAncestorOfType<TreeDataGrid>();
@@ -76,7 +79,7 @@ internal static class Mo2RowHighlights
                         // without one it must be clear, or the NMA SortOrder card would
                         // show here and nowhere else.
                         border.Background = brush ?? Brushes.Transparent;
-                        border.CornerRadius = new Avalonia.CornerRadius(8);
+                        border.CornerRadius = new Avalonia.CornerRadius(Mo2Density.Corner);
                         border.BorderThickness = new Avalonia.Thickness(0);
                         border.BoxShadow = default;
                     }

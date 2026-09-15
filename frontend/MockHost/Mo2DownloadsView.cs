@@ -51,7 +51,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     })
                 }) }
         });
-        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         var actions = new ItemsControl();
         StandardButton ActionButton(string text, string name, IconValue icon) {
             var button = new StandardButton { Text = text, Name = name, LeftIcon = icon,
@@ -89,6 +89,20 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadata,
             "mdi-cloud-search-outline", () => { }));
         Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
+        // And the row MO2 puts under that list: the box that shows the downloads it
+        // has been told to hide, and the field that narrows the list.
+        var qtFilterBar = new Grid { Name = "DownloadsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            Margin = new Thickness(24,6,24,8) };
+        CheckBox? hiddenBox = null;
+        TextBox? filterField = null;
+        void ApplyFilter() => ViewModel?.Provider.SetFilter(filterField?.Text ?? "", hiddenBox?.IsChecked == true);
+        hiddenBox = Mo2QtWidgets.Check("DownloadsHiddenFiles", Mo2QtWidgets.HiddenDownloads, Mo2QtWidgets.HiddenDownloadsTip,
+            false, _ => ApplyFilter());
+        qtFilterBar.Children.Add(hiddenBox);
+        var qtFilter = Mo2QtWidgets.Filter("DownloadsQtFilter", Mo2QtWidgets.DownloadFilterTip, _ => ApplyFilter(), out filterField);
+        qtFilter.MinWidth = 160;
+        Grid.SetColumn(qtFilter, 2); qtFilterBar.Children.Add(qtFilter);
+        Grid.SetRow(qtFilterBar, 2); layout.Children.Add(qtFilterBar);
         Content = layout;
         // The native downloads page draws its own header and toolbar; the shared
         // chrome puts them on one line with the separator, padding and compaction
