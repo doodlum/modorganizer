@@ -48,7 +48,7 @@ internal static class Mo2PanelChrome
         if (header.Parent is Panel owner) owner.Children.Remove(header);
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
-        stack.Children.Add(HeaderLine(header, actions, MaximiseAction(view)));
+        stack.Children.Add(HeaderLine(header, actions));
         stack.Children.Add(new Divider { Name = "PanelHeaderSeparator", Height = 1,
             HorizontalAlignment = HorizontalAlignment.Stretch });
         Grid.SetRow(stack, row); Grid.SetColumn(stack, column); Grid.SetColumnSpan(stack, span);
@@ -83,7 +83,7 @@ internal static class Mo2PanelChrome
         if (header.Parent is Panel owner) owner.Children.Remove(header);
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
-        stack.Children.Add(HeaderLine(header, actions, MaximiseAction(view)));
+        stack.Children.Add(HeaderLine(header, actions));
         stack.Children.Add(new Divider { Name = "PanelHeaderSeparator", Height = 1,
             HorizontalAlignment = HorizontalAlignment.Stretch });
         DockPanel.SetDock(stack, Dock.Top);
@@ -123,6 +123,22 @@ internal static class Mo2PanelChrome
                 // that way. Wrapping is the same treatment Mods gives its toolbar.
                 actions.ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(
                     () => new WrapPanel { Orientation = Orientation.Horizontal });
+                // The native toolbar draws its buttons at its own toolbar size, which
+                // is 24px where every action the frontend builds is 28. Side by side
+                // on one line that reads as two sets of controls. Its buttons are
+                // realised by the items panel after this runs, so they are sized as
+                // they appear rather than once here.
+                // Applied as a style rather than by walking the tree: the toolbar
+                // realises its buttons when it pleases, and a walk only ever caught
+                // the ones that already existed. Size="Toolbar" also carries a
+                // MaxHeight of 24 from the theme, so the cap is lifted with it.
+                actions.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.OfType<StandardButton>(x)) {
+                    Setters = {
+                        new Avalonia.Styling.Setter(Layoutable.MaxHeightProperty, Mo2TableRow.ActionSize),
+                        new Avalonia.Styling.Setter(Layoutable.MinHeightProperty, Mo2TableRow.ActionSize),
+                        new Avalonia.Styling.Setter(Layoutable.HeightProperty, Mo2TableRow.ActionSize),
+                    },
+                });
             }
             Apply(view, root, header, actions is null ? [] : [actions]);
         }
@@ -150,61 +166,11 @@ internal static class Mo2PanelChrome
         return action;
     }
 
-    // Maximising the panel this page is shown in. It lives on the page's own header
-    // rather than in the panel's tab strip: a button inserted into that strip laid
-    // out correctly and never painted a pixel, while the header actions beside it
-    // always draw. Every page gets it from the shared chrome, so no page can be
-    // without one.
-    private static Button MaximiseAction(Control view)
-    {
-        Mo2DeferredPanel? Owner() => view.GetVisualAncestors().OfType<Mo2DeferredPanel>().FirstOrDefault();
-        Button? action = null;
-        action = Mo2TableRow.IconButton("mdi-window-maximize", "Maximise panel", () => {
-            if (Owner() is { CanMaximise: true } panel) panel.SetMaximised(!panel.IsMaximised);
-        });
-        action.Name = "MaximisePanelButton";
-        // Runs on every layout pass, so it must change nothing unless the state has
-        // actually changed: assigning a fresh icon value or visibility each pass
-        // invalidates measure from inside layout, which Avalonia reports as an
-        // infinite layout loop and terminates the process over.
-        var shown = (bool?)null;
-        var wasMaximised = (bool?)null;
-        void Sync()
-        {
-            var panel = Owner();
-            // A lone panel has nothing to maximise over, and neither does a page that
-            // is not in a workspace panel at all.
-            var visible = panel?.CanMaximise == true;
-            if (visible != shown) { shown = visible; action!.IsVisible = visible; }
-            var maximised = panel?.IsMaximised == true;
-            if (maximised == wasMaximised) return;
-            wasMaximised = maximised;
-            if (action!.Content is NexusMods.UI.Sdk.Icons.UnifiedIcon glyph)
-                glyph.Value = new NexusMods.UI.Sdk.Icons.ProjektankerIcon(maximised ? "mdi-window-restore" : "mdi-window-maximize");
-            var label = maximised ? "Restore panel" : "Maximise panel";
-            ToolTip.SetTip(action, label);
-            Avalonia.Automation.AutomationProperties.SetName(action, label);
-        }
-        // The owning panel is found once the page is in the tree, and its state can
-        // change without this page being touched when another panel takes over.
-        Mo2DeferredPanel? subscribed = null;
-        view.LayoutUpdated += (_, _) => {
-            var panel = Owner();
-            if (!ReferenceEquals(panel, subscribed)) {
-                if (subscribed is not null) subscribed.MaximisedChanged -= Sync;
-                subscribed = panel;
-                if (subscribed is not null) subscribed.MaximisedChanged += Sync;
-            }
-            Sync();
-        };
-        Sync();
-        return action;
-    }
 
 
     // The title line: actions docked right, header filling the rest. Shared so the
     // grid and docked entry points cannot drift apart.
-    private static Control HeaderLine(PageHeader header, Control[] actions, Button maximise)
+    private static Control HeaderLine(PageHeader header, Control[] actions)
     {
         var group = new WrapPanel { Name = "PanelHeaderActions", Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
@@ -216,15 +182,13 @@ internal static class Mo2PanelChrome
             action.VerticalAlignment = VerticalAlignment.Center;
             group.Children.Add(action);
         }
-        maximise.Margin = new Thickness(2, 2, 0, 2);
-        maximise.VerticalAlignment = VerticalAlignment.Center;
         header.MinWidth = TitleFloor;
         // Only as tall as its own content. Stretched, the header filled whatever
         // height the actions beside it needed — and once those wrap in a narrow panel
         // that is ~100px — while its own template pins the pictogram to the top and
         // centres the title in the space. The two ended up on different lines.
         header.VerticalAlignment = VerticalAlignment.Top;
-        return new Mo2HeaderLine(header, group, maximise);
+        return new Mo2HeaderLine(header, group);
     }
 
     // Header collapse belongs to Mo2ResponsiveHeaders, which blends the pictogram,

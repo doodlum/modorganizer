@@ -46,11 +46,32 @@ internal static class Mo2HeaderFitCheck
                     if (header is null) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no header at all"); continue; }
                     var row = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderRow");
                     if (row is null) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no header row"); continue; }
+                    var stage = (row as Mo2HeaderLine)?.Shows ?? Mo2HeaderLine.Showing.Words;
+
+                    // The header gives way in stages: words, then the pictogram alone
+                    // standing in for them, then nothing. Each one has to be what it
+                    // claims — a pictogram stage with no pictogram drawn is just a
+                    // header that vanished early.
+                    var plateNow = header.GetVisualDescendants().OfType<Border>()
+                        .FirstOrDefault(x => x.Child is NexusMods.UI.Sdk.Icons.UnifiedIcon);
+                    var words = header.GetVisualDescendants().OfType<TextBlock>()
+                        .FirstOrDefault(x => x.Name == "TitleTextBlock");
+                    if (stage == Mo2HeaderLine.Showing.Pictogram) {
+                        if (plateNow is null || plateNow.Bounds.Width <= 0)
+                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage draws no pictogram");
+                        if (words is not null && words.IsEffectivelyVisible && words.Bounds.Width > 0)
+                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage still draws the title");
+                        if (header.Bounds.Width <= 0)
+                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage has no header on the line");
+                        continue;
+                    }
+                    if (stage == Mo2HeaderLine.Showing.Nothing) {
+                        if (header.Bounds.Width > 0)
+                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: header stood down but still takes {header.Bounds.Width:F0}px");
+                        continue;
+                    }
 
                     var title = header.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(x => x.Name == "TitleTextBlock");
-                    // A header given up so the actions can have the line is intended,
-                    // not a fault; there is simply nothing left in it to measure.
-                    if (header.Bounds.Width <= 0) continue;
                     if (title is null || !title.IsVisible) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no visible title"); continue; }
 
                     // The row must give the header everything it asked for. A row that
@@ -90,7 +111,7 @@ internal static class Mo2HeaderFitCheck
                             faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions took {rows} rows");
                         else if ((double)shown.Length / rows < 2)
                             faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions stacked {shown.Length} over {rows} rows");
-                        if (rows > 1 && header.Bounds.Width > 0)
+                        if (rows > 1 && stage == Mo2HeaderLine.Showing.Words)
                             faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions wrapped while the title was still shown");
                     }
 
@@ -118,8 +139,9 @@ internal static class Mo2HeaderFitCheck
             }
             if (faults.Count > 0) throw new Exception(string.Join("; ", faults.Take(6)) +
                 (faults.Count > 6 ? $" (+{faults.Count - 6} more)" : ""));
-            Console.WriteLine($"PASS header fit: three panels kept their header whole at {Sizes.Length} sizes each, " +
-                "from 1000x700 down to 340x320 and back");
+            Console.WriteLine($"PASS header fit: three panels kept their header whole at {Sizes.Length} sizes each and " +
+                "three scroll positions, from 1000x700 down to 340x320 and back, giving way from words to the pictogram " +
+                "alone to nothing as the room ran out");
         } finally { window.Close(); }
     }
 

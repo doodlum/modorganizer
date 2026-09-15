@@ -126,12 +126,13 @@ internal static class Mo2PageAuditCheck
 
             if (stack is null) faults.Add($"{name}: does not use the shared header stack");
             if (!metrics.Separator) faults.Add($"{name}: no separator under its header");
-            // Home's workspace holds one panel, and a lone panel has nothing to
-            // maximise over, so the action hides itself there.
-            if (!home && !metrics.Maximise) faults.Add($"{name}: no maximise action on its header");
+            // Maximising lives with the panel's close action in the corner, not on
+            // the page's header line; Mo2PhysicalityCheck covers it there.
             if (!metrics.Description) faults.Add($"{name}: header has no description");
-            // A header stood down for the actions has nothing on screen to measure.
-            if (header.Bounds.Width <= 0) continue;
+            // A header down to its pictogram, or stood down entirely, has no words on
+            // screen to measure. Both are the header line giving room to the actions.
+            var stage = (body.GetVisualDescendants().OfType<Mo2HeaderLine>().FirstOrDefault())?.Shows;
+            if (stage != Mo2HeaderLine.Showing.Words) continue;
             if (Math.Abs(metrics.Padding - Mo2PanelChrome.Padding) > .5 &&
                 Math.Abs(metrics.Padding - Mo2PanelChrome.CompactPadding) > .5)
                 faults.Add($"{name}: padding is {metrics.Padding}, not the shared {Mo2PanelChrome.Padding}");
@@ -151,7 +152,7 @@ internal static class Mo2PageAuditCheck
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
         Console.WriteLine($"PASS page audit: all {seen.Count} pages captured and share " +
             $"{Mo2PanelChrome.Padding}px padding, {Mo2TableRow.ActionSize}px header actions, a pictogram, a description and " +
-            "a header separator; the 12 in a game workspace also carry the maximise action, and no game icon carries a badge strip");
+            "a header separator, and no game icon carries a badge strip");
     }
 
     private static StackPanel? Chrome(Mo2LiveWorkspace live, Window window) =>

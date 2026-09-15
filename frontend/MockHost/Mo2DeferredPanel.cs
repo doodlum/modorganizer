@@ -3,6 +3,7 @@ using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Controls.Primitives;
 using Avalonia.ReactiveUI;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.WorkspaceSystem;
@@ -21,6 +22,8 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
     // Long enough to follow, short enough not to feel like waiting. Panels reflow
     // over this whenever one is added, closed or maximised.
     private static readonly TimeSpan ReflowDuration = TimeSpan.FromMilliseconds(220);
+    // The panel's own corner actions are 24px, not the 28px the page toolbars use.
+    private const double TabActionSize = 24;
 
     private bool _maximised;
     // Only one panel can be maximised at a time, and a second panel taking over has
@@ -48,6 +51,7 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
             // is disabled in the same case.
             this.WhenAnyValue(view => view.ViewModel!.IsAlone).Subscribe(alone => {
                 if (alone && _maximised) SetMaximised(false);
+                SyncMaximise();
                 MaximisedChanged?.Invoke();
             }).DisposeWith(disposables);
             Disposable.Create(() => { if (ReferenceEquals(_current, this)) _current = null; }).DisposeWith(disposables);
@@ -102,14 +106,51 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
         MaximisedChanged?.Invoke();
     }
 
+    private Button? _maximise;
+    private StandardButton? _stripClose;
+
+    private void SyncMaximise()
+    {
+        if (_maximise is null) return;
+        if (_maximise.IsVisible != CanMaximise) _maximise.IsVisible = CanMaximise;
+        if (_maximise.Content is UnifiedIcon glyph)
+            glyph.Value = new ProjektankerIcon(_maximised ? "mdi-window-restore" : "mdi-window-maximize");
+        var label = _maximised ? "Restore panel" : "Maximise panel";
+        ToolTip.SetTip(_maximise, label);
+        Avalonia.Automation.AutomationProperties.SetName(_maximise, label);
+    }
+
     private bool _adopted;
     private void AdoptChrome()
     {
+        // The tab strip comes and goes with the pointer, and it carries a close
+        // action of its own. Left alone, revealing the strip put a second X beside
+        // the one already floating in the corner. The floating pair is the panel's
+        // controls; the strip's copy stays out of the way.
+        _stripClose ??= this.GetVisualDescendants().OfType<StandardButton>().FirstOrDefault(x => x.Name == "ClosePanelButton");
+        if (_stripClose is { IsVisible: true }) _stripClose.IsVisible = false;
         if (_adopted) return;
+
+        var floating = this.GetVisualDescendants().OfType<Border>().FirstOrDefault(x => x.Name == "FloatingClosePanelBorder");
         var closers = this.GetVisualDescendants().OfType<StandardButton>()
             .Where(x => x.Name is "ClosePanelButton" or "ClosePanelButton2").ToArray();
-        if (closers.Length == 0) return;
+        if (floating is null || closers.Length == 0) return;
         _adopted = true;
+
+        // Maximising is a panel action, so it sits with the panel's close action in
+        // the corner rather than among the page's own actions on the header line.
+        _maximise = Mo2TableRow.IconButton("mdi-window-maximize", "Maximise panel", () => SetMaximised(!_maximised));
+        _maximise.Name = "MaximisePanelButton";
+        _maximise.Width = _maximise.Height = TabActionSize;
+        if (floating.Child is Control existing) {
+            floating.Child = null;
+            var pair = new StackPanel { Name = "PanelCornerActions", Orientation = Orientation.Horizontal, Spacing = 2 };
+            pair.Children.Add(_maximise); pair.Children.Add(existing);
+            floating.Child = pair;
+        }
+        MaximisedChanged += SyncMaximise;
+        SyncMaximise();
+
         // Closing goes through the panel's own animation first. Re-pointing the
         // command replaces the binding PanelView makes, so the native command still
         // runs, only after the panel has visibly left.
