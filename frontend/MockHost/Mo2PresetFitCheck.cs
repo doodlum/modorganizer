@@ -103,7 +103,11 @@ internal static class Mo2PresetFitCheck
                     // in a half-width panel spends its width on the ones beside the
                     // name and leaves the name itself at its icon: Data drew five
                     // columns of dates and sizes against a name column of nothing.
-                    foreach (var table in view.GetVisualDescendants().OfType<TreeDataGrid>().Where(x => x.Bounds.Width > 0)) {
+                    // Only a table that has its rows: one still being given its source
+                    // has the columns it was born with, which is a placeholder column
+                    // 30px wide rather than anything the page drew.
+                    foreach (var table in view.GetVisualDescendants().OfType<TreeDataGrid>()
+                                 .Where(x => x.Bounds.Width > 0 && x.Rows?.Count > 0)) {
                         var first = table.GetVisualDescendants().OfType<TreeDataGridColumnHeader>()
                             .OrderBy(x => x.TranslatePoint(default, table)?.X ?? 0).FirstOrDefault();
                         if (first is not null && first.Bounds.Width < NameColumn)

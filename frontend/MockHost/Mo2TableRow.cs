@@ -98,11 +98,27 @@ internal static class Mo2TableRow
     // Responsive column fitting shared by both tables: each entry names a column,
     // its natural width, and the panel width below which it is dropped. Callers may
     // also hide a column outright, which the panel width cannot override.
+    // What the name column is never taken below. Everything else is optional, and a
+    // list whose names are all drawn as "DLC: Triba…" says less than one carrying a
+    // column fewer.
+    internal const double NameFloor = 180;
+
+    // `width` is the panel the list sits in, which is what a column's threshold is
+    // written against; `chrome` is what that panel spends on everything beside the
+    // columns — the filter group, the rail, the page's padding — so the floor is
+    // measured against the room the columns actually have.
     internal static void Fit(Grid grid, double width, (int Column, double Width, double Threshold)[] optional,
-        Func<int, bool>? hidden = null)
+        Func<int, bool>? hidden = null, double chrome = 0)
     {
-        foreach (var (column, natural, threshold) in optional) {
-            var show = width >= threshold && hidden?.Invoke(column) != true;
+        var shown = new List<(int Column, double Width, double Threshold)>();
+        foreach (var entry in optional)
+            if (width >= entry.Threshold && hidden?.Invoke(entry.Column) != true) shown.Add(entry);
+        // The name column takes what the others leave, so the others are given up —
+        // the one that says least about a mod first — until it has enough to read.
+        while (shown.Count > 0 && width - chrome - shown.Sum(x => x.Width) < NameFloor)
+            shown.Remove(shown.MaxBy(x => x.Threshold));
+        foreach (var (column, natural, _) in optional) {
+            var show = shown.Any(x => x.Column == column);
             grid.ColumnDefinitions[column].Width = new GridLength(show ? natural : 0);
         }
         var columns = optional.Select(x => x.Column).ToHashSet();

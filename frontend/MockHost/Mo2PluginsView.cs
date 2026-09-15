@@ -104,9 +104,12 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // below here against 4 and 4 there put the two tables' first rows 4px apart
         // when the panes sit side by side.
         var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,4,0,4); headings.Height = Mo2TableRow.HeadingBand;
-        // MO2's own headers, from the same table the row's columns come from.
+        // MO2's own headers, from the same table the row's columns come from. The
+        // flags column takes the glyph it holds as its heading, as the mod list's
+        // glyph columns do — a word in a column one icon wide is drawn as "…".
         foreach (var (column, text) in Mo2PluginRow.Headers)
-            Mo2ModRow.Add(headings, Mo2TableRow.Heading(text), column);
+            Mo2ModRow.Add(headings, column == Mo2PluginRow.Flags
+                ? Mo2TableRow.GlyphHeading("mdi-flag", text) : Mo2TableRow.Heading(text), column);
         mainGrid.Children.Add(headings);
         var pluginRail = editor.FindControl<Grid>("TrophyBarColumnGrid")!;
         Grid.SetRowSpan(pluginRail, 2);

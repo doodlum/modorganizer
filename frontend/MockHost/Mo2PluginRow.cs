@@ -16,8 +16,9 @@ internal static class Mo2PluginRow
     internal const int Name = 0, Flags = 1, Priority = 2, ModIndex = 3,
         FormVersion = 4, HeaderVersion = 5, Author = 6, Description = 7;
 
+    // Sized for MO2's own text, as the mod list's columns are.
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        "*,30,56,72,86,96,104,*") };
+        "*,24,48,64,76,84,92,*") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         (Name, "Name"), (Flags, "Flags"), (Priority, "Priority"), (ModIndex, "Mod Index"),
@@ -29,12 +30,13 @@ internal static class Mo2PluginRow
         Headers.Where(x => x.Column != Name).ToArray();
 
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
-        (Flags, 30, 300), (Priority, 56, 380), (ModIndex, 72, 460),
-        (FormVersion, 86, 900), (HeaderVersion, 96, 1060), (Author, 104, 700),
-        (Description, 200, 1240)];
+        (Flags, 24, 250), (Priority, 48, 310), (ModIndex, 64, 380),
+        (FormVersion, 76, 720), (HeaderVersion, 84, 860), (Author, 92, 560),
+        (Description, 180, 1010)];
 
     internal static void Fit(Grid row, double width) =>
-        Mo2TableRow.Fit(row, width, Optional, HiddenColumns.Contains);
+        Mo2TableRow.Fit(row, width, Optional, HiddenColumns.Contains,
+            chrome: Mo2TableRow.RailWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
     internal static Control Create(Mo2LiveProfile profile, ScenarioPlugin plugin)
     {
         Mo2UiLatencyProbe.Count("Plugin rows created");

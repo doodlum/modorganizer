@@ -20,8 +20,11 @@ internal static class Mo2ModRow
         Author = 5, Uploader = 6, NexusId = 7, SourceGame = 8, Version = 9,
         Installation = 10, Priority = 11, Notes = 12;
 
+    // Widths for MO2's own text size rather than the theme's: a column sized for
+    // 14px text and 24px of padding took a third more room than the text in it
+    // needs, and the panel ran out of room three columns earlier than MO2 does.
     internal static Grid Columns() => new() { MinWidth = 0, ColumnDefinitions = new ColumnDefinitions(
-        "*,30,30,88,104,104,104,74,104,78,120,56,110") };
+        "*,24,24,72,92,92,92,60,92,64,104,48,92") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         (Name, "Mod Name"), (Conflicts, "Conflicts"), (Flags, "Flags"), (Content, "Content"),
@@ -39,10 +42,13 @@ internal static class Mo2ModRow
     // Dropped from the right as the panel narrows, in reverse order of how much they
     // say about a mod: the glyph columns and the priority survive longest because
     // they are what the list is read by.
+    // The widths above, and the panel width each column needs before it is worth
+    // the room. Lowered with them: at MO2's density the same panel holds three more
+    // of MO2's columns than these thresholds used to let through.
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
-        (Conflicts, 30, 300), (Flags, 30, 330), (Content, 88, 620), (Category, 104, 500),
-        (Author, 104, 1120), (Uploader, 104, 1360), (NexusId, 74, 900), (SourceGame, 104, 1240),
-        (Version, 78, 420), (Installation, 120, 1020), (Priority, 56, 380), (Notes, 110, 780)];
+        (Conflicts, 24, 250), (Flags, 24, 280), (Content, 72, 470), (Category, 92, 390),
+        (Author, 92, 880), (Uploader, 92, 1070), (NexusId, 60, 700), (SourceGame, 92, 980),
+        (Version, 64, 330), (Installation, 104, 800), (Priority, 48, 310), (Notes, 92, 610)];
 
     // Room the category filter takes out of the pane when it is showing. The column
     // fitting below measures the panel, not the list, so without this the columns
@@ -51,7 +57,8 @@ internal static class Mo2ModRow
     internal static double SideWidth;
 
     internal static void Fit(Grid grid, double width) =>
-        Mo2TableRow.Fit(grid, Math.Max(0, width - SideWidth), Optional, HiddenColumns.Contains);
+        Mo2TableRow.Fit(grid, Math.Max(0, width - SideWidth), Optional, HiddenColumns.Contains,
+            chrome: Mo2TableRow.RailWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
 
     // One of MO2's glyph columns. MO2 draws a small icon per condition and spells the
     // conditions out in the tooltip; the icon is shown only when there is something to
