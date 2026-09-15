@@ -106,10 +106,11 @@ internal static class Mo2RowStyleCheck
         var modsSelHover = StyleInstalled(modsTable, ":selected", "SurfaceTranslucentLow");
         var pluginsSelHover = StyleInstalled(pluginsTable, ":selected", "SurfaceTranslucentLow");
 
-        // Clean up
+        // Clean up: wait long enough for the selection group to hide, so a
+        // following check that measures the toolbar doesn't see stale UI.
         modsTable.RowSelection.Clear();
         pluginsTable.RowSelection.Clear();
-        await Task.Delay(300);
+        await Task.Delay(1500);
 
         if (faults.Count > 0)
             Console.WriteLine("FAIL row style: " + string.Join("; ", faults));
