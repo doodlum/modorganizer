@@ -110,7 +110,14 @@ internal static class Mo2ModRow
             var highlight = new Border { Name = "SeparatorHighlight", CornerRadius = new CornerRadius(8), IsHitTestVisible = false,
                 Background = (IBrush)Application.Current!.FindResource("SurfaceMidBrush")! };
             var separatorContent = new Grid(); separatorContent.Children.Add(highlight); separatorContent.Children.Add(group);
-            var separator = new Border { Name = "ModSeparatorBar", Background = Brush.Parse("#29292E"), CornerRadius = new CornerRadius(8), Margin = new Thickness(16,0), Child = separatorContent };
+            // Full width, like the reference draws a category: the entries beside it no
+            // longer carry a surface of their own, so what marks out how wide an entry
+            // is now is the band its hover and selection paint — the whole row. Inset
+            // 16px, as this was, the bar sat visibly narrower than everything under it.
+            // Its own surface is the one thing on the list that keeps one, which is what
+            // separates a category from the entries it holds.
+            var separator = new Border { Name = "ModSeparatorBar", CornerRadius = new CornerRadius(8), Margin = new Thickness(0),
+                Background = (IBrush)Application.Current!.FindResource("SurfaceMidBrush")!, Child = separatorContent };
             TreeDataGridRow? owner = null;
             void Highlight() => highlight.Background = owner?.IsSelected == true
                 ? (IBrush)Application.Current!.FindResource("SurfaceTranslucentMidBrush")!
@@ -131,20 +138,14 @@ internal static class Mo2ModRow
         }
         var row = Columns(); row.Name = "ModRedesignRow";
         Add(row, grip, 0);
-        var status = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        // Just the enable box. It used to be paired with a caret opening the same
+        // actions, which the row already offers twice over — from its grip and from
+        // the caret beside the remove action — so the third copy only crowded the
+        // checkbox it sat against.
         var toggle = Activation("ModActivationToggle", mod.Name, (mod.State & 6) != 0, mod.CanManage && profile.CanChangeOriginalUi,
             async () => { await Run(() => profile.ToggleMod(mod.Id)); return (profile.FindMod(mod.Id)?.State & 6) != 0; },
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.FindMod(mod.Id)?.CanManage == true);
-        status.Children.Add(toggle);
-        // The reference pairs the enable box with a caret that opens the same actions
-        // the row menu carries, so the status cell is a split control.
-        var statusMenu = IconButton("mdi-menu-down", "Mod actions", () => { });
-        statusMenu.Name = "ModStatusMenuButton";
-        statusMenu.Width = 16; statusMenu.Padding = new Thickness(0);
-        if (statusMenu.Content is UnifiedIcon caret) { caret.Size = 14; caret.Opacity = .65; }
-        statusMenu.Flyout = Mo2EntryMenu.Flyout(Actions);
-        status.Children.Add(statusMenu);
-        Add(row, status, 1);
+        Add(row, toggle, 1);
         var title = Mo2TableRow.Cell(mod.DisplayName, (mod.State & 6) != 0 ? .85 : .5);
         ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0))); Add(row, title, 2);
         var version = Mo2TableRow.Cell(mod.Version, .6);

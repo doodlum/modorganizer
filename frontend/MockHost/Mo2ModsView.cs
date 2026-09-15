@@ -222,7 +222,22 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // The native tab control held 24px of space under a toolbar that now lives on
         // the header line, which started this table 24px lower than Plugins starts its
         // own. Nothing sits in that space any more.
-        native.FindControl<TabControl>("RulesTabControl")!.Margin = new Thickness(0);
+        var rulesTabs = native.FindControl<TabControl>("RulesTabControl")!;
+        rulesTabs.Margin = new Thickness(0);
+        // A tab control rules a line across the top of its content to tie the selected
+        // tab to what it shows. This page draws no tab strip, so that line had nothing
+        // to tie and read as a separator above the column headings — one Plugins has no
+        // equivalent of, because it has no tab control of its own. The separator this
+        // page does own is the one under its header, and the panel chrome draws that.
+        // Set as a style because the content host is a template part, and with the
+        // theme's own selector so it replaces that rule rather than racing it.
+        rulesTabs.Styles.Add(new Avalonia.Styling.Style(x => Avalonia.Styling.Selectors.Name(
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Presenters.ContentPresenter>(
+                Avalonia.Styling.Selectors.Template(Avalonia.Styling.Selectors.OfType<TabControl>(x))),
+            "PART_SelectedContentHost")) {
+            Setters = { new Avalonia.Styling.Setter(
+                Avalonia.Controls.Presenters.ContentPresenter.BorderThicknessProperty, new Thickness(0)) },
+        });
         // And the same rows presenter inset Plugins carries, so the first row of each
         // table sits the same distance under its column headings. Applied as a style
         // because the presenter is a template part that does not exist yet.

@@ -100,19 +100,26 @@ internal static class Mo2TableRow
         }
     }
 
-    // Row styling that matches the NMA SortOrder design: a rounded card at rest,
-    // a translucent overlay on hover, and a border outline on selection. Targeting
+    // Row styling shared by both tables: no surface of its own at rest, a
+    // translucent overlay on hover, and a border outline on selection. Targeting
     // the CellsPresenter for hover and selection keeps the row's own background
     // free for conflict highlights, and produces the outline the SortOrder theme
     // uses rather than a filled bar the default theme uses.
     internal static void InstallRowStyles(Control table)
     {
-        // Resting: the same card appearance the SortOrder rows have.
+        // Neither the table nor its rows draw a surface, so what shows behind an
+        // entry is the panel it sits in. Both the NMA base theme (SurfaceLow on the
+        // table) and its SortOrder styles (a card on each row) paint one otherwise,
+        // and the two themes disagree about which — so both are cleared here.
+        if (table is TreeDataGrid tdg) tdg.Background = Brushes.Transparent;
+
+        // Resting: nothing of the row's own, so the panel behind it shows through.
+        // The corner radius still matters — the hover overlay and selection outline
+        // are rounded against it.
         table.Styles.Add(new Avalonia.Styling.Style(x =>
             Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x)) {
             Setters = {
-                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
-                    Application.Current!.FindResource("SurfaceMidBrush")),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, Brushes.Transparent),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderThicknessProperty, new Thickness(0)),
             }

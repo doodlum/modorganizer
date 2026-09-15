@@ -71,6 +71,10 @@ internal static class Mo2RowHighlights
                 foreach (var border in visuals.OfType<Border>()) {
                     if (border.Name == "RowOuterBorder") border.Padding = new Avalonia.Thickness(0);
                     if (border.Name == "RowBorder") {
+                        // The plugin row draws through this border rather than through
+                        // itself, so this is the one place a highlight can land — and
+                        // without one it must be clear, or the NMA SortOrder card would
+                        // show here and nowhere else.
                         border.Background = brush ?? Brushes.Transparent;
                         border.CornerRadius = new Avalonia.CornerRadius(8);
                         border.BorderThickness = new Avalonia.Thickness(0);
