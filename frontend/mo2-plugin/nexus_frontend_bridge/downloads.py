@@ -174,25 +174,89 @@ class Downloads:
         raise ValueError('MO2 no longer manages this download; refresh the list')
 
     def query_metadata(self):
-        """Press MO2's own Query Metadata button.
+        """Ask MO2 to fill in what its downloads are missing.
 
-        DownloadsTab::queryInfos asks the download manager to fill in what its
-        archives are missing, over the network, and MO2 writes the answers into
-        the .meta files the snapshot already reads. Pressed rather than
+        Newer MO2 has one button for it (DownloadsTab::queryInfos), which asks
+        the download manager over the network and writes the answers into the
+        .meta files the snapshot already reads. It is pressed rather than
         reimplemented so the offline-mode guard, the login prompt and the
-        progress it shows are MO2's own.
+        progress it shows are MO2's own. MO2 2.5.2 has no such button and offers
+        Query Info on each download instead, which is what _query_each uses.
 
         MO2 asks, in a message box, whether to leave offline mode. That question
         is the user's to answer in MO2, so the box is dismissed and the refusal
         reported rather than answered here.
         """
-        from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
-        from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+        from PyQt6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QTabWidget, QWidget
         if self.window is None:
             raise ValueError('MO2 download controls are not ready')
+        if not self.window.isEnabled():
+            raise ValueError('MO2 is busy')
         button = self.window.findChild(QPushButton, 'btnQueryDownloadsInfo')
-        if button is None or not self.window.isEnabled() or not button.isEnabled():
-            raise ValueError('MO2 cannot query download metadata right now')
+        if button is None:
+            return self._query_each()
+        # MO2 wakes its download tab when it is shown, and leaves this button
+        # disabled until then — the same lazy tab the archive list is read through.
+        tabs = self.window.findChild(QTabWidget, 'tabWidget')
+        page = self.window.findChild(QWidget, 'downloadTab')
+        if not button.isEnabled() and tabs is not None and page is not None and tabs.indexOf(page) >= 0:
+            previous = tabs.currentIndex()
+            try:
+                tabs.setCurrentWidget(page)
+            finally:
+                with QSignalBlocker(tabs):
+                    tabs.setCurrentIndex(previous)
+        if not button.isEnabled():
+            # Which part of MO2 is refusing, rather than only that it refused: the
+            # button follows its tab, its tab follows the window, and the window is
+            # disabled while MO2 is refreshing.
+            raise ValueError('MO2 cannot query download metadata right now '
+                             f'(window {"on" if self.window.isEnabled() else "off"}, '
+                             f'tab {"on" if page is not None and page.isEnabled() else "off"}, '
+                             f'button {"on" if button.isEnabledTo(button.parentWidget()) else "off"})')
+        return self._press_query(button)
+
+    def _query_each(self):
+        """Ask for the metadata one download at a time, as MO2 2.5 does.
+
+        The single Query Metadata button arrived after 2.5.2; that build offers
+        Query Info on a download's own menu instead, over the same slot. The rows
+        asked for are the ones whose .meta has no mod behind it, which is what
+        MO2's own button walks.
+        """
+        from PyQt6.QtCore import QAbstractProxyModel, QMetaObject, Q_ARG, Qt
+        from PyQt6.QtWidgets import QTreeView
+        view = self.window.findChild(QTreeView, 'downloadView')
+        if view is None or not view.isEnabled():
+            raise ValueError('MO2 download controls are unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel):
+            model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'DownloadList':
+            raise ValueError('This MO2 version has an unsupported download model')
+        incomplete = [entry for entry in self.snapshot() if not entry['modId'] or not entry['modName']]
+        if not incomplete:
+            return {'queried': 0}
+        wanted = {str(Path(entry['path'])).casefold() for entry in incomplete}
+        manager = self.organizer.downloadManager()
+        asked = 0
+        for row in range(model.rowCount()):
+            try:
+                host_path = str(Path(manager.downloadPath(row)))
+            except RuntimeError:
+                continue
+            if host_path.casefold() not in wanted:
+                continue
+            QMetaObject.invokeMethod(view, 'issueQueryInfoMd5', Qt.ConnectionType.DirectConnection, Q_ARG(int, row))
+            asked += 1
+        if asked == 0:
+            raise ValueError('MO2 no longer lists the downloads that are missing metadata; refresh first')
+        return {'queried': asked}
+
+    def _press_query(self, button):
+        from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMessageBox
         refused = []
 
         class Capture(QObject):

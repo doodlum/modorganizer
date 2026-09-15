@@ -502,11 +502,13 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             Margin = new Thickness(0,4,0,0) };
         filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersClear", Mo2QtWidgets.FiltersClear, Mo2QtWidgets.FiltersClear,
             "mdi-filter-remove-outline", () => clearFilters?.Invoke()));
-        // Edit... shows and hides the category list, which is what MO2's own button
-        // amounts to from this side: MO2 opens a dialog for managing the category
-        // definitions themselves, which this frontend does not own.
-        filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditTip,
-            "mdi-filter-cog-outline", () => { if (categoriesToggle is not null) categoriesToggle.IsChecked = false; }));
+        // Edit... opens MO2's own category editor. The categories belong to MO2 —
+        // this list only shows which ones the profile's mods carry — so the button
+        // hands over to MO2 and the list is re-read when its dialog closes. It used
+        // to hide the filter list instead, which is what the button beside the mod
+        // list does.
+        filterActions.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditAction,
+            "mdi-filter-cog-outline", async () => { if (ViewModel?.LiveProfile is { } live) await live.EditCategories(); }));
         // MO2 gives this row the group's full width and lets the separators box take
         // what the two radios leave (stretch 1,1,2). At the width a group beside the
         // list can have here, that box is left about 80px and its caption is drawn as

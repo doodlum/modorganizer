@@ -758,6 +758,35 @@ class ModActions:
             raise ValueError('MO2 did not open a mod detail dialog; wait and try again')
         return {'opened': True, 'modName': name}
 
+    def edit_categories(self):
+        """Press MO2's own Edit... beside its filter list.
+
+        That button opens MO2's category editor, which owns the category
+        definitions the frontend only reads. MO2 is shown while its dialog is up,
+        the way opening a mod's details already does, and the call returns when
+        the dialog closes so the frontend can re-read what changed.
+        """
+        from PyQt6.QtCore import QEventLoop
+        from PyQt6.QtWidgets import QDialog, QPushButton
+        button = self.window.findChild(QPushButton, 'filtersEdit')
+        if button is None or not self.window.isEnabled() or not button.isEnabled():
+            raise ValueError('MO2 cannot edit its categories right now')
+        visible = self.window.isVisible()
+        self.window.show()
+        self.window.raise_()
+        try:
+            button.click()
+            for dialog in self.window.findChildren(QDialog):
+                if not dialog.isVisible():
+                    continue
+                loop = QEventLoop()
+                dialog.finished.connect(loop.quit)
+                if dialog.isVisible():
+                    loop.exec()
+        finally:
+            if not visible: self.window.hide()
+        return {'edited': True}
+
     def mod_path(self, name):
         """Where MO2 keeps a mod, for the frontend's own Open in Explorer.
 

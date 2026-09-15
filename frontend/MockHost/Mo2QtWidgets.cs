@@ -38,7 +38,11 @@ internal static class Mo2QtWidgets
     internal const string FiltersGroup = "Filters";
     internal const string FiltersClear = "Clear";
     internal const string FiltersEdit = "Edit...";
+    // The tooltip MO2 puts on the And/Or radios, which is what its own filter list
+    // uses to explain how ticks combine.
     internal const string FiltersEditTip = "Display mods that match all selected categories.";
+    // Edit... has no tooltip of MO2's own; this says what MO2's button does.
+    internal const string FiltersEditAction = "Edit MO2's categories.";
     internal const string ModFilterTip = "Filter the list of mods.";
     internal const string ProfileLabel = "Profile";
     internal const string ProfileTip = "Pick a module collection";

@@ -790,6 +790,23 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
 
+    // MO2's Edit... beside its filter list, which opens the category editor. The
+    // categories themselves are MO2's — the frontend only reads which ones its mods
+    // carry — so this hands over to MO2's own dialog and re-reads when it closes.
+    public async Task EditCategories()
+    {
+        if (!CanStartHostAction) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected) return;
+            Status = "Editing categories in MO2"; Changed?.Invoke();
+            await Client.SendAsync("editCategories", new() { ["profilePath"] = CurrentTarget.ProfilePath },
+                timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
     // MO2's Query Metadata, which asks Nexus for what its downloads are missing and
     // writes the answers into the .meta files beside them. MO2's own button is
     // pressed, so its offline-mode guard and login prompt are the ones that apply.
@@ -799,9 +816,18 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             if (!IsConnected) return;
             Status = "Asking MO2 to query download metadata"; Changed?.Invoke();
-            await Client.SendAsync("queryDownloadMetadata", new() { ["profilePath"] = CurrentTarget.ProfilePath },
+            var result = await Client.SendAsync("queryDownloadMetadata", new() { ["profilePath"] = CurrentTarget.ProfilePath },
                 timeout: TimeSpan.FromMinutes(5));
-            Status = "MO2 is querying download metadata"; Changed?.Invoke();
+            // Newer MO2 presses its own button and says nothing about how many; the
+            // 2.5 route asks per download and reports the count, and nothing to ask
+            // for is an answer rather than silence.
+            var asked = result.TryGetProperty("queried", out var value) && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : -1;
+            Status = asked switch {
+                0 => "MO2's downloads already carry their metadata",
+                > 0 => $"MO2 is querying metadata for {asked} download" + (asked == 1 ? "" : "s"),
+                _ => "MO2 is querying download metadata",
+            };
+            Changed?.Invoke();
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }

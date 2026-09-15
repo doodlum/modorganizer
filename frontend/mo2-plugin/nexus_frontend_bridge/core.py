@@ -182,6 +182,9 @@ class Bridge:
         if action == 'renameSeparator':
             if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
             return self.mod_actions.rename_separator(request.get('name'), request.get('collectionName'))
+        if action == 'editCategories':
+            if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.edit_categories()
         if action in ('modPath', 'renameMod'):
             if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.mod_path(request.get('name')) if action == 'modPath' \
