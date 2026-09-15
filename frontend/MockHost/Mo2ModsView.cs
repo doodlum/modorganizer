@@ -201,11 +201,23 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         listContainer.Content = null;
         // The shared padding reaches this page's header through the native view's own
         // panel, but not its table, so the rows sat hard against the panel edge while
-        // Plugins — whose whole page is inset — started 24px in. The two tables have
-        // to begin at the same place.
-        var list = new Grid { ColumnDefinitions = new ColumnDefinitions("*,36"), RowDefinitions = new RowDefinitions("Auto,*"),
-            Margin = new Thickness(Mo2PanelChrome.Padding, 0, 0, 0) };
-        var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6);
+        // Plugins — whose whole page is inset — started 24px in. Both ends: the rail
+        // beside the rows used to run into the right-hand padding the header line
+        // respects, which ended this table 24px past where Plugins ends.
+        // The native tab control held 24px of space under a toolbar that now lives on
+        // the header line, which started this table 24px lower than Plugins starts its
+        // own. Nothing sits in that space any more.
+        native.FindControl<TabControl>("RulesTabControl")!.Margin = new Thickness(0);
+        // And the same rows presenter inset Plugins carries, so the first row of each
+        // table sits the same distance under its column headings. Applied as a style
+        // because the presenter is a template part that does not exist yet.
+        native.Styles.Add(new Avalonia.Styling.Style(x =>
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRowsPresenter>(x)) {
+            Setters = { new Avalonia.Styling.Setter(Avalonia.Layout.Layoutable.MarginProperty, new Thickness(0)) },
+        });
+        var list = new Grid { ColumnDefinitions = new ColumnDefinitions($"*,{Mo2TableRow.RailWidth}"), RowDefinitions = new RowDefinitions("Auto,*"),
+            Margin = new Thickness(Mo2PanelChrome.Padding, 0, Mo2PanelChrome.Padding, Mo2PanelChrome.Padding) };
+        var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6); columns.Height = Mo2TableRow.HeadingBand;
         void Heading(string label, int column) => Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
         Heading("Status", 1); Heading("Mod name", 2); Heading("Version", 3); Heading("Category", 4); Heading("Endorsed", 5); Heading("Actions", 6);
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
@@ -224,6 +236,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         var modColumns = Mo2TableRow.ColumnsButton(Mo2ModRow.OptionalColumns, Mo2ModRow.HiddenColumns, columns, Mo2ModColumnPreference.Save);
         Mo2ModColumnPreference.Load();
         Mo2PanelChrome.Apply(this, (Panel)header.Parent!, header, modColumns, toolbar);
+        // The native table is pushed 8px below its own headings, which it no longer
+        // draws — the column headings above it are this page's. Plugins has none, and
+        // the two tables' first rows sat 8px apart because of it.
+        table.Margin = new Thickness(0);
         list.Children.Add(columns); table.ShowColumnHeaders = false; Grid.SetRow(table, 1);
         Mo2TableRow.InstallRowStyles(table);
         var scroll = new Mo2ListScrollBar { Name = "ModsRailScrollBar", Width = 16, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
@@ -269,7 +285,11 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 native.FindControl<MenuItem>("MenuItemDeleteCollection")!.IsVisible = false;
                 header.IsVisible = true;
                 native.FindControl<Control>("WritableCollectionPageHeader")!.IsVisible = false;
-                header.Description = "Installed mods in priority order. Expand or collapse separators to organize the list.";
+                // As long as the Plugins one, so the two headers wrap to the same
+                // number of lines and their tables start at the same height when the
+                // panels sit side by side. What this used to also say about separators
+                // is in the priority help beside the column headings.
+                header.Description = "Installed mods in priority order. Drag to reorder.";
                 separator.IsEnabled = install.IsEnabled = model.LiveProfile!.CanChangeOriginalUi;
             }
             ViewModel!.LiveProfile!.Changed += RefreshMods;

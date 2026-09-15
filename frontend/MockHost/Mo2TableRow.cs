@@ -22,6 +22,16 @@ internal static class Mo2TableRow
     internal const int StatusColumn = 46;
     internal const int ActionsColumn = 60;
 
+    // The rail of scroll and conflict indicators beside the rows. Mods pinned this at
+    // 36 and Plugins let the native markup size it from its own help button, which
+    // came out 24px wider — so the two tables began together and ended 24px apart.
+    internal const int RailWidth = 36;
+
+    // The band the column headings sit in. Pinned, because each page puts something
+    // else of its own in that band — Mods its priority help, Plugins its conflict
+    // help — and whichever page's happened to be taller set where its headings sat.
+    internal const int HeadingBand = 24;
+
     // One inset for everything that sits in a table cell, headings included. Mods
     // used 3px on its title and 4px on version, category and the update pill while
     // Plugins used 3px throughout, so the two tables did not line up with each other
@@ -41,8 +51,11 @@ internal static class Mo2TableRow
     // an edge.
     internal static TextBlock Heading(string text)
     {
+        // Centred like the cells below it. Left to stretch, a heading took the height
+        // of whatever else shared its row — the help button on Mods, nothing on
+        // Plugins — and the two tables' headings sat at different heights.
         return new TextBlock { Text = text, Margin = CellMargin, FontWeight = FontWeight.SemiBold, FontSize = 12,
-            TextTrimming = TextTrimming.CharacterEllipsis };
+            VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     }
 
     internal static void Add(Grid grid, Control control, int column)

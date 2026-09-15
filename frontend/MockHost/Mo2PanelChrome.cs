@@ -28,6 +28,18 @@ internal static class Mo2PanelChrome
     internal const double CompactBelowHeight = 400;
     internal static readonly TimeSpan CompactDuration = TimeSpan.FromMilliseconds(160);
 
+    // The padding a header's own container should carry. A page whose header sits in
+    // a panel of its own — Mods, where the rest of the page is a separate row — has
+    // nothing under its separator to pad, and the bottom padding landed between the
+    // header and the table instead of at the foot of the page, starting that table
+    // 24px lower than the one beside it.
+    private static Thickness Inset(Panel root, double height)
+    {
+        var padding = PaddingFor(height);
+        return root.Children.OfType<Control>().Count(x => x.IsVisible) > 1
+            ? padding : new Thickness(padding.Left, padding.Top, padding.Right, 0);
+    }
+
     internal static Thickness PaddingFor(double height) =>
         new(height > 0 && height < CompactBelowHeight ? CompactPadding : Padding);
 
@@ -58,11 +70,11 @@ internal static class Mo2PanelChrome
         root.Children.Insert(root is DockPanel ? Math.Max(0, index) : 0, stack);
         WatchScrollers(view);
 
-        root.Margin = PaddingFor(view.Bounds.Height);
+        root.Margin = Inset(root, view.Bounds.Height);
         root.Transitions = new Transitions { new ThicknessTransition {
             Property = Layoutable.MarginProperty, Duration = CompactDuration, Easing = new CubicEaseOut() } };
         view.LayoutUpdated += (_, _) => {
-            var wanted = PaddingFor(view.Bounds.Height);
+            var wanted = Inset(root, view.Bounds.Height);
             if (root.Margin != wanted) root.Margin = wanted;
         };
     }

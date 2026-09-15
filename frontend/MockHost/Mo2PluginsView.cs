@@ -79,11 +79,16 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var mainGrid = editor.FindControl<Grid>("MainGrid")!;
         mainGrid.Margin = new Thickness(0);
         mainGrid.RowDefinitions = new RowDefinitions("Auto,*"); Grid.SetRow(tableControl, 1);
-        var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,8,0,6);
+        var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,8,0,6); headings.Height = Mo2TableRow.HeadingBand;
         foreach (var (text, column) in new[] { ("Status", 1), ("Plugin name", 2), ("Type", 3), ("Masters", 4), ("Actions", 5) })
             Mo2ModRow.Add(headings, Mo2TableRow.Heading(text), column);
         mainGrid.Children.Add(headings);
-        Grid.SetRowSpan(editor.FindControl<Grid>("TrophyBarColumnGrid")!, 2);
+        var pluginRail = editor.FindControl<Grid>("TrophyBarColumnGrid")!;
+        Grid.SetRowSpan(pluginRail, 2);
+        // The same rail width as Mods. Left to the native markup this column sized
+        // itself from its own help button and came out 24px wider, so the two tables
+        // started at the same place and ended in different ones.
+        pluginRail.Width = Mo2TableRow.RailWidth;
         headings.LayoutUpdated += (_, _) => Mo2PluginRow.Fit(headings, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
         // Keep NMA's help and winner indicator visible beside the plugin list,
         // including when the list is short enough not to need a scrollbar.
