@@ -452,6 +452,11 @@ public partial class MockApp : Application
                         try { await Mo2PanelChromeCheck.Run(); }
                         catch (Exception error) { Console.WriteLine("FAIL panel chrome: " + error.Message); }
                     };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_FOLDER_PAGES") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2FolderPagesCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL folder pages: " + error.Message); }
+                    };
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_COMPONENTS") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2ComponentsCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_COMPONENTS_SCREENSHOT")); }
@@ -1774,6 +1779,15 @@ public partial class MockApp : Application
         await WaitFor(() => table.Rows?.Any(x => x.Model is Mo2OverwriteFile { Path: selectedPath }) == true, "Required Overwrite fixture did not load");
         var index = Enumerable.Range(0, table.Rows!.Count).Single(i => table.Rows[i].Model is Mo2OverwriteFile { Path: selectedPath });
         table.RowSelection!.Select(new IndexPath(index));
+        // The search box lives behind the magnifier on the header line now, as it does
+        // on Data and External Files, so this opens it the way a person would rather
+        // than reaching for a box that is not on screen yet.
+        view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "SearchToggleButton")
+            .Command?.Execute(null);
+        if (view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "SearchToggleButton") is { } toggle)
+            toggle.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        await WaitFor(() => view.GetVisualDescendants().OfType<TextBox>().Any(x => x.Name == "OverwriteSearch"),
+            "Overwrite search did not open from its header action");
         var filter = view.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "OverwriteSearch");
         filter.Text = "__frontend_overwrite_check_B.txt";
         await WaitFor(() => table.Rows!.Count == 1 && table.RowSelection!.SelectedItem is null, "Overwrite filter did not hide the selected file");

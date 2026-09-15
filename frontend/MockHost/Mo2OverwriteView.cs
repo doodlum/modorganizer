@@ -22,9 +22,9 @@ internal sealed class Mo2OverwritePage : APageViewModel<IMo2OverwritePage>, IMo2
 }
 internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
 {
-    private readonly TreeDataGrid _table = new() { Name = "OverwriteFiles", ShowColumnHeaders = true };
-    private readonly TextBlock _status = new() { Name = "OverwriteStatus", TextWrapping = TextWrapping.Wrap };
-    private readonly TextBox _search = new() { Name = "OverwriteSearch", Watermark = "Filter generated files" };
+    private readonly TreeDataGrid _table = Mo2FolderPage.Table("OverwriteFiles");
+    private readonly TextBlock _status = Mo2FolderPage.Status("OverwriteStatus");
+    private readonly TextBox _search = Mo2FolderPage.Search("OverwriteSearch", "Search generated files");
     private readonly List<Button> _actions = [];
     private Mo2OverwriteFile[] _files = [];
     private Mo2ProfileTarget? _target;
@@ -37,31 +37,50 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
     internal Mo2OverwriteView(Func<Mo2ProfileTarget, Task<Mo2OverwriteFile[]>>? read)
     {
         _read = read;
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,*"), Margin = new Thickness(24) };
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
         var header = new PageHeader { Title = "Overwrite", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/overwrite.svg"),
             Description = "Generated files that take priority over installed mods." };
         root.Children.Add(header);
-        var text = new TextBlock { Text = "Move these files into a mod to organise them. Actions below apply to the entire Overwrite folder.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,12), Opacity = .75 };
-        Grid.SetRow(text,1); root.Children.Add(text);
-        var bar = new WrapPanel();
-        var inspect = new Button { Content = "Open files…", Name = "OpenOverwriteFiles" };
-        inspect.Click += async (_,_) => { if (ViewModel is { } model && _target == model.Profile.CurrentTarget && model.Profile.Mods.SingleOrDefault(x => x.IsOverwrite) is { } mod) { await model.Profile.ShowModDetails(mod.Id); await Refresh(); } };
-        bar.Children.Add(inspect); _actions.Add(inspect);
-        foreach (var (label, operation) in new[] { ("Create mod…","create"), ("Move to mod…","move"), ("Sync to mods…","sync"), ("Clear…","clear") }) {
-            var button = new Button { Content = label, Name = "Overwrite_" + operation, Tag = operation };
-            button.Click += async (_,_) => { if (ViewModel is not { } model || _target is not { } target) return; await model.Profile.OverwriteAction(operation,target); await Refresh(); };
-            bar.Children.Add(button); _actions.Add(button);
+        // These were labelled buttons in a row of their own under the header, the
+        // only page in the frontend that had one. They are the folder's actions, so
+        // they sit on the header line as icons like every other page's do, and what
+        // the row of text underneath used to explain is in their tooltips.
+        var inspect = Mo2TableRow.IconButton("mdi-file-search-outline",
+            "Open the Overwrite folder's files in MO2", async () => {
+                if (ViewModel is { } model && _target == model.Profile.CurrentTarget &&
+                    model.Profile.Mods.SingleOrDefault(x => x.IsOverwrite) is { } mod) {
+                    await model.Profile.ShowModDetails(mod.Id); await Refresh();
+                }
+            });
+        inspect.Name = "OpenOverwriteFiles";
+        _actions.Add(inspect);
+        var operations = new (string Icon, string Label, string Operation)[] {
+            ("mdi-folder-plus-outline", "Create a mod from everything in Overwrite…", "create"),
+            ("mdi-folder-move-outline", "Move everything in Overwrite into an existing mod…", "move"),
+            ("mdi-folder-sync-outline", "Sync every file back to the mod it came from…", "sync"),
+            ("mdi-delete-outline", "Delete everything in Overwrite…", "clear"),
+        };
+        var actions = new List<Control> { inspect };
+        foreach (var (icon, label, operation) in operations) {
+            var button = Mo2TableRow.IconButton(icon, label, async () => {
+                if (ViewModel is not { } model || _target is not { } target) return;
+                await model.Profile.OverwriteAction(operation, target); await Refresh();
+            });
+            button.Name = "Overwrite_" + operation; button.Tag = operation;
+            _actions.Add(button); actions.Add(button);
         }
-        // The header action is the shared icon button every other panel uses; the
-        // labelled Refresh it replaced was the one 62px control on those header lines.
         var refresh = Mo2TableRow.IconButton("mdi-refresh", "Refresh Overwrite", async () => await Refresh());
         refresh.Name = "RefreshOverwrite";
-        foreach (var button in bar.Children) button.Margin = new Thickness(0,0,8,8);
-        Grid.SetRow(bar,2); root.Children.Add(bar);
-        var filter = new StackPanel { Spacing = 8, Margin = new Thickness(0,4,0,8) }; filter.Children.Add(_search); filter.Children.Add(_status);
-        Grid.SetRow(filter,3); root.Children.Add(filter); Grid.SetRow(_table,4); root.Children.Add(_table);
-        _table.Classes.Add("MainListsStyling"); Content = root;
-        Mo2PanelChrome.Apply(this, root, header, refresh);
+        var filter = new StackPanel { Spacing = 8, Margin = new Thickness(0,4,0,8) }; filter.Children.Add(_search);
+        Grid.SetRow(filter,1); root.Children.Add(filter);
+        Grid.SetRow(_status,2); root.Children.Add(_status);
+        Grid.SetRow(_table,3); root.Children.Add(_table);
+        Content = root;
+        _columns = new Mo2ColumnToggle("overwrite", Render);
+        // Search beneath the header behind a magnifier, and a way to hide a column,
+        // as the other two folder pages have.
+        Mo2PanelChrome.Apply(this, root, header,
+            [Mo2PanelChrome.SearchAction(filter, "Search generated files"), .. actions, _columns.Action, refresh]);
         _search.TextChanged += (_,_) => Render();
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
@@ -101,12 +120,17 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
     {
         foreach (var button in _actions) button.IsEnabled = _active && _loaded && !_loading && ViewModel?.Profile.CanChangeOriginalUi == true && _target == ViewModel.Profile.CurrentTarget && (button.Tag is null || _files.Length > 0);
     }
+    private Mo2ColumnToggle? _columns;
     private void Render()
     {
         var visible = _files.Where(x => x.Path.Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase)).ToArray();
         var source = new FlatTreeDataGridSource<Mo2OverwriteFile>(visible);
-        source.Columns.Add(new TextColumn<Mo2OverwriteFile,string>("File",x => x.Path,width:new GridLength(1,GridUnitType.Star)));
-        source.Columns.Add(new TextColumn<Mo2OverwriteFile,string>("Size",x => x.Bytes < 1024 ? $"{x.Bytes} B" : $"{x.Bytes / 1024d:0.#} KB",width:new GridLength(85)));
+        // The shared name cell and the shared way of writing a size: this page
+        // counted in B and KB only, so a 40MB generated file read as 41277.5 KB
+        // where the same file on External Files read as 40.31 MB.
+        source.Columns.Add(Mo2FolderPage.NameColumn<Mo2OverwriteFile>(row => (row.Path, false, row.Path, false)));
+        source.Columns.Add(Mo2FolderPage.SizeColumn<Mo2OverwriteFile>(x => Mo2FolderPage.SizeText(x.Bytes)));
+        _columns?.Apply(source.Columns);
         source.RowSelection!.SelectionChanged += (_,_) => {
             if (source.RowSelection.SelectedItem is { } selected) _selectedPath = selected.Path;
         };

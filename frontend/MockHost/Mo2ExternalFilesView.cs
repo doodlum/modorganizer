@@ -25,9 +25,9 @@ internal sealed class Mo2ExternalFilesPage : APageViewModel<IMo2ExternalFilesPag
 
 internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFilesPage>
 {
-    private readonly TreeDataGrid _table = new() { Name = "ExternalFilesTable", ShowColumnHeaders = true };
-    private readonly TextBox _search = new() { Name = "ExternalFilesSearch", Watermark = "Search external files", MinWidth = 60 };
-    private readonly TextBlock _status = new() { Name = "ExternalFilesStatus", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+    private readonly TreeDataGrid _table = Mo2FolderPage.Table("ExternalFilesTable");
+    private readonly TextBox _search = Mo2FolderPage.Search("ExternalFilesSearch", "Search external files");
+    private readonly TextBlock _status = Mo2FolderPage.Status("ExternalFilesStatus");
     private readonly Button _reveal;
     private readonly Button _import;
     private readonly Button _cleanup, _restore;
@@ -73,9 +73,7 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
         Grid.SetRow(toolbar, 1); root.Children.Add(toolbar);
         Grid.SetRow(_status, 2); root.Children.Add(_status);
         Grid.SetRow(_table, 3); root.Children.Add(_table);
-        // NMA styles its file trees Compact and reserves MainListsStyling for mod
-        // lists; this page is a file tree, so it follows the original page.
-        _table.Classes.Add("Compact"); Content = root;
+        Content = root;
         _columns = new Mo2ColumnToggle("external-files", () => Render());
         // Search in the row beneath, magnifier on the header line, as Mods does.
         Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(toolbar, "Search external files"),
@@ -143,25 +141,16 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
         _nodes = Mo2ExternalFileNode.Build(files, _search.Text ?? "", _expansion);
         var source = new HierarchicalTreeDataGridSource<Mo2ExternalFileNode>(_nodes);
         source.Columns.Add(new HierarchicalExpanderColumn<Mo2ExternalFileNode>(
-            new TemplateColumn<Mo2ExternalFileNode>(SharedColumns.NameWithFileIcon.GetColumnHeader(), new FuncDataTemplate<Mo2ExternalFileNode>((node, _) => {
-                if (node is null) return new Control();
-                var cell = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*"), MinWidth = 0 };
-                cell.Children.Add(new UnifiedIcon { Value = new ProjektankerIcon(node.IsFolder ? "mdi-folder-outline" :
-                    node.Kind == "External link" ? "mdi-file-link-outline" : "mdi-file-outline"), Size = 16, Opacity = .7 });
-                var name = new TextBlock { Text = node.Name, TextTrimming = TextTrimming.CharacterEllipsis,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                Grid.SetColumn(name, 1); cell.Children.Add(name); ToolTip.SetTip(cell, node.Path);
-                return cell;
-            }), width: new GridLength(1, GridUnitType.Star)),
+            Mo2FolderPage.NameColumn<Mo2ExternalFileNode>(node => (node.Name, node.IsFolder, node.Path, node.IsLink)),
             x => x.Children, x => x.IsFolder, x => x.IsExpanded));
         // The headers come from NMA's own column definitions rather than being typed
         // here, so they cannot drift from the app this page is meant to match. They
         // were written in capitals, which made this the one page in the frontend
         // whose table headers did not read like the rest.
+        source.Columns.Add(Mo2FolderPage.SizeColumn<Mo2ExternalFileNode>(x => x.SizeText));
         source.Columns.Add(new TextColumn<Mo2ExternalFileNode, string>(
-            SharedColumns.ItemSizeOverGamePath.GetColumnHeader(), x => x.SizeText, new GridLength(90)));
-        source.Columns.Add(new TextColumn<Mo2ExternalFileNode, string>(
-            SharedColumns.FileCount.GetColumnHeader(), x => x.FileCountText, new GridLength(90)));
+            SharedColumns.FileCount.GetColumnHeader(), x => x.FileCountText,
+            new GridLength(Mo2FolderPage.SizeColumnWidth)));
         _columns?.Apply(source.Columns);
         var previous = _table.Source; _table.Source = source; (previous as IDisposable)?.Dispose();
         // Recycled expander cells can retain their previous collapsed state

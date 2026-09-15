@@ -32,10 +32,10 @@ internal sealed class Mo2DataPage : APageViewModel<IMo2DataPage>, IMo2DataPage
 }
 internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
 {
-    private readonly TreeDataGrid _table = new() { Name = "DataTable", ShowColumnHeaders = true };
-    private readonly TextBox _search = new() { Watermark = "Search this folder", MinWidth = 60 };
+    private readonly TreeDataGrid _table = Mo2FolderPage.Table("DataTable");
+    private readonly TextBox _search = Mo2FolderPage.Search("DataSearch", "Search this folder");
     private readonly TextBlock _path = new() { Text = "Data", TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
-    private readonly TextBlock _status = new() { Name = "DataStatus", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+    private readonly TextBlock _status = Mo2FolderPage.Status("DataStatus");
     private readonly CheckBox _conflicts = new() { Content = "Conflicts only" };
     private readonly Button _up;
     private readonly Button _open;
@@ -72,7 +72,7 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         Grid.SetRow(toolbar,1); root.Children.Add(toolbar);
         var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") }; location.Children.Add(_path); Grid.SetColumn(_conflicts,1); location.Children.Add(_conflicts);
         Grid.SetRow(location,2); root.Children.Add(location); Grid.SetRow(_status,3); root.Children.Add(_status); Grid.SetRow(_table,4); root.Children.Add(_table);
-        _table.Classes.Add("MainListsStyling"); Content = root;
+        Content = root;
         _columns = new Mo2ColumnToggle("data", Render);
         // Search in the row beneath, magnifier on the header line, as Mods does.
         Mo2PanelChrome.Apply(this, root, header, _up, Mo2PanelChrome.SearchAction(toolbar, "Search this folder"),
@@ -166,10 +166,10 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
     {
         var rows = _entries.Where(x => (x.Name + " " + x.Source).Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase) && (_conflicts.IsChecked != true || x.Directory || x.Origins.Distinct().Count() > 1)).ToArray();
         var source = new FlatTreeDataGridSource<Mo2DataEntry>(rows);
-        source.Columns.Add(new TemplateColumn<Mo2DataEntry>("Name",new FuncDataTemplate<Mo2DataEntry>((row,_) => {
-            var label = new TextBlock { Text = row is null ? "" : (row.Directory ? "▸ " : "") + row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (row is not null) ToolTip.SetTip(label,row.Details); return label;
-        }),width:new GridLength(1,GridUnitType.Star)));
+        // The same name cell the other two folder pages draw: the icon says whether
+        // a row is a folder, where this page used to type an arrow in front of the
+        // name and leave the rows half a character out of line with each other.
+        source.Columns.Add(Mo2FolderPage.NameColumn<Mo2DataEntry>(row => (row.Name, row.Directory, row.Details, false)));
         source.Columns.Add(new TemplateColumn<Mo2DataEntry>("Mod",new FuncDataTemplate<Mo2DataEntry>((row,_) => {
             var label = new TextBlock { Text = row?.Source, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
             if (row is not null) ToolTip.SetTip(label,row.Details); return label;

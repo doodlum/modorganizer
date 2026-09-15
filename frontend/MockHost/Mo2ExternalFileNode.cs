@@ -19,16 +19,9 @@ internal sealed class Mo2ExternalFileNode(string path, Mo2ExternalFile? file = n
         : IsLink ? 0 : File!.Bytes;
     public int FileCount => IsFolder ? Children.Sum(child => child.FileCount) : 1;
 
-    public string SizeText => IsLink ? "—" : Format(TotalBytes);
+    public string SizeText => IsLink ? "—" : Mo2FolderPage.SizeText(TotalBytes);
     public string FileCountText => IsFolder ? FileCount.ToString() : "";
 
-    // Matches the B / KB / MB steps the reference screenshot shows.
-    private static string Format(long bytes) => bytes switch {
-        < 1024 => bytes + " B",
-        < 1024 * 1024 => $"{bytes / 1024d:0.##} KB",
-        < 1024L * 1024 * 1024 => $"{bytes / (1024d * 1024):0.##} MB",
-        _ => $"{bytes / (1024d * 1024 * 1024):0.##} GB",
-    };
 
     private bool _expanded;
     public bool IsExpanded { get => _expanded; set => this.RaiseAndSetIfChanged(ref _expanded, value); }

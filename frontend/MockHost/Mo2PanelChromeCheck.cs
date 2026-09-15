@@ -46,11 +46,20 @@ internal static class Mo2PanelChromeCheck
                 if (!stack.Children.Contains(header) &&
                     !stack.Children.OfType<Panel>().Any(x => x.Children.Contains(header)))
                     throw new Exception(name + " header is not inside the shared stack");
-                var separator = stack.Children.OfType<Divider>().FirstOrDefault(x => x.Name == "PanelHeaderSeparator")
+                var separator = stack.Children.OfType<Control>().FirstOrDefault(x => x.Name == "PanelHeaderSeparator")
                     ?? throw new Exception(name + " has no separator under its header");
+                // Not NMA's Divider, which is the 4x4 dot its status bar puts between
+                // two pieces of text rather than a rule.
+                if (separator is Divider) throw new Exception(name + " separates its header with a status-bar dot");
                 if (stack.Children.IndexOf(separator) <= stack.Children.IndexOf(header))
                     throw new Exception(name + " separator is not below the header");
                 if (separator.Bounds.Width <= 0) throw new Exception(name + " separator has no width");
+                // And it runs the width of the page. It is a rule under the header,
+                // not a mark in the middle of it, and at a glance a short centred dash
+                // reads as a stray character rather than as the page's own divider.
+                if (separator.Bounds.Width < stack.Bounds.Width - 1)
+                    throw new Exception($"{name} separator is {separator.Bounds.Width:F0}px across a " +
+                        $"{stack.Bounds.Width:F0}px header");
 
                 var root = (Grid)stack.Parent!;
                 // The margin animates, so every assertion waits for it to arrive.

@@ -3,6 +3,7 @@ using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Controls.PageHeader;
@@ -43,6 +44,14 @@ internal static class Mo2PanelChrome
     internal static Thickness PaddingFor(double height) =>
         new(height > 0 && height < CompactBelowHeight ? CompactPadding : Padding);
 
+    // The rule under a page header. NMA's Divider is a 4x4 dot — the bullet its
+    // status bar puts between two pieces of text — so asking for one here drew a
+    // stray mark in the middle of every page instead of a line across it.
+    private static Border Separator() => new() {
+        Name = "PanelHeaderSeparator", Height = 1, HorizontalAlignment = HorizontalAlignment.Stretch,
+        Background = Application.Current?.FindResource("StrokeTranslucentModerateBrush") as IBrush,
+    };
+
     // Header, its actions and its separator live in one stack, so the separator
     // always sits directly under the header as the reference shows, and the panel's
     // actions sit on the title's line instead of in a toolbar row of their own.
@@ -61,8 +70,7 @@ internal static class Mo2PanelChrome
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
         stack.Children.Add(HeaderLine(header, actions));
-        stack.Children.Add(new Divider { Name = "PanelHeaderSeparator", Height = 1,
-            HorizontalAlignment = HorizontalAlignment.Stretch });
+        stack.Children.Add(Separator());
         Grid.SetRow(stack, row); Grid.SetColumn(stack, column); Grid.SetColumnSpan(stack, span);
         DockPanel.SetDock(stack, dock);
         // A DockPanel gives its last child the remaining space, so the header has to
@@ -96,8 +104,7 @@ internal static class Mo2PanelChrome
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
         stack.Children.Add(HeaderLine(header, actions));
-        stack.Children.Add(new Divider { Name = "PanelHeaderSeparator", Height = 1,
-            HorizontalAlignment = HorizontalAlignment.Stretch });
+        stack.Children.Add(Separator());
         DockPanel.SetDock(stack, Dock.Top);
         layout.Children.Insert(0, stack);
         layout.Transitions ??= new Transitions { new ThicknessTransition {

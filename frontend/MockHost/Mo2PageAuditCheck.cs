@@ -97,7 +97,7 @@ internal static class Mo2PageAuditCheck
                 Actions: buttons.Length,
                 ActionSize: buttons.Select(x => x.Bounds.Height).DefaultIfEmpty(0).Max(),
                 Pictogram: plate?.Width ?? -1,
-                Separator: stack?.Children.OfType<Divider>().Any(x => x.Name == "PanelHeaderSeparator") == true,
+                Separator: stack?.Children.OfType<Control>().Any(x => x.Name == "PanelHeaderSeparator") == true,
                 Maximise: buttons.Any(x => x.Name == "MaximisePanelButton"),
                 Description: !string.IsNullOrWhiteSpace(header.Description));
             seen.Add(metrics);

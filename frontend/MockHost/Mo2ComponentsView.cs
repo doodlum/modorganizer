@@ -196,7 +196,10 @@ internal sealed class Mo2ComponentsView : ReactiveUserControl<Mo2ComponentsPage>
             Row("Determinate", new ProgressBar { Value = 60, Width = 180 })));
 
         sections.Children.Add(Section("Separators", null,
-            Row("Divider", new Divider { Width = 180, Height = 1 })));
+            // NMA's Divider is the 4x4 dot its status bar puts between two pieces of
+            // text, so the gallery shows it at the size it is rather than stretched
+            // into a rule it cannot draw.
+            Row("Divider", new Divider())));
 
         var labelRows = new StackPanel { Spacing = 8 };
         foreach (var fill in new[] { Mo2Label.Fills.Weak, Mo2Label.Fills.Strong, Mo2Label.Fills.Outline }) {
