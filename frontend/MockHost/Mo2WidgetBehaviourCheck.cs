@@ -246,6 +246,40 @@ internal static class Mo2WidgetBehaviourCheck
             } else faults.Add("Data has no Archives box");
         } else faults.Add("Data never drew");
 
+        // --- Archives ---
+        // MO2's tick beside an archive decides whether MO2 manages it, and MO2 writes
+        // its profile's archive list when the tick changes. Driven through to MO2 and
+        // put back, because a tick that only moves is the fault this check is for.
+        await Navigate(menu.ArchivesItem);
+        await Settle();
+        if (Find<Mo2ArchivesView>() is { } archivesView) {
+            CheckBox? Box() => archivesView.GetVisualDescendants().OfType<CheckBox>()
+                .FirstOrDefault(x => x.Name == "ArchiveManagedBox" && x.IsEnabled);
+            // MO2 decides which archives may be ticked at all: the game's own are
+            // listed under <Unmanaged> and cannot be, and an instance with archive
+            // management off offers none. That the frontend draws them disabled is
+            // MO2's answer, not a fault of its own.
+            if (Box() is not { } box)
+                worked.Add($"MO2 lets none of its {archivesView.GetVisualDescendants().OfType<CheckBox>().Count(x => x.Name == "ArchiveManagedBox")} archives be ticked, and neither does the list");
+            else
+            {
+                var archive = ((TextBlock?)((StackPanel?)box.Parent)?.Children.OfType<TextBlock>().FirstOrDefault())?.Text ?? "an archive";
+                var before = box.IsChecked == true;
+                box.IsChecked = !before;
+                box.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Until(() => Box()?.IsChecked == !before, seconds: 30);
+                if (Box()?.IsChecked != !before) faults.Add($"ticking {archive} did not reach MO2");
+                else {
+                    var back = Box()!;
+                    back.IsChecked = before;
+                    back.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Until(() => Box()?.IsChecked == before, seconds: 30);
+                    if (Box()?.IsChecked != before) faults.Add($"{archive} was left with MO2's tick changed");
+                    else worked.Add($"{archive}'s tick reached MO2 and came back");
+                }
+            }
+        } else faults.Add("Archives never drew");
+
         // --- Downloads ---
         await Navigate(menu.LeftMenuItemLibrary);
         await Settle();

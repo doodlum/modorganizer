@@ -140,8 +140,21 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         source.Columns.Add(new TemplateColumn<Mo2Archive>("Archive", new FuncDataTemplate<Mo2Archive>((archive,_) => {
             var cell = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            var check = new CheckBox { IsChecked = archive?.Active == true, IsEnabled = archive?.CanToggle == true,
+            var check = new CheckBox { Name = "ArchiveManagedBox", IsChecked = archive?.Active == true, IsEnabled = archive?.CanToggle == true,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, MinWidth = 0, Padding = new Thickness(0) };
+            // MO2's own tick: it decides whether MO2 manages the archive, and MO2
+            // writes its profile's archive list the moment the tick changes. Without
+            // this the box moved and nothing else did, and the next refresh put it
+            // back — a control that looked like MO2's and did nothing.
+            if (archive is not null) check.Click += async (_, e) => {
+                e.Handled = true;
+                if (ViewModel is not { } model) return;
+                var wanted = check.IsChecked == true;
+                check.IsEnabled = false;
+                var updated = await model.Profile.SetArchiveManaged(archive, wanted, model.Profile.CurrentTarget);
+                if (updated is null) { check.IsChecked = archive.Active; check.IsEnabled = archive.CanToggle; return; }
+                _archives = updated; Render();
+            };
             var label = new TextBlock { Text = archive?.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
             cell.Children.Add(check); cell.Children.Add(label);

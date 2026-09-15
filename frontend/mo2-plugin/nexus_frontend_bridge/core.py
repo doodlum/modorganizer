@@ -148,12 +148,13 @@ class Bridge:
         if action == 'readDataDirectory':
             from .data_files import read_directory
             return read_directory(self.organizer, request.get('directory', ''))
-        if action in ('readArchives', 'previewArchive', 'extractArchive', 'previewDataFile', 'dataFileAction'):
+        if action in ('readArchives', 'previewArchive', 'extractArchive', 'previewDataFile', 'dataFileAction', 'setArchiveManaged'):
             if self.mod_actions is None: raise ValueError('MO2 archive integration is unavailable')
             from .archives import Archives
             archives = Archives(self.organizer, self.mod_actions.window)
             if action == 'dataFileAction': return archives.preview_file(request.get('directory'), request.get('name'), request.get('origins'), request.get('operation'))
             if action == 'previewDataFile': return archives.preview_file(request.get('directory'), request.get('name'), request.get('origins'))
+            if action == 'setArchiveManaged': return archives.set_managed(request.get('name'), request.get('mod'), request.get('enabled'))
             if action == 'extractArchive': return archives.extract(request.get('name'), request.get('mod'))
             return archives.read() if action == 'readArchives' else archives.preview(request.get('name'))
         if action in ('selectionLinks', 'createSeparator'):

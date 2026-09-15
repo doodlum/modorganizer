@@ -34,6 +34,36 @@ class Archives:
                              'canToggle': not item.isDisabled() and bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)})
         return {'archives': rows}
 
+    def set_managed(self, name, mod, enabled):
+        """Tick or untick an archive in MO2's own list.
+
+        MO2 writes the profile's archive file whenever an item in that list
+        changes (MainWindow::on_bsaList_itemChanged), so setting the check state
+        on the item is the same thing as clicking it in MO2 — the ordering, the
+        file and the refresh are MO2's.
+        """
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QTreeWidget
+        if not isinstance(name, str) or not isinstance(mod, str) or not isinstance(enabled, bool):
+            raise ValueError('An archive, its mod and the wanted state are required')
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        # Reading also populates the list, which MO2 fills only when its own tab
+        # is visited; without it there is nothing to tick.
+        self.read()
+        tree = self.window.findChild(QTreeWidget, 'bsaList')
+        if tree is None: raise ValueError('MO2 archive list is unavailable')
+        for row in range(tree.topLevelItemCount()):
+            group = tree.topLevelItem(row)
+            if group.text(0) != mod: continue
+            for index in range(group.childCount()):
+                item = group.child(index)
+                if item.text(0) != name: continue
+                if item.isDisabled() or not bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                    raise ValueError('MO2 does not manage this archive')
+                item.setCheckState(0, Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
+                return self.read()
+        raise ValueError('MO2 no longer lists this archive; refresh first')
+
     def extract(self, name, mod):
         from PyQt6.QtCore import QCoreApplication, QEvent, QObject, QTimer, Qt
         from PyQt6.QtWidgets import QApplication, QMenu, QTabWidget, QTreeWidget, QWidget

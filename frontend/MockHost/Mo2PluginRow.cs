@@ -53,7 +53,11 @@ internal static class Mo2PluginRow
             Mo2EntryMenu.Action("Move earlier", () => Run(() => profile.Order.MoveItemDelta(default, plugin.Key, -1)), ready && plugin.CanMove),
             Mo2EntryMenu.Action("Move later", () => Run(() => profile.Order.MoveItemDelta(default, plugin.Key, 1)), ready && plugin.CanMove),
             Mo2EntryMenu.Action(plugin.IsLocked ? "Unlock load order" : "Lock load order",
-                () => Run(() => profile.SetPluginLocked(plugin.DisplayName, !plugin.IsLocked, target)), ready && plugin.IsActive && (plugin.IsLocked || plugin.CanMove))
+                () => Run(() => profile.SetPluginLocked(plugin.DisplayName, !plugin.IsLocked, target)), ready && plugin.IsActive && (plugin.IsLocked || plugin.CanMove)),
+            // MO2 offers the folder of the mod a plugin came from, which is how a
+            // plugin's own files are reached from its list.
+            Mo2EntryMenu.Action("Open origin in Explorer", () => Run(() => profile.OpenModFolder(plugin.ModName)),
+                ready && plugin.ModName.Length > 0 && profile.Mods.Any(x => x.Name == plugin.ModName))
             ];
             actionSets.Add(items); return items;
         }

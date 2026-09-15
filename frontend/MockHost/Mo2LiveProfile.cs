@@ -322,6 +322,24 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             return result.GetProperty("archives").EnumerateArray().Select(x => new Mo2Archive(x.GetProperty("name").GetString()!,x.GetProperty("mod").GetString()!,x.GetProperty("active").GetBoolean(),x.GetProperty("canToggle").GetBoolean())).ToArray();
         } finally { _commands.Release(); }
     }
+    // MO2's own tick beside an archive, which decides whether MO2 manages it. MO2
+    // writes the profile's archive list whenever that list changes, so ticking the
+    // item in MO2 is the whole operation.
+    public async Task<Mo2Archive[]?> SetArchiveManaged(Mo2Archive archive, bool enabled, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return null;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return null;
+            Status = (enabled ? "Letting MO2 manage " : "Leaving ") + archive.Name + (enabled ? "" : " to the game"); Changed?.Invoke();
+            var result = await Client.SendAsync("setArchiveManaged", new() {
+                ["profilePath"] = target.ProfilePath, ["name"] = archive.Name, ["mod"] = archive.Mod, ["enabled"] = enabled });
+            return result.GetProperty("archives").EnumerateArray().Select(x => new Mo2Archive(
+                x.GetProperty("name").GetString()!, x.GetProperty("mod").GetString()!,
+                x.GetProperty("active").GetBoolean(), x.GetProperty("canToggle").GetBoolean())).ToArray();
+        } catch (Exception error) { Report(error); return null; }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
     public async Task SortPlugins(Mo2ProfileTarget target)
     {
         if (!CanStartHostAction || !CanSortPlugins || target != CurrentTarget) return;
