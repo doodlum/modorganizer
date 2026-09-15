@@ -48,6 +48,16 @@ both start 24px into their page, with the status column 16px and the name column
 the native one — that second group was the source of the duplicated and unresponsive
 buttons — and the native Deselect empties the table's own selection.
 
+Three mismatches survived the first pass at sharing and are fixed: the overflow
+dots were the same glyph at 24px on one page and 16 on the other, because one
+button was built by hand and took the icon's default size; the search control was
+32px tall on My Mods and 24 on Plugins, because the original markup wraps it in a
+padded box that only that page kept; and a selected row was filled on Plugins but
+not on My Mods, because the highlight pass wrote Transparent into a mod row's
+background and a local value beats the shared `:selected` style. The checks now
+measure the buttons, the toolbar layout and what a selected row is painted, and
+cover a click on a row and a selection surviving a refresh.
+
 My Mods and Plugins are built from the same parts rather than merely behaving
 alike: one rail and scrollbar connection, one toolbar and pill, one selection
 group, one highlight wiring. Matching them behaviour by behaviour had left two
