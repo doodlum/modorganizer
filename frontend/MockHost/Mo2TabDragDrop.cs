@@ -112,6 +112,22 @@ internal static class Mo2TabDragDrop
         return WorkspaceGridState.From(states, workspace.IsHorizontal);
     }
 
+    // Which tab a press landed on, or nothing when it did not land on one. This is
+    // the first thing a drag does and the thing most likely to stop working without
+    // anyone noticing: it walks the visual tree looking for the native tab header and
+    // the panel around it, and a drag that cannot find them simply never begins.
+    internal static (PanelId Panel, PanelTabId Tab)? TabAt(Visual? source)
+    {
+        if (source is null) return null;
+        // Never from a button: dragging must not swallow closing a tab.
+        if (source.GetSelfAndVisualAncestors().OfType<Button>().Any()) return null;
+        var header = source.GetSelfAndVisualAncestors().OfType<PanelTabHeaderView>().FirstOrDefault();
+        if (header?.ViewModel is null) return null;
+        var panel = header.GetVisualAncestors().OfType<PanelView>().FirstOrDefault();
+        if (panel?.ViewModel is null) return null;
+        return (panel.ViewModel.Id, header.ViewModel.Id);
+    }
+
     internal static void Attach(Window window, IWorkspaceController controller)
     {
         var preview = new Border {
@@ -153,11 +169,8 @@ internal static class Mo2TabDragDrop
             // Only a plain left press starts a drag, and never from the close button:
             // dragging must not swallow closing a tab or opening its context menu.
             if (!args.GetCurrentPoint(window).Properties.IsLeftButtonPressed) return;
-            if (source.GetSelfAndVisualAncestors().OfType<Button>().Any()) return;
+            if (TabAt(source) is null) return;
             var header = source.GetSelfAndVisualAncestors().OfType<PanelTabHeaderView>().FirstOrDefault();
-            if (header?.ViewModel is null) return;
-            var panel = header.GetVisualAncestors().OfType<PanelView>().FirstOrDefault();
-            if (panel?.ViewModel is null) return;
             pressed = args.GetPosition(window);
             pressedTab = header;
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);

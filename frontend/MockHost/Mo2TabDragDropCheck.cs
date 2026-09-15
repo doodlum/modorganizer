@@ -56,6 +56,31 @@ internal static class Mo2TabDragDropCheck
         if (strip is null) throw new Exception("The shown panel has no tab strip at all, even with the pointer at its top edge");
         if (strip.Bounds.Height <= 0)
             throw new Exception($"Tab strip has no height with a single tab (visible={strip.IsVisible})");
+        // A press on the strip has to resolve to the tab under it, and a press on the
+        // close button inside it must not: a drag that swallowed that button would
+        // stop tabs being closed. This is the step before any of the moves below, and
+        // the one that quietly stops working when the native tab header changes shape.
+        var headerView = window.GetVisualDescendants().OfType<PanelTabHeaderView>()
+            .FirstOrDefault(x => x.IsEffectivelyVisible && x.ViewModel is not null);
+        if (headerView is null) throw new Exception("No tab header to press, so no drag could ever start");
+        // The tab's own title, not the label inside its close button: that one is
+        // meant to resolve to nothing, and is checked separately below.
+        var title = headerView.GetVisualDescendants().OfType<TextBlock>()
+            .FirstOrDefault(x => !x.GetVisualAncestors().OfType<Button>().Any()) ?? (Visual)headerView;
+        var pressed = Mo2TabDragDrop.TabAt(title);
+        if (pressed is null) {
+            var chain = string.Join(" < ", title.GetSelfAndVisualAncestors().OfType<Control>().Take(8)
+                .Select(x => $"{x.GetType().Name}#{x.Name}"));
+            throw new Exception($"A press on a tab header resolved to no tab, so dragging it would do nothing: {chain}");
+        }
+        if (pressed.Value.Tab != headerView.ViewModel!.Id)
+            throw new Exception("A press on a tab header resolved to a different tab");
+        if (headerView.GetVisualDescendants().OfType<Button>().FirstOrDefault() is { } closer &&
+            Mo2TabDragDrop.TabAt(closer) is not null)
+            throw new Exception("A press on a tab's own button would start a drag instead of pressing the button");
+        if (Mo2TabDragDrop.TabAt(window) is not null)
+            throw new Exception("A press outside any tab header resolved to a tab");
+
         var workspaceId = controller.ActiveWorkspaceId;
         if (!controller.TryGetWorkspace(workspaceId, out var workspace)) throw new Exception("No active workspace");
         var startingPanels = workspace.Panels.Count;
@@ -256,7 +281,8 @@ internal static class Mo2TabDragDropCheck
             Grid("rejoining the panels");
         }
 
-        Console.WriteLine($"PASS tab drag and drop: 5 drop zones and their previewed regions, edge drop split into 2 panels, " +
+        Console.WriteLine($"PASS tab drag and drop: a press on a tab header resolves to that tab and a press on its close " +
+            $"button does not, 5 drop zones and their previewed regions, edge drop split into 2 panels, " +
             $"a panel's last tab moved to another panel's edge without leaving a hole, tab drop rejoined to 1, self-drop " +
             $"ignored, {filled} panels filled the workspace and {refused} further edge drops were refused rather than drawn " +
             $"as a third column — each previewing the whole panel it would join — a move put a maximised panel back before " +
