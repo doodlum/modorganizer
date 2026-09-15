@@ -48,6 +48,15 @@ both start 24px into their page, with the status column 16px and the name column
 the native one — that second group was the source of the duplicated and unresponsive
 buttons — and the native Deselect empties the table's own selection.
 
+External Files, Data and Overwrite are built from one set of parts. Data drew an
+arrow in front of folder names and styled its table for mod lists; Overwrite wrote
+its own sizes in B and KB only, drew five labelled buttons in the body and offered
+no column control or search. `MO2_VERIFY_FOLDER_PAGES=1` builds all three over the
+same fixture folder and compares them as rendered, down to where the icon and the
+name sit inside the shared cell. The header separator was NMA's `Divider`, which is
+a 4×4 dot for status-bar bullets, so every page had been drawing a stray mark where
+a rule belongs.
+
 Dropping a tab on a panel's edge splits that panel, and the split is now checked
 against what the workspace can hold — two columns and two rows. Splitting a panel
 that is already half of something asked for a third of one or the other and drew
