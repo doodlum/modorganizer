@@ -48,6 +48,14 @@ both start 24px into their page, with the status column 16px and the name column
 the native one — that second group was the source of the duplicated and unresponsive
 buttons — and the native Deselect empties the table's own selection.
 
+Selecting rows behaves the same in My Mods and Plugins. Plugins had no selection
+group at all — no count, no deselect, and no multi-row Enable/Disable since an
+earlier tidy-up removed those buttons — and marked nothing in the other table,
+while selecting mods has always marked the plugins they install. Both now show the
+original app's group and mark each other. `MO2_VERIFY_SELECTION_PARITY=1` drives
+both selection models and compares what the two pages do, including the colour a
+selected, hovered and cross-marked row takes.
+
 External Files, Data and Overwrite are built from one set of parts. Data drew an
 arrow in front of folder names and styled its table for mod lists; Overwrite wrote
 its own sizes in B and KB only, drew five labelled buttons in the body and offered
