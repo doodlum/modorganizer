@@ -91,6 +91,31 @@ internal static class Mo2QtWidgetCheck
             else described.Add($"{page} carries all {widgets.Length}");
         }
 
+        // MO2's displayCategoriesBtn does something as well as being there: it is what
+        // shows and hides the filter list beside the mod list, and a list of mods is
+        // what the pane is for. Driven here rather than only looked up, because the
+        // fault this check exists to catch — a widget that draws but does nothing —
+        // is exactly what a lookup passes.
+        await open["my-mods"]();
+        await Task.Delay(400);
+        window.UpdateLayout();
+        var toggle = window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+            .FirstOrDefault(x => x.Name == "ModsDisplayCategoriesButton");
+        Control? Group() => window.GetVisualDescendants().OfType<Control>()
+            .FirstOrDefault(x => x.Name == "ModCategoriesGroup");
+        if (toggle is null) faults.Add("my-mods has no button to show and hide its filter list");
+        else {
+            var wasShowing = Group()?.IsEffectivelyVisible == true;
+            toggle.IsChecked = false;
+            await Task.Delay(300); window.UpdateLayout();
+            if (Group()?.IsEffectivelyVisible == true) faults.Add("the filter list stayed when its button was switched off");
+            toggle.IsChecked = true;
+            await Task.Delay(300); window.UpdateLayout();
+            if (Group()?.IsEffectivelyVisible != true) faults.Add("the filter list did not come back when its button was switched on");
+            else described.Add("the filter list follows its button");
+            toggle.IsChecked = wasShowing;
+        }
+
         await Navigate(restore);
         await Task.Delay(600);
 

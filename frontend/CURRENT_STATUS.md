@@ -35,6 +35,40 @@ statements and should be read with their dates and later corrections.
 
 ## Latest functional fixes
 
+The lists are drawn at MO2's density. The borrowed theme is built for a handful
+of large cards — 46px a row, 24px of padding in every cell, 14px text — so the
+window that shows MO2's forty mods showed eleven, and no amount of matching
+captions made a page read like the tab it stands in for. One set of numbers
+(`Mo2Density`) now says how tall a list line is, and every table takes it. Three
+of the four places a row's height was decided were doing it behind the others'
+backs: the deferred placeholder pinned 40, the highlight pass wrote 40 onto every
+row it touched as a local value, and the theme sets its own inside rules that
+name the table as well as the row, which is why the file pages kept 32px rows
+after the shared style was in place. `MO2_VERIFY_DENSITY` measures the rows each
+page actually draws, in the panel it draws them in.
+
+The mod pane is MO2's own (`src/mainwindow.ui`): the profile box and the buttons
+above the list, the Filters group beside it with Clear and Edit, And/Or and what
+to do with separators, and under the list the button that shows and hides that
+group, what the list is narrowed to, the grouping box and the filter field.
+Downloads gains the two widgets MO2 puts under its own list.
+`MO2_VERIFY_QT_WIDGETS` covers them, and drives the filter button rather than
+only looking it up.
+
+Separator colours work. They never left MO2 — nothing in the snapshot carried
+one — so every separator was the same grey bar. The bridge reads the colour off
+the row MO2 draws, the bar is painted in it with ink that reads against it, and a
+mod's Notes cell takes the colour MO2 gives that cell. Setting one goes through
+MO2's own "Select Color...", so MO2 writes the file and refreshes its list.
+`MO2_VERIFY_SEPARATOR_COLOR` drives that round trip and puts the separator back.
+
+`MO2_VERIFY_PRESET_FIT` applies MO2's own panel layout — the mod list left, its
+five tabs right — and fails on a widget that leaves its panel, is given less room
+than it asked for, or leaves its list's name column too narrow to read. It found
+Data spending its width on Mod, Type, Size and Date; those are dropped from the
+right as the panel narrows, and the mod and plugin columns give way in turn until
+the name has 180px.
+
 Archives now forgets an explicitly cleared selection and a selected archive that
 disappears on refresh. Filtering still remembers a temporarily hidden selection
 by archive name **and owning mod**. Reappearing files do not silently regain
