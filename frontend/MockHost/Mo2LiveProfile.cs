@@ -694,6 +694,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     private int _selectionVersion;
     private string[] _selectedModNames = [];
     public IReadOnlySet<string> LinkedPlugins { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    // The other direction. Selecting mods has always marked the plugins they
+    // install; selecting plugins marked nothing, so the two tables answered the
+    // same question — what goes with what — only when you asked it from one side.
+    public IReadOnlySet<string> LinkedMods { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> WinningMods { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> LosingMods { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private object? _dataHighlightOwner;
@@ -713,6 +717,20 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         HighlightsChanged?.Invoke();
     }
     public event Action? HighlightsChanged;
+    // The mods that install the given plugins, marked in the Mods table for as long
+    // as those plugins are selected. Local: which mod a plugin came from is already
+    // known here, so unlike the mod selection this needs nothing from MO2.
+    public void HighlightPlugins(IEnumerable<string> pluginNames)
+    {
+        var names = pluginNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var owners = Order.Plugins.Where(plugin => names.Contains(plugin.DisplayName))
+            .Select(plugin => plugin.ModName).Where(name => name.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (owners.SetEquals(LinkedMods)) return;
+        LinkedMods = owners;
+        HighlightsChanged?.Invoke();
+    }
+
     public void HighlightMods(IEnumerable<EntityId> ids)
     {
         var selected = ids.ToHashSet();

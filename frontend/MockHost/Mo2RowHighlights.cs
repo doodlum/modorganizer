@@ -11,6 +11,10 @@ namespace Mo2.Frontend;
 internal static class Mo2RowHighlights
 {
     private static readonly IBrush Linked = Brush.Parse("#66514385");
+    // The colour a row takes when it belongs with what is selected in the other
+    // table. Named so a check can look for exactly this rather than for "a purple
+    // sort of colour", which also matched the grey a row goes under the pointer.
+    internal static Color LinkedColour => ((ISolidColorBrush)Linked).Color;
     // Match MO2's selection-relative semantics: a threat to the selected mod
     // is red; a mod whose files the selection overwrites is green.
     private static readonly IBrush OverwritesSelection = Brush.Parse("#66893D43");
@@ -38,7 +42,9 @@ internal static class Mo2RowHighlights
                 brush = profile.Order.FindPlugin(plugin.Key) is { } entry && profile.LinkedPlugins.Contains(entry.DisplayName) ? Linked : null;
             else if (!plugins && model is CompositeItemModel<EntityId> mod) {
                 var name = profile.FindMod(mod.Key)?.Name ?? "";
-                brush = profile.IsDataSourceHighlighted(name) ? Linked : profile.WinningMods.Contains(name) ? OverwritesSelection : profile.LosingMods.Contains(name) ? OverwrittenBySelection : name.EndsWith("_separator",StringComparison.OrdinalIgnoreCase) ? Separator : null;
+                // Linked covers both directions: the mod a selected Data file came
+                // from, and the mod a selected plugin was installed by.
+                brush = profile.IsDataSourceHighlighted(name) || profile.LinkedMods.Contains(name) ? Linked : profile.WinningMods.Contains(name) ? OverwritesSelection : profile.LosingMods.Contains(name) ? OverwrittenBySelection : name.EndsWith("_separator",StringComparison.OrdinalIgnoreCase) ? Separator : null;
             }
             if (brush is null && !plugins) row.Background = Brushes.Transparent;
             else if (brush is null) row.ClearValue(TemplatedControl.BackgroundProperty);

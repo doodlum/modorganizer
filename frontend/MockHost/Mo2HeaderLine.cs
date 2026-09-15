@@ -31,8 +31,10 @@ internal sealed class Mo2HeaderLine : Panel
     private readonly Control _header;
     private readonly Control _actions;
     private Showing _shown = Showing.Words;
+    private double _plateGap;
     private Control? _words;
     private Control? _plate;
+    private TextBlock? _title;
 
     internal Mo2HeaderLine(Control header, Control actions)
     {
@@ -50,9 +52,10 @@ internal sealed class Mo2HeaderLine : Panel
     // on the first measure, so this keeps looking until it does.
     private void FindParts()
     {
-        if (_words is not null && _plate is not null) return;
+        if (_words is not null && _plate is not null && _title is not null) return;
         foreach (var child in _header.GetVisualDescendants().OfType<Control>()) {
             if (_plate is null && child is Border { Child: NexusMods.UI.Sdk.Icons.UnifiedIcon }) _plate = child;
+            else if (_title is null && child is TextBlock { Name: "TitleTextBlock" } titleText) _title = titleText;
             else if (_words is null && child is StackPanel stack &&
                      stack.Children.OfType<TextBlock>().Any(x => x.Name == "TitleTextBlock")) _words = stack;
         }
@@ -78,7 +81,17 @@ internal sealed class Mo2HeaderLine : Panel
         // header falls back to before giving up the line entirely.
         var plateWidth = _plate is null ? 0 : (double.IsNaN(_plate.Width) ? _plate.DesiredSize.Width : _plate.Width)
             + _plate.Margin.Left + _plate.Margin.Right;
-        _shown = natural <= room - Mo2PanelChrome.TitleFloor ? Showing.Words
+        // The pictogram sits beside the words, so the room the title needs includes it.
+        _plateGap = plateWidth;
+        // The title's own width on one line, not a fixed floor. A page whose actions
+        // grow — Mods and Plugins do, the moment rows are selected — was left with
+        // just over the floor and kept its words, wrapping "My Mods" into a column
+        // two letters wide above five lines of description. Below what the title
+        // needs to read as a title, the words stand down instead.
+        if (_title is not null) _title.Measure(unlimited);
+        var titleFloor = Math.Max(Mo2PanelChrome.TitleFloor,
+            _title is null ? 0 : _title.DesiredSize.Width + _plateGap);
+        _shown = natural <= room - titleFloor ? Showing.Words
             : plateWidth > 0 && natural <= room - plateWidth ? Showing.Pictogram
             : Showing.Nothing;
         // The words are taken out of the layout rather than squeezed: a pictogram

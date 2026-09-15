@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Templates;
 using NexusMods.App.UI.Controls;
+using NexusMods.UI.Sdk.Icons;
 using NexusMods.Abstractions.Games;
 using Avalonia.ReactiveUI;
 using Avalonia.VisualTree;
@@ -63,8 +64,31 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         toolbar.Items.Add(new Border { Background = Avalonia.Media.Brush.Parse("#29292E"), CornerRadius = new CornerRadius(8), Padding = new Thickness(0), Margin = new Thickness(0,0,8,0), Child = primary });
         var search = _search;
         toolbar.Items.Add(search);
+        TreeDataGrid? editorTable = null;
+        // The same selection group My Mods gets from the original app's toolbar:
+        // how many rows are selected, a way to clear them, and the actions that
+        // apply to all of them. Selecting plugins used to say nothing at all, and
+        // the only way out of a selection was to click a single row again.
+        var enableSelected = new StandardButton {
+            Name = "EnableSelectedPlugins", Text = "Enable", Type = StandardButton.Types.Tertiary,
+            Size = StandardButton.Sizes.Toolbar, Fill = StandardButton.Fills.None,
+            ShowIcon = StandardButton.ShowIconOptions.Left, LeftIcon = IconValues.CheckCircleOutline,
+        };
+        ToolTip.SetTip(enableSelected, "Enable every selected plugin");
+        enableSelected.Click += async (_, _) => { if (ViewModel is { } model) await model.SetSelectedActive(true); };
+        var disableSelected = new StandardButton {
+            Name = "DisableSelectedPlugins", Text = "Disable", Type = StandardButton.Types.Tertiary,
+            Size = StandardButton.Sizes.Toolbar, Fill = StandardButton.Fills.None,
+            ShowIcon = StandardButton.ShowIconOptions.Left, LeftIcon = new ProjektankerIcon("mdi-close-circle-outline"),
+        };
+        ToolTip.SetTip(disableSelected, "Disable every selected plugin");
+        disableSelected.Click += async (_, _) => { if (ViewModel is { } model) await model.SetSelectedActive(false); };
+        var selectionGroup = Mo2SelectionGroup.Create(out var deselectPlugins,
+            () => editorTable?.RowSelection?.Clear(), enableSelected, disableSelected);
+        toolbar.Items.Add(selectionGroup);
 
         var editor = new LoadOrderView { Margin = new Thickness(0), Padding = new Thickness(0) };
+        editorTable = editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid");
         // The native load-order styling insets its rows presenter by 4px, which put
         // every plugin row 4px right of the same column on Mods. Applied as a style
         // because the presenter is a template part that does not exist yet.
@@ -184,6 +208,11 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             System.Reactive.Disposables.Disposable.Create(() => { editor.LayoutUpdated -= layout; profile.HighlightsChanged -= Highlight; }).DisposeWith(disposables);
             void UpdateSelection() {
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
+                Mo2SelectionGroup.Update(selectionGroup, deselectPlugins, ViewModel.Adapter.SelectedModels.Count);
+                // The mirror of what selecting mods does to this table.
+                profile.HighlightPlugins(selected.Select(x => x.DisplayName));
+                enableSelected.IsEnabled = profile.CanChangeOriginalUi && selected.Any(x => x.CanToggle && !x.IsActive);
+                disableSelected.IsEnabled = profile.CanChangeOriginalUi && selected.Any(x => x.CanToggle && x.IsActive);
                 details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
                 if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";
                 detailScroll.IsVisible = ViewModel.ShowPluginDetails && profile.ProfilePath.Length > 0 && selected.Length > 0;
@@ -202,7 +231,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             ViewModel!.Adapter.SelectedModels.ObserveChanged()
                 .Subscribe(_ => UpdateSelection()).DisposeWith(disposables);
             this.WhenAnyValue(x => x.ViewModel!.ShowPluginDetails).Subscribe(_ => UpdateSelection()).DisposeWith(disposables);
-            System.Reactive.Disposables.Disposable.Create(() => editor.ViewModel = null).DisposeWith(disposables);
+            // A closed page leaves nothing marked behind it, as the Data page does.
+            System.Reactive.Disposables.Disposable.Create(() => { profile.HighlightPlugins([]); editor.ViewModel = null; }).DisposeWith(disposables);
         });
     }
 }
