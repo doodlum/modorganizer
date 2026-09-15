@@ -28,6 +28,14 @@ internal sealed class ScenarioPlugin : ReactiveObject, IReactiveSortItem
     public Avalonia.Media.Imaging.Bitmap? ModArt { get; init; }
     public string GameArt { get; init; } = "";
     public string ModIndex { get; init; } = "";
+    // The rest of MO2's own plugin columns (pluginlist.h, EColumn). An MO2 that does
+    // not carry one sends "" for it.
+    public string PluginFlags { get; init; } = "";
+    public string PriorityText { get; init; } = "";
+    public string FormVersion { get; init; } = "";
+    public string HeaderVersion { get; init; } = "";
+    public string Author { get; init; } = "";
+    public string Description { get; init; } = "";
     public ISortItemLoadoutData? LoadoutData { get; set; }
     public ScenarioPlugin(string name, string mod, int index, params string[] masters)
     { Key = new SortItemKey<string>(name); DisplayName = name; ModName = mod; _index = index; Masters = masters; }

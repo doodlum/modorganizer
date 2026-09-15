@@ -16,6 +16,36 @@ def conflict_neighbors(name, origins):
     return ({origins[0]} | set(origins[position + 1:])) - {name}, set(origins[1:position]) - {name}
 
 
+def plain_text(value):
+    """Strip the markup MO2 puts in its tooltips, on a document of its own.
+
+    The callers already hold a QTextDocument they are reading other text out
+    of, and setHtml would replace it mid-read.
+    """
+    from PyQt6.QtGui import QTextDocument
+    document = QTextDocument()
+    document.setHtml(str(value or ''))
+    return document.toPlainText()
+
+
+def model_columns(model):
+    """Map a list model's header text to its column index.
+
+    Read by name rather than by a fixed index because MO2's own column order is
+    not fixed: this tree's ModList gained Author and Uploader after the columns
+    beyond Category, so a build that hardcodes the index reads whatever now
+    occupies it. Reading 'Version' at index 7 returned the Nexus ID column, and
+    'Priority' at 9 returned Version, which is exactly what this avoids.
+    """
+    from PyQt6.QtCore import Qt
+    headers = {}
+    for column in range(model.columnCount()):
+        header = model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+        if header:
+            headers.setdefault(str(header), column)
+    return headers
+
+
 class ModActions:
     def __init__(self, organizer, window):
         self.organizer = organizer
@@ -310,6 +340,10 @@ class ModActions:
         def plain(value):
             document.setHtml(str(value or ''))
             return document.toPlainText()
+        columns = model_columns(model)
+        def cell(row, header, role=Qt.ItemDataRole.DisplayRole):
+            column = columns.get(header)
+            return '' if column is None else str(model.index(row, column).data(role) or '')
         result = []
         rows = {name: index for index, name in enumerate(names)}
         for name in ordered:
@@ -321,17 +355,25 @@ class ModActions:
             result.append({
                 'name': name, 'displayName': str(index.data(Qt.ItemDataRole.DisplayRole)),
                 'state': int(getattr(state, 'value', state)), 'priority': mods.priority(name),
-                'priorityText': str(model.index(row, 9).data(Qt.ItemDataRole.DisplayRole) or ''),
+                'priorityText': cell(row, 'Priority'),
                 'overwrite': name in overwrite_names,
                 'nexusId': mods.getMod(name).nexusId(),
-                'version': str(model.index(row, 7).data(Qt.ItemDataRole.DisplayRole) or ''),
+                'version': cell(row, 'Version'),
                 # MO2 tracks the newest known version on the mod itself, not in the
                 # list model. Older builds may not expose it, so failure is not fatal.
                 'newestVersion': newest_version(mods.getMod(name)),
-                'category': str(model.index(row, 4).data(Qt.ItemDataRole.DisplayRole) or ''),
+                'category': cell(row, 'Category'),
                 'separator': mods.getMod(name).isSeparator(),
-                'conflicts': plain(model.index(row, 1).data(Qt.ItemDataRole.ToolTipRole)),
-                'flags': plain(model.index(row, 2).data(Qt.ItemDataRole.ToolTipRole)),
+                'conflicts': plain(cell(row, 'Conflicts', Qt.ItemDataRole.ToolTipRole)),
+                'flags': plain(cell(row, 'Flags', Qt.ItemDataRole.ToolTipRole)),
+                # The rest of MO2's own columns, so the frontend can show the list it
+                # shows rather than a subset of it. Any MO2 that lacks one sends "".
+                'content': plain(cell(row, 'Content', Qt.ItemDataRole.ToolTipRole)),
+                'author': cell(row, 'Author'),
+                'uploader': cell(row, 'Uploader'),
+                'sourceGame': cell(row, 'Source Game'),
+                'installTime': cell(row, 'Installation'),
+                'notes': plain(cell(row, 'Notes', Qt.ItemDataRole.ToolTipRole)) or cell(row, 'Notes'),
             })
         return result
 
@@ -350,6 +392,10 @@ class ModActions:
         plugins = self.organizer.pluginList()
         expected = set(plugins.pluginNames())
         document = QTextDocument()
+        columns = model_columns(model)
+        def cell(row, header, role=Qt.ItemDataRole.DisplayRole):
+            column = columns.get(header)
+            return '' if column is None else str(model.index(row, column).data(role) or '')
         result = []
         for row in range(model.rowCount()):
             index = model.index(row, 0)
@@ -366,7 +412,15 @@ class ModActions:
                 'diagnostics': document.toPlainText(),
                 'hasWarning': ':/MO/gui/warning' in (index.data(int(Qt.ItemDataRole.UserRole) + 1) or []),
                 'locked': ':/MO/gui/locked' in (index.data(int(Qt.ItemDataRole.UserRole) + 1) or []),
-                'modIndex': str(model.index(row, 3).data(Qt.ItemDataRole.DisplayRole) or ''),
+                'modIndex': cell(row, 'Mod Index'),
+                # The rest of MO2's own plugin columns, for the same reason as the
+                # mod list above.
+                'pluginFlags': plain_text(cell(row, 'Flags', Qt.ItemDataRole.ToolTipRole)),
+                'priorityText': cell(row, 'Priority'),
+                'formVersion': cell(row, 'Form Version'),
+                'headerVersion': cell(row, 'Header Version'),
+                'author': cell(row, 'Author'),
+                'description': cell(row, 'Description'),
                 'canToggle': bool(flags & Qt.ItemFlag.ItemIsUserCheckable),
                 'canMove': bool(flags & Qt.ItemFlag.ItemIsDragEnabled),
             })

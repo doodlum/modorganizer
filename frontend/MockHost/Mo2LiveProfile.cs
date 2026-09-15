@@ -20,7 +20,10 @@ internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Pa
     });
 }
 internal sealed record Mo2ArchiveInstallResult(string ModName, string? ModDirectory);
-internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false, int NexusId = 0, bool IsSeparator = false, string Version = "", string Category = "", string NewestVersion = "")
+// The columns are MO2's own, so this frontend can show the list MO2 shows rather
+// than a subset chosen here. An MO2 without one of them sends "" for it.
+internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false, int NexusId = 0, bool IsSeparator = false, string Version = "", string Category = "", string NewestVersion = "",
+    string Content = "", string Author = "", string Uploader = "", string SourceGame = "", string InstallTime = "", string Notes = "")
 {
     public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0);
     // MO2 reports the newest version it knows about; an update is only claimed when
@@ -114,6 +117,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         if (ProfilePath != profile.GetProperty("path").GetString()) _selectedModNames = [];
         ProfilePath = profile.GetProperty("path").GetString()!;
         CollectionName.Value = profile.GetProperty("name").GetString()!;
+        // An MO2 that does not carry one of these columns leaves it out rather than
+        // sending it empty, so every one of them is optional here.
+        static string Text(JsonElement owner, string name) =>
+            owner.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
         var mods = snapshot.GetProperty("mods").EnumerateArray().Select(mod => {
             var name = mod.GetProperty("name").GetString()!;
             if (!_ids.TryGetValue(name, out var id)) _ids[name] = id = EntityId.From((ulong)_ids.Count + 100);
@@ -126,7 +133,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 mod.TryGetProperty("separator", out var separator) && separator.GetBoolean(),
                 mod.TryGetProperty("version", out var version) ? version.GetString() ?? "" : "",
                 mod.TryGetProperty("category", out var category) ? category.GetString() ?? "" : "",
-                mod.TryGetProperty("newestVersion", out var newest) ? newest.GetString() ?? "" : "");
+                mod.TryGetProperty("newestVersion", out var newest) ? newest.GetString() ?? "" : "",
+                Text(mod, "content"), Text(mod, "author"), Text(mod, "uploader"),
+                Text(mod, "sourceGame"), Text(mod, "installTime"), Text(mod, "notes"));
         }).ToArray();
         _mods.Edit(cache => {
             var ids = mods.Select(x => x.Id).ToHashSet();
@@ -146,7 +155,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 CanMove = !plugin.TryGetProperty("canMove", out var move) || move.GetBoolean(),
                 Diagnostics = plugin.TryGetProperty("diagnostics", out var diagnostics) ? diagnostics.GetString() ?? "" : "",
                 ModIndex = plugin.TryGetProperty("modIndex", out var modIndex) ? modIndex.GetString() ?? "" : "",
-
+                PluginFlags = Text(plugin, "pluginFlags"), PriorityText = Text(plugin, "priorityText"),
+                FormVersion = Text(plugin, "formVersion"), HeaderVersion = Text(plugin, "headerVersion"),
+                Author = Text(plugin, "author"), Description = Text(plugin, "description"),
             }));
         var contentSnapshot = Endpoint + ProfilePath + snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
         if (contentSnapshot != _contentSnapshot) { _contentSnapshot = contentSnapshot; ContentRevision++; }
