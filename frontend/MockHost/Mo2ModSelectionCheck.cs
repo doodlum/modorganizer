@@ -44,10 +44,14 @@ internal static class Mo2ModSelectionCheck
         for (var attempt = 0; attempt < 80 && view.ViewModel?.Adapter.Source.Value.Items.Count() is null or 0; attempt++)
             await Task.Delay(100);
 
-        var group = view.GetVisualDescendants().OfType<Border>().FirstOrDefault(x => x.Name == "ModSelectionGroup")
+        // The native view's own selection group, not a second one beside it. A group
+        // of our own meant two deselect buttons and the count twice over.
+        var group = view.NativeView.FindControl<ItemsControl>("ContextControlGroup")
             ?? throw new Exception("No selection group in the Mods toolbar");
-        var count = view.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(x => x.Name == "ModSelectionCount")
-            ?? throw new Exception("Selection group has no count");
+        var deselect = view.NativeView.FindControl<NexusMods.App.UI.Controls.StandardButton>("DeselectItemsButton")
+            ?? throw new Exception("Selection group has no deselect action");
+        if (view.GetVisualDescendants().OfType<Border>().Any(x => x.Name == "ModSelectionGroup"))
+            throw new Exception("A second selection group is still on the toolbar");
         if (view.ViewModel!.Adapter.Source.Value.Selection is not TreeDataGridRowSelectionModel<NexusMods.App.UI.Controls.CompositeItemModel<EntityId>> selection)
             throw new Exception("Mods table has no row selection model");
 
@@ -58,22 +62,22 @@ internal static class Mo2ModSelectionCheck
         selection.Select(new Avalonia.Controls.IndexPath(0));
         await Task.Delay(400);
         if (!group.IsVisible) throw new Exception("Selection group stayed hidden after selecting a row");
-        if (count.Text != "1 selected") throw new Exception("Count read \"" + count.Text + "\" for one row");
+        if (deselect.Text?.Contains('1') != true) throw new Exception("Deselect action read \"" + deselect.Text + "\" for one row");
 
         selection.Select(new Avalonia.Controls.IndexPath(1));
         selection.Select(new Avalonia.Controls.IndexPath(2));
         await Task.Delay(400);
         var selected = view.ViewModel.Adapter.SelectedModels.Count;
-        if (count.Text != selected + " selected") throw new Exception($"Count read \"{count.Text}\" for {selected} rows");
+        if (deselect.Text?.Contains(selected.ToString()) != true)
+            throw new Exception($"Deselect action read \"{deselect.Text}\" for {selected} rows");
 
-        var clear = group.GetVisualDescendants().OfType<Button>().FirstOrDefault()
-            ?? throw new Exception("Selection group has no clear action");
-        clear.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        deselect.Command?.Execute(null);
         await Task.Delay(500);
         if (view.ViewModel.Adapter.SelectedModels.Count != 0) throw new Exception("Clear action left rows selected");
         if (group.IsVisible) throw new Exception("Selection group stayed visible after clearing");
 
-        Console.WriteLine($"PASS mods selection group: hidden with no selection, \"1 selected\" for one row, " +
-            $"\"{selected} selected\" for {selected}, and the clear action emptied the selection and hid the group");
+        Console.WriteLine($"PASS mods selection group: the native group and no second one beside it, hidden with " +
+            $"nothing selected, reading 1 for one row and {selected} for {selected}, and its deselect action emptied " +
+            "the selection and hid the group");
     }
 }

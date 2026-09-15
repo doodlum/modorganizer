@@ -182,6 +182,14 @@ internal static class Mo2PanelChrome
             action.VerticalAlignment = VerticalAlignment.Center;
             group.Children.Add(action);
         }
+        // Pinned left, because the floor below makes the header wider than the slot it
+        // is given once only the pictogram is left, and Avalonia centres a control that
+        // does not fit — which drew the pictogram 29px off the left of the panel,
+        // sitting in its padding. The floor itself stays: taking it away let the
+        // header's width follow its own content, and on Downloads that fed back into
+        // the measure that produced it until Avalonia stopped with an infinite layout
+        // loop.
+        header.HorizontalAlignment = HorizontalAlignment.Left;
         header.MinWidth = TitleFloor;
         // Only as tall as its own content. Stretched, the header filled whatever
         // height the actions beside it needed — and once those wrap in a narrow panel

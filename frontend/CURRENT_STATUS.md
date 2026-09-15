@@ -41,6 +41,22 @@ by archive name **and owning mod**. Reappearing files do not silently regain
 selection, and Browse/Extract follows the visible selection. The current live
 file-page suite passed without changing actual archives or native activation.
 
+My Mods and Plugins now draw their rows through the same shared metrics, and the
+live check measures both tables in place rather than only comparing declarations:
+both start 24px into their page, with the status column 16px and the name column
+65px inside the table. My Mods no longer adds a selection group of its own beside
+the native one — that second group was the source of the duplicated and unresponsive
+buttons — and the native Deselect empties the table's own selection.
+
+Page headers give way in stages as a panel narrows: words, then the pictogram alone,
+then nothing, and only after that do the actions take a second row. The header keeps
+its title floor so its width cannot follow its own content (which fed back into the
+measure that produced it and aborted Downloads with an infinite layout loop), and it
+is pinned left so that floor cannot centre the pictogram off the left of the panel.
+`MO2_VERIFY_HEADER_FIT=1` walks three panels through 13 sizes at three scroll
+positions; `MO2_VERIFY_ROW_PADDING=1` and `MO2_VERIFY_MODS_SELECTION=1` cover the
+tables against a live profile.
+
 Tools now discards reads and errors from a closed activation and performs a fresh
 read when reopened. Delayed success/failure cases pass both reopening sequences.
 The normal native list and physical Refresh action also render correctly.

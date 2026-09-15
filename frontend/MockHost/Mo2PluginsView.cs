@@ -65,6 +65,13 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         toolbar.Items.Add(search);
 
         var editor = new LoadOrderView { Margin = new Thickness(0), Padding = new Thickness(0) };
+        // The native load-order styling insets its rows presenter by 4px, which put
+        // every plugin row 4px right of the same column on Mods. Applied as a style
+        // because the presenter is a template part that does not exist yet.
+        editor.Styles.Add(new Avalonia.Styling.Style(x =>
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRowsPresenter>(x)) {
+            Setters = { new Avalonia.Styling.Setter(Avalonia.Layout.Layoutable.MarginProperty, new Thickness(0)) },
+        });
         var alert = editor.FindControl<Control>("LoadOrderAlert")!;
         var tableControl = editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid")!;
         tableControl.ShowColumnHeaders = false;

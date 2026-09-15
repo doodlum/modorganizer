@@ -90,7 +90,10 @@ internal sealed class Mo2HeaderLine : Panel
         if (natural > room) _actions.Measure(new Size(room, availableSize.Height));
         var actionsWidth = Math.Min(_actions.DesiredSize.Width, room);
 
-        _header.Measure(new Size(Math.Max(0, room - actionsWidth), availableSize.Height));
+        // The pictogram keeps its own width even when the actions have taken the rest,
+        // so the stage that exists to show it can actually show it.
+        var forHeader = Math.Max(_shown == Showing.Pictogram ? plateWidth : 0, room - actionsWidth);
+        _header.Measure(new Size(Math.Max(0, forHeader), availableSize.Height));
         var height = Math.Max(_actions.DesiredSize.Height,
             _shown == Showing.Nothing ? 0 : _header.DesiredSize.Height);
         return new Size(double.IsInfinity(availableSize.Width) ? width : availableSize.Width, height);
@@ -99,15 +102,23 @@ internal sealed class Mo2HeaderLine : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         var room = finalSize.Width;
-        var actionsWidth = Math.Min(_actions.DesiredSize.Width, room);
+        // The actions give the pictogram its width back rather than taking the line
+        // and leaving it nothing; that stage exists to keep the pictogram on screen.
+        var plateWidth = _plate is null || _shown != Showing.Pictogram ? 0
+            : (double.IsNaN(_plate.Width) ? _plate.DesiredSize.Width : _plate.Width) + _plate.Margin.Left + _plate.Margin.Right;
+        var actionsWidth = Math.Min(_actions.DesiredSize.Width, Math.Max(0, room - plateWidth));
 
         // Everything on this line sits against its top edge, so the actions stay
         // level with the title rather than centring against a header that is three
         // lines tall.
+        // Clamped at zero. A Rect with a negative width normalises to a box that
+        // starts at minus that width, so a header asked for -28px was drawn 29px to
+        // the left of the line — the pictogram ended up outside the panel's padding
+        // rather than beside its actions.
+        var headerWidth = Math.Max(0, Math.Min(_header.DesiredSize.Width, room - actionsWidth));
         _header.Arrange(_shown == Showing.Nothing
             ? default
-            : new Rect(0, 0, Math.Min(_header.DesiredSize.Width, Math.Max(0, room - actionsWidth)),
-                Math.Min(_header.DesiredSize.Height, finalSize.Height)));
+            : new Rect(0, 0, headerWidth, Math.Min(_header.DesiredSize.Height, finalSize.Height)));
         _actions.Arrange(new Rect(room - actionsWidth, 0, actionsWidth,
             Math.Min(_actions.DesiredSize.Height, finalSize.Height)));
         return finalSize;

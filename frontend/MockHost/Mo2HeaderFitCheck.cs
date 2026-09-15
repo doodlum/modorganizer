@@ -19,13 +19,14 @@ internal static class Mo2HeaderFitCheck
         (420, 420), (340, 320), (1000, 700),
     ];
 
-    internal static async Task Run()
+    internal static async Task Run(string? directory = null)
     {
         var host = new ContentControl();
         var window = new Window { Width = 1000, Height = 700, Content = host, ShowInTaskbar = false };
         Mo2ResponsiveHeaders.Attach(window);
         window.Show();
         var faults = new List<string>();
+        var captured = new HashSet<(string, Mo2HeaderLine.Showing)>();
         try {
             foreach (var create in new Func<Control>[] { () => new Mo2ExternalFilesView(), () => new Mo2ToolsView(), () => new Mo2OverwriteView() }) {
                 var page = create();
@@ -47,6 +48,16 @@ internal static class Mo2HeaderFitCheck
                     var row = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderRow");
                     if (row is null) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no header row"); continue; }
                     var stage = (row as Mo2HeaderLine)?.Shows ?? Mo2HeaderLine.Showing.Words;
+                    // One picture per stage, so the fallbacks can be looked at rather
+                    // than only measured.
+                    if (directory is not null && !captured.Add((name, stage))) { }
+                    else if (directory is not null) {
+                        Directory.CreateDirectory(directory);
+                        using var shot = new Avalonia.Media.Imaging.RenderTargetBitmap(
+                            new PixelSize(Math.Max(1, (int)window.ClientSize.Width), Math.Max(1, (int)window.ClientSize.Height)));
+                        shot.Render(window);
+                        shot.Save(Path.Combine(directory, $"header-{name}-{stage}.png"));
+                    }
 
                     // The header gives way in stages: words, then the pictogram alone
                     // standing in for them, then nothing. Each one has to be what it
@@ -59,6 +70,26 @@ internal static class Mo2HeaderFitCheck
                     if (stage == Mo2HeaderLine.Showing.Pictogram) {
                         if (plateNow is null || plateNow.Bounds.Width <= 0)
                             faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage draws no pictogram");
+                        // And it has to be drawn where the header is, not half of it
+                        // hanging off the page into the panel's own padding.
+                        if (plateNow is not null && plateNow.TranslatePoint(default, page) is { } platePoint) {
+                            if (platePoint.X < -0.5)
+                                faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram sits {-platePoint.X:F0}px left of the page");
+                            if (plateNow.TranslatePoint(default, row) is { } inRow &&
+                                (inRow.X < -0.5 || inRow.X + plateNow.Bounds.Width > row.Bounds.Width + 0.5)) {
+                                // With the boxes each ancestor was given, because the
+                                // offset is never introduced where it shows: the
+                                // pictogram sat at the header's own origin and it was
+                                // the header, three levels up, that had been placed
+                                // outside the line.
+                                var chain = new List<string>();
+                                for (Visual? n = plateNow; n is not null && !ReferenceEquals(n, row); n = n.GetVisualParent())
+                                    if (n is Control c) chain.Add($"{c.GetType().Name}#{c.Name} b{c.Bounds} m{c.Margin.Left:F0}");
+                                faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram runs outside its header row " +
+                                    $"({inRow.X:F0}..{inRow.X + plateNow.Bounds.Width:F0} of {row.Bounds.Width:F0}) :: " +
+                                    string.Join(" < ", chain));
+                            }
+                        }
                         if (words is not null && words.IsEffectivelyVisible && words.Bounds.Width > 0)
                             faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage still draws the title");
                         if (header.Bounds.Width <= 0)

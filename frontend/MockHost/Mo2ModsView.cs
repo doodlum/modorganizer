@@ -119,8 +119,6 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
 
 internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
 {
-    private Border? _selectionGroup;
-    private TextBlock? _selectionCount;
     public LoadoutView NativeView { get; } = new();
     private TabControl SubTabs => NativeView.FindControl<TabControl>("RulesTabControl")!;
     private TextBox SearchBox => NativeView.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
@@ -187,31 +185,26 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         foreach (var button in primary.Children.OfType<Button>()) button.Width = button.Height = 24;
         var primaryGroup = new Border { Name = "ModPrimaryActions", Background = Avalonia.Media.Brush.Parse("#29292E"), CornerRadius = new CornerRadius(8), Padding = new Thickness(0), Margin = new Thickness(0,0,8,0), Child = primary };
         toolbar.Items.Insert(0, primaryGroup);
-        // The reference grows a second toolbar group once rows are selected: a clear
-        // action, the count, then the actions that make sense in bulk. Per-row actions
-        // stay on the row, as its usage notes require.
-        var selectionActions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-        // The action goes through IconButton itself: it marks the event handled, so a
-        // second Click handler added afterwards is never invoked.
-        var clearSelection = Mo2ModRow.IconButton("mdi-close", "Clear selection",
-            () => NativeView.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
-        var selectionCount = new TextBlock { Name = "ModSelectionCount", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Margin = new Thickness(2,0,6,0), FontSize = 12 };
-        selectionActions.Children.Add(clearSelection);
-        selectionActions.Children.Add(selectionCount);
-        foreach (var button in selectionActions.Children.OfType<Button>()) button.Width = button.Height = 24;
-        _selectionGroup = new Border { Name = "ModSelectionGroup", Background = Avalonia.Media.Brush.Parse("#29292E"),
-            CornerRadius = new CornerRadius(8), Padding = new Thickness(2,0), Margin = new Thickness(0,0,8,0),
-            IsVisible = false, Child = selectionActions };
-        _selectionCount = selectionCount;
-        toolbar.Items.Insert(1, _selectionGroup);
+        // The native view already grows a selection group once rows are selected: a
+        // deselect action labelled with the count, then the actions that make sense in
+        // bulk. A second group of our own beside it meant two X buttons and the count
+        // twice over. Its deselect goes through the adapter's own selection model,
+        // which does not empty the models the toolbar counts, so it is re-pointed at
+        // the grid's row selection — the model the adapter actually listens to.
+        var deselect = native.FindControl<StandardButton>("DeselectItemsButton")!;
+        deselect.Command = ReactiveUI.ReactiveCommand.Create(
+            () => native.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
         native.FindControl<StandardButton>("ViewFilesButton")!.ShowLabel = false;
         native.FindControl<StandardButton>("DeleteButton")!.ShowLabel = false;
         var table = native.FindControl<TreeDataGrid>("TreeDataGrid")!;
         var listContainer = native.FindControl<EmptyState>("EmptyState")!;
         listContainer.Content = null;
-        var list = new Grid { ColumnDefinitions = new ColumnDefinitions("*,36"), RowDefinitions = new RowDefinitions("Auto,*") };
+        // The shared padding reaches this page's header through the native view's own
+        // panel, but not its table, so the rows sat hard against the panel edge while
+        // Plugins — whose whole page is inset — started 24px in. The two tables have
+        // to begin at the same place.
+        var list = new Grid { ColumnDefinitions = new ColumnDefinitions("*,36"), RowDefinitions = new RowDefinitions("Auto,*"),
+            Margin = new Thickness(Mo2PanelChrome.Padding, 0, 0, 0) };
         var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6);
         void Heading(string label, int column) => Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
         Heading("Status", 1); Heading("Mod name", 2); Heading("Version", 3); Heading("Category", 4); Heading("Endorsed", 5); Heading("Actions", 6);
@@ -292,8 +285,6 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                     var mods = ViewModel.LiveProfile!.Mods.Where(x => selected.Contains(x.Id)).ToArray();
                     native.FindControl<StandardButton>("ViewFilesButton")!.IsEnabled = count == 1;
                     native.FindControl<StandardButton>("DeleteButton")!.IsEnabled = mods.Any(x => x.CanManage);
-                    if (_selectionGroup is not null) _selectionGroup.IsVisible = count > 0;
-                    if (_selectionCount is not null) _selectionCount.Text = count + " selected";
             }
             ViewModel!.Adapter.SelectedModels.ObserveChanged().Subscribe(_ => UpdateSelection()).AddTo(disposables);
             UpdateSelection();

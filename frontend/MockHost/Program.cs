@@ -492,8 +492,12 @@ public partial class MockApp : Application
                         // panel through thirteen sizes, which takes longer than the
                         // screenshot path waits before shutting the app down.
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEADER_FIT") == "1") {
-                            try { await Mo2HeaderFitCheck.Run(); }
+                            try { await Mo2HeaderFitCheck.Run(Environment.GetEnvironmentVariable("MO2_HEADER_FIT_DIRECTORY")); }
                             catch (Exception error) { Console.WriteLine("FAIL header fit: " + error.Message); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_PADDING") == "1") {
+                            try { await Mo2RowPaddingCheck.Live(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL row padding (live): " + error.Message); }
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_AUDIT") == "1") {
                             try { await Mo2PageAuditCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_DIRECTORY")); }
