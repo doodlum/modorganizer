@@ -183,10 +183,6 @@ internal static class Mo2TabDragDrop
             if (panel?.ViewModel is null || header.ViewModel is null) return;
             // A panel's last tab has nowhere to move from; moving it would close the panel.
             pressedTab = null;
-            // A maximised panel is drawn over the whole canvas while its place in the
-            // layout is unchanged, so every zone under the pointer belongs to a panel
-            // that is not where it appears to be. Dragging puts it back first.
-            Mo2DeferredPanel.RestoreMaximised();
             dragging = new Source(controller.ActiveWorkspaceId, panel.ViewModel.Id, header.ViewModel.Id);
             EnsureOverlay();
             var data = new DataObject();
@@ -236,11 +232,6 @@ internal static class Mo2TabDragDrop
         PanelId sourcePanelId, PanelTabId tabId, IPanelViewModel target, Zone zone)
     {
         if (!controller.TryGetWorkspace(workspaceId, out var workspace)) return;
-        // A maximised panel is drawn over the whole canvas while its place in the
-        // layout is unchanged. Rearranging around it would place the new panel behind
-        // the one covering the screen, so it goes back first — the drag does this when
-        // it starts, and this is here for every other way a move can be asked for.
-        Mo2DeferredPanel.RestoreMaximised();
         var source = workspace.Panels.FirstOrDefault(x => x.Id == sourcePanelId);
         if (source is null) return;
         var tab = source.Tabs.FirstOrDefault(x => x.Id == tabId);

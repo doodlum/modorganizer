@@ -223,7 +223,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         var view = (IViewFor)Activator.CreateInstance(viewType)!;
         // Profiles and Health Check are drawn by native NMA views with no frontend
         // wrapper to set their chrome up, which left them as the only game pages
-        // without the shared padding, header separator and maximise action.
+        // without the shared padding and header separator.
         if (viewModel is Mo2HealthPage or Mo2LoadoutsPage { GameScoped: true } && view is Control native)
             Mo2PanelChrome.Adopt(native);
         if (view is IViewContract vc && contract is not null) vc.ViewContract = contract;
@@ -522,10 +522,6 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_AUDIT") == "1") {
                             try { await Mo2PageAuditCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_DIRECTORY")); }
                             catch (Exception error) { Console.WriteLine("FAIL page audit: " + error.Message); }
-                        }
-                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_MAXIMISE") == "1") {
-                            try { await Mo2PhysicalityCheck.Maximise(live, liveWindow); }
-                            catch (Exception error) { Console.WriteLine("FAIL panel maximise: " + error.Message); }
                         }
                         // Last of the opt-in checks, and after the window's own gate: it
                         // navigates to Home and splits panels, so running it earlier

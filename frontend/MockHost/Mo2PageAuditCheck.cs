@@ -17,7 +17,7 @@ namespace Mo2.Frontend;
 internal static class Mo2PageAuditCheck
 {
     private sealed record Metrics(string Page, double Padding, int Actions, double ActionSize,
-        double Pictogram, bool Separator, bool Maximise, bool Description);
+        double Pictogram, bool Separator, bool Description);
 
     internal static async Task Run(Mo2LiveWorkspace live, Window window, string? directory)
     {
@@ -83,9 +83,6 @@ internal static class Mo2PageAuditCheck
             if (header is null) { faults.Add($"{name}: no page header"); continue; }
 
             var stack = body.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(x => x.Name == "PanelHeaderStack");
-            // Read from the header row, not just the actions group: the maximise
-            // action has a column of its own beside the group so a page with one wide
-            // toolbar cannot push it off the line.
             var row = body.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderRow");
             var buttons = row?.GetVisualDescendants().OfType<Button>()
                 .Where(x => x.IsVisible && x.Bounds.Height > 0).ToArray() ?? [];
@@ -98,11 +95,10 @@ internal static class Mo2PageAuditCheck
                 ActionSize: buttons.Select(x => x.Bounds.Height).DefaultIfEmpty(0).Max(),
                 Pictogram: plate?.Width ?? -1,
                 Separator: stack?.Children.OfType<Control>().Any(x => x.Name == "PanelHeaderSeparator") == true,
-                Maximise: buttons.Any(x => x.Name == "MaximisePanelButton"),
                 Description: !string.IsNullOrWhiteSpace(header.Description));
             seen.Add(metrics);
             Console.WriteLine($"AUDIT {metrics.Page}: padding={metrics.Padding} actions={metrics.Actions}@{metrics.ActionSize:F0}px " +
-                $"pictogram={metrics.Pictogram:F0} separator={metrics.Separator} maximise={metrics.Maximise} " +
+                $"pictogram={metrics.Pictogram:F0} separator={metrics.Separator} " +
                 $"description={metrics.Description}");
 
             // Game icons show the artwork whole. The badge control draws a filled
@@ -126,8 +122,6 @@ internal static class Mo2PageAuditCheck
 
             if (stack is null) faults.Add($"{name}: does not use the shared header stack");
             if (!metrics.Separator) faults.Add($"{name}: no separator under its header");
-            // Maximising lives with the panel's close action in the corner, not on
-            // the page's header line; Mo2PhysicalityCheck covers it there.
             if (!metrics.Description) faults.Add($"{name}: header has no description");
             // A header down to its pictogram, or stood down entirely, has no words on
             // screen to measure. Both are the header line giving room to the actions.

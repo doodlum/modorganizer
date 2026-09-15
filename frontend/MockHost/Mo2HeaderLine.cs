@@ -4,8 +4,8 @@ using Avalonia.VisualTree;
 
 namespace Mo2.Frontend;
 
-// The panel that lays out a page header's title, its actions and the maximise
-// action on one line, and decides what gives way as the panel narrows:
+// The panel that lays out a page header's title and its actions on one line,
+// and decides what gives way as the panel narrows:
 //
 //   1. title, description and pictogram beside the actions;
 //   2. the words stand down and the pictogram alone marks the page;
@@ -64,17 +64,13 @@ internal sealed class Mo2HeaderLine : Panel
     protected override Size MeasureOverride(Size availableSize)
     {
         var unlimited = new Size(double.PositiveInfinity, availableSize.Height);
-        // Nothing is reserved on this line any more: maximising a panel is a panel
-        // action and sits with the panel's close action, not among the page's own.
-        const double reserve = 0;
 
-        // What the actions want on one row, asked for directly.
         _actions.Measure(unlimited);
         var natural = _actions.DesiredSize.Width;
 
         var width = double.IsInfinity(availableSize.Width)
-            ? natural + reserve + Mo2PanelChrome.TitleFloor : availableSize.Width;
-        var room = Math.Max(0, width - reserve);
+            ? natural + Mo2PanelChrome.TitleFloor : availableSize.Width;
+        var room = width;
 
         FindParts();
         // The pictogram on its own still says which page this is, so it is what the

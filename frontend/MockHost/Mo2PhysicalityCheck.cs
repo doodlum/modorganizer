@@ -10,8 +10,8 @@ using NexusMods.App.UI.WorkspaceSystem;
 namespace Mo2.Frontend;
 
 // The workspace's physical responses: a list that gives at its ends, a divider that
-// pushes back at its limit, and panels that arrive, maximise and leave under
-// animation rather than appearing and vanishing.
+// pushes back at its limit, and panels that arrive and leave under animation rather
+// than appearing and vanishing.
 internal static class Mo2PhysicalityCheck
 {
     internal static async Task Run()
@@ -110,91 +110,6 @@ internal static class Mo2PhysicalityCheck
             Console.WriteLine($"PASS panel lifecycle: a new panel scales and fades in over {Mo2Physicality.EnterDuration.TotalMilliseconds:F0}ms, " +
                 $"and a closed panel is removed only after its {Mo2Physicality.LeaveDuration.TotalMilliseconds:F0}ms exit has run");
         } finally { window.Close(); }
-    }
-
-    // The maximise action needs the real workspace: two panels, a canvas to fill and
-    // a native close action to leave alone.
-    internal static async Task Maximise(Mo2LiveWorkspace live, Window window)
-    {
-        var workspace = live.WorkspaceController.ActiveWorkspace;
-        if (workspace.Panels.Count < 2) throw new Exception("Maximise needs a workspace with more than one panel");
-        var panels = window.GetVisualDescendants().OfType<Mo2DeferredPanel>().ToArray();
-        if (panels.Length != workspace.Panels.Count) throw new Exception($"Found {panels.Length} panel controls for {workspace.Panels.Count} panels");
-        var canvas = panels[0].Parent as Canvas ?? throw new Exception("Panels are not on the workspace canvas");
-        var target = panels[0];
-        // The native panel chrome is built on demand, so the action appears on the
-        // layout pass after the panel does rather than with it.
-        Button?[] Actions() => panels.Select(panel => panel.GetVisualDescendants().OfType<Button>()
-            .FirstOrDefault(x => x.Name == "MaximisePanelButton")).ToArray();
-        // Panels are built on demand: the second one can still be loading when the
-        // first is ready, so this waits for every panel rather than sampling once.
-        await Reaches(window, () => Actions().All(x => x is { IsVisible: true }),
-            "A panel has no visible maximise action while panels are shared", seconds: 15);
-        var buttons = Actions();
-        // Visible is not the same as drawn: the action has to occupy the header line
-        // beside the close button, with a glyph in it. A StandardButton built in code
-        // passed every property check here while painting nothing at all, so this
-        // also compares the drawn pixels against the close action beside it.
-        foreach (var button in buttons) {
-            await Reaches(window, () => button!.Bounds.Width >= 8 && button.Bounds.Height >= 8,
-                $"The maximise action renders {button!.Bounds.Width:F0}x{button.Bounds.Height:F0}");
-            // Laid out and visible is not the same as drawn: the tab-strip placement
-            // this replaced satisfied every property assertion while painting nothing,
-            // which only a pixel count catches. Panels are built on demand, so the
-            // second one can still be loading when the first is ready.
-            // Measured against a still window: while a panel is still reflowing, the
-            // rectangle sampled belongs to where the button was, not where it is.
-            var ink = 0;
-            for (var attempt = 0; attempt < 12 && ink < 8; attempt++) {
-                await Task.Delay(120); window.UpdateLayout();
-                ink = await Ink(window, button!);
-            }
-            if (ink < 8) throw new Exception($"The maximise action changed only {ink} pixels when hidden");
-        }
-
-        var original = panels.Select(x => (x.Bounds.Width, x.Bounds.Height)).ToArray();
-        var bounds = workspace.Panels.Select(x => x.LogicalBounds).ToArray();
-        try {
-            // Pressed and released like a pointer would, not by raising Click. A real
-            // press also selects the panel, which makes the workspace recompute every
-            // panel's bounds while the maximise is being applied — and raising Click
-            // alone never exercised that.
-            Press(buttons[0]!, window);
-            if (!target.IsMaximised) throw new Exception("Pressing maximise did not maximise the panel");
-            // Mid-animation the panel is on its way, not already there.
-            await Task.Delay(40); window.UpdateLayout();
-            var partial = target.Bounds.Width;
-            if (partial >= canvas.Bounds.Width - 1) throw new Exception("The panel jumped to full width instead of animating");
-            await Reaches(window, () => Math.Abs(target.Bounds.Width - canvas.Bounds.Width) < 2 &&
-                Math.Abs(target.Bounds.Height - canvas.Bounds.Height) < 2, "The panel did not reach the full canvas", seconds: 3);
-            // The panel inside the shell has to grow with it. It sizes itself from the
-            // workspace's bounds, which maximising leaves alone, so the shell filled
-            // the canvas while the panel sat at its old width in the middle of it —
-            // and checking only the shell said everything was fine.
-            var inner = target.GetVisualDescendants().OfType<PanelView>().FirstOrDefault()
-                ?? throw new Exception("The maximised shell holds no panel");
-            await Reaches(window, () => Math.Abs(inner.Bounds.Width - canvas.Bounds.Width) < 2,
-                $"The panel inside is {inner.Bounds.Width:F0}px wide in a {canvas.Bounds.Width:F0}px canvas", seconds: 3);
-            if (Canvas.GetLeft(target) > 1 || Canvas.GetTop(target) > 1) throw new Exception("The maximised panel is not at the canvas origin");
-            if (target.ZIndex <= 0) throw new Exception("The maximised panel is not drawn above the other panels");
-            if (!workspace.Panels.Select(x => x.LogicalBounds).SequenceEqual(bounds))
-                throw new Exception("Maximising changed the workspace's saved panel bounds");
-
-            // Maximising another panel puts the first one back.
-            Press(buttons[1]!, window);
-            if (target.IsMaximised) throw new Exception("Two panels were maximised at once");
-            Press(buttons[1]!, window);
-            if (panels[1].IsMaximised) throw new Exception("Pressing maximise a second time did not restore the panel");
-            await Reaches(window, () => panels.Select((x, i) => Math.Abs(x.Bounds.Width - original[i].Width) < 2 &&
-                Math.Abs(x.Bounds.Height - original[i].Height) < 2).All(x => x), "The panels did not return to their own sizes", seconds: 3);
-            await Reaches(window, () => Math.Abs(inner.Bounds.Width - original[0].Width) < 2,
-                $"The panel inside stayed {inner.Bounds.Width:F0}px after restoring to {original[0].Width:F0}px", seconds: 3);
-            Console.WriteLine($"PASS panel maximise: {panels.Length} panels each carry the action, maximising animates to the " +
-                "full canvas above the others, a second panel takes over from the first, pressing again restores every panel, " +
-                "and the saved layout is untouched");
-        } finally {
-            foreach (var panel in panels) panel.SetMaximised(false);
-        }
     }
 
     // Pixels the control actually contributes to the window. The whole window is

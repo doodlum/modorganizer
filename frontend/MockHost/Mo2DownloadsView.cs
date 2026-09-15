@@ -76,8 +76,8 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         var context = new TextBlock { Name = "DownloadProfileContext", IsVisible = false };
         layout.Children.Add(context); Content = layout;
         // The native downloads page draws its own header and toolbar; the shared
-        // chrome puts them on one line with the separator, padding, compaction and
-        // maximise action every other page has.
+        // chrome puts them on one line with the separator, padding and compaction
+        // every other page has.
         Mo2PanelChrome.Adopt(native);
         import.Click += async (_, _) => {
             if (ViewModel is null || TopLevel.GetTopLevel(this) is not { } window) return;

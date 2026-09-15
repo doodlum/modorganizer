@@ -235,24 +235,6 @@ internal static class Mo2TabDragDropCheck
         }
         if (refused == 0) throw new Exception("No edge drop was made against a full workspace, so nothing was refused");
 
-        // A maximised panel covers the canvas while its place in the layout is
-        // unchanged, so a drop worked out against what is drawn would put the new
-        // panel behind it. Moving a tab puts it back first.
-        var shells = window.GetVisualDescendants().OfType<Mo2DeferredPanel>().ToArray();
-        var maximising = shells.FirstOrDefault(x => x.CanMaximise);
-        if (maximising is null) throw new Exception("No panel offered to maximise with the workspace full");
-        maximising.SetMaximised(true);
-        await Task.Delay(400);
-        if (!maximising.IsMaximised) throw new Exception("The panel did not maximise");
-        // Any tab will do here; what is being checked is that the move puts the
-        // maximised panel back, not which page ends up where.
-        var donor = workspace.Panels.FirstOrDefault(x => x.Tabs.Count > 1) ?? workspace.Panels[0];
-        var receiver = workspace.Panels.FirstOrDefault(x => x.Id != donor.Id) ?? donor;
-        Mo2TabDragDrop.Move(controller, workspaceId, donor.Id, donor.Tabs[^1].Id, receiver, Mo2TabDragDrop.Zone.Tab);
-        await Task.Delay(400);
-        if (shells.Any(x => x.IsMaximised)) throw new Exception("Moving a tab left a panel maximised over the layout it rearranged");
-        Grid("a move while a panel was maximised");
-
         // Drops landing while the last one is still animating. The panels reflow over
         // 220ms, and a drop during that has to be worked out from where the layout is
         // going rather than from halfway there.
@@ -285,8 +267,8 @@ internal static class Mo2TabDragDropCheck
             $"button does not, 5 drop zones and their previewed regions, edge drop split into 2 panels, " +
             $"a panel's last tab moved to another panel's edge without leaving a hole, tab drop rejoined to 1, self-drop " +
             $"ignored, {filled} panels filled the workspace and {refused} further edge drops were refused rather than drawn " +
-            $"as a third column — each previewing the whole panel it would join — a move put a maximised panel back before " +
-            $"rearranging around it, and eight drops landing mid-animation all left the workspace covered exactly once " +
+            $"as a third column — each previewing the whole panel it would join — " +
+            $"and eight drops landing mid-animation all left the workspace covered exactly once " +
             $"(workspace started with {startingPanels} panel)");
     }
 }
