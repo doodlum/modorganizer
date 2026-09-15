@@ -80,9 +80,23 @@ internal static class Mo2TabDragDropCheck
         if (!right.Tabs.Any(x => x.Header.Title == movingTitle)) throw new Exception("Moved page is not in the new panel");
         if (left.Tabs.Any(x => x.Header.Title == movingTitle)) throw new Exception("Moved page is still in the old panel");
 
+        // The panel being emptied is itself part of the layout being rebuilt. Dragging
+        // a panel's last tab onto another panel's edge closes the one it came from and
+        // splits the one it lands on, and the split worked out before that close named
+        // a panel that had already gone — which threw out of the drop handler and took
+        // the window with it.
+        var last = right.Tabs.Single(x => x.Header.Title == movingTitle);
+        Mo2TabDragDrop.Move(controller, workspaceId, right.Id, last.Id, left, Mo2TabDragDrop.Zone.Bottom);
+        await Task.Delay(600);
+        if (workspace.Panels.Count != 2) throw new Exception("Last-tab edge drop left " + workspace.Panels.Count + " panels");
+        var lower = workspace.Panels.OrderBy(x => x.LogicalBounds.Y).Last();
+        var upper = workspace.Panels.OrderBy(x => x.LogicalBounds.Y).First();
+        if (lower.LogicalBounds.Y <= upper.LogicalBounds.Y) throw new Exception("Last-tab drop did not split downwards");
+        if (!lower.Tabs.Any(x => x.Header.Title == movingTitle)) throw new Exception("Last tab is not in the new lower panel");
+
         // Rejoin: dropping over the other panel's middle adds it back as a tab.
-        var returning = right.Tabs.Single(x => x.Header.Title == movingTitle);
-        Mo2TabDragDrop.Move(controller, workspaceId, right.Id, returning.Id, left, Mo2TabDragDrop.Zone.Tab);
+        var returning = lower.Tabs.Single(x => x.Header.Title == movingTitle);
+        Mo2TabDragDrop.Move(controller, workspaceId, lower.Id, returning.Id, upper, Mo2TabDragDrop.Zone.Tab);
         await Task.Delay(600);
         if (workspace.Panels.Count != 1) throw new Exception("Emptied panel did not close: " + workspace.Panels.Count);
         if (!workspace.Panels.Single().Tabs.Any(x => x.Header.Title == movingTitle))
@@ -96,6 +110,7 @@ internal static class Mo2TabDragDropCheck
         if (workspace.Panels.Single().Tabs.Count != before) throw new Exception("Dropping a tab on its own panel changed the layout");
 
         Console.WriteLine($"PASS tab drag and drop: 5 drop zones and their previewed regions, edge drop split into 2 panels, " +
-            $"tab drop rejoined to 1, self-drop ignored (workspace started with {startingPanels} panel)");
+            $"a panel's last tab moved to another panel's edge without leaving a hole, tab drop rejoined to 1, self-drop " +
+            $"ignored (workspace started with {startingPanels} panel)");
     }
 }

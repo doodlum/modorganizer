@@ -185,10 +185,16 @@ internal static class Mo2TabDragDrop
         // would close underneath the new state and leave a hole in the grid.
         if (zone != Zone.Tab && target.Id == sourcePanelId && source.Tabs.Count < 2) return;
 
+        // Closed first, and the split worked out afterwards. Dragging a panel's last
+        // tab onto another panel closes the one it came from, and a state worked out
+        // before that still named it — the workspace then looked up a panel that had
+        // already gone and threw "Optional<T> has no value" out of the drop, taking
+        // the window with it. Read after the close, the remaining panels are the ones
+        // that are actually there, already grown into the space the closed one left.
+        source.CloseTab(tabId);
         OpenPageBehavior behavior = zone == Zone.Tab
             ? new OpenPageBehavior.NewTab(target.Id)
             : new OpenPageBehavior.NewPanel(SplitState(workspace, target, zone));
-        source.CloseTab(tabId);
         controller.OpenPage(workspaceId, page, behavior, selectTab: true, checkOtherPanels: false);
     }
 }
