@@ -33,6 +33,11 @@ internal static class Mo2QtWidgets
     internal const string DownloadsRefreshTip = "Refresh the downloads.";
     internal const string QueryMetadata = "Query Metadata";
     internal const string ArchivesNote = "Currently detected archives.";
+    internal const string FiltersGroup = "Filters";
+    internal const string FiltersClear = "Clear";
+    internal const string FiltersEdit = "Edit...";
+    internal const string FiltersEditTip = "Display mods that match all selected categories.";
+    internal const string ModFilterTip = "Filter the list of mods.";
 
     // A push button as MO2 labels them: the caption it draws, the tooltip it
     // explains itself with, and a Material icon in place of MO2's own.

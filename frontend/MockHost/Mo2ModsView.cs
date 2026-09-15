@@ -276,7 +276,24 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         Mo2TableRow.InstallRowStyles(table);
         var rail = Mo2ListRail.Create("ModsRailScrollBar", out var scroll);
         Grid.SetColumn(rail, 1); Grid.SetRow(rail, 1); list.Children.Add(table); list.Children.Add(rail);
-        listContainer.Content = list;
+        // MO2's own mod pane furniture: the Filters group with its Clear and Edit
+        // actions, and the filter field under the list.
+        var qtBar = new StackPanel { Name = "ModsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 6, Margin = new Thickness(0,0,0,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        qtBar.Children.Add(new TextBlock { Text = Mo2QtWidgets.FiltersGroup, Opacity = .6,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0,0,6,0) });
+        qtBar.Children.Add(Mo2QtWidgets.Button("ModsFiltersClear", Mo2QtWidgets.FiltersClear, Mo2QtWidgets.FiltersClear,
+            "mdi-filter-remove-outline", () => { ((Mo2ModsAdapter)ViewModel!.Adapter).SetColumnFilters("", "", ""); }));
+        qtBar.Children.Add(Mo2QtWidgets.Button("ModsFiltersEdit", Mo2QtWidgets.FiltersEdit, Mo2QtWidgets.FiltersEditTip,
+            "mdi-filter-cog-outline", () => { }));
+        var qtFilter = Mo2QtWidgets.Filter("ModsQtFilter", Mo2QtWidgets.ModFilterTip,
+            text => ((Mo2ModsAdapter)ViewModel!.Adapter).SetColumnFilters(text, "", ""), out _);
+        qtFilter.Margin = new Thickness(0,8,0,0);
+        var modsTab = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        modsTab.Children.Add(qtBar);
+        Grid.SetRow(list,1); modsTab.Children.Add(list);
+        Grid.SetRow(qtFilter,2); modsTab.Children.Add(qtFilter);
+        listContainer.Content = modsTab;
         Mo2ListRail.Connect(scroll, table);
         table.AutoDragDropRows = true;
         table.CanUserSortColumns = false;
