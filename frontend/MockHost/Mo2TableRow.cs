@@ -129,6 +129,7 @@ internal static class Mo2TableRow
             Setters = {
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
                     Application.Current!.FindResource("SurfaceTranslucentLowBrush")),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
             }
         });
 
