@@ -187,20 +187,19 @@ internal static class Mo2PanelChrome
 
 
 
-    // The title line: actions docked right, header filling the rest. Shared so the
-    // grid and docked entry points cannot drift apart.
+    // The title line. MO2 carries no toolbar on a tab: what a row can have done to it
+    // is on its right-click menu, and what a list can be filtered by is a field in the
+    // tab itself. Pages still hand their actions here so reinstating the toolbar is a
+    // one-line change, but none of them are drawn — the header area stays, the toolbar
+    // does not.
     private static Control HeaderLine(PageHeader header, Control[] actions)
     {
         var group = new WrapPanel { Name = "PanelHeaderActions", Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
-        foreach (var action in actions) {
-            // Actions come from each panel's old toolbar row; take them out of it so
-            // the row collapses and they sit on the title's line instead.
+        foreach (var action in actions)
+            // Detached from the page's own toolbar row all the same, so the row it came
+            // from collapses rather than drawing it a second time lower down.
             if (action.Parent is Panel owner) owner.Children.Remove(action);
-            action.Margin = new Thickness(2, 2, 0, 2);
-            action.VerticalAlignment = VerticalAlignment.Center;
-            group.Children.Add(action);
-        }
         // Pinned left, because the floor below makes the header wider than the slot it
         // is given once only the pictogram is left, and Avalonia centres a control that
         // does not fit — which drew the pictogram 29px off the left of the panel,

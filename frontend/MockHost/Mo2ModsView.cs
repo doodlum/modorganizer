@@ -248,8 +248,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         var list = new Grid { ColumnDefinitions = new ColumnDefinitions($"*,{Mo2TableRow.RailWidth}"), RowDefinitions = new RowDefinitions("Auto,*"),
             Margin = new Thickness(Mo2PanelChrome.Padding, 0, Mo2PanelChrome.Padding, Mo2PanelChrome.Padding) };
         var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6); columns.Height = Mo2TableRow.HeadingBand;
-        void Heading(string label, int column) => Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
-        Heading("Status", 1); Heading("Mod name", 2); Heading("Version", 3); Heading("Category", 4); Heading("Endorsed", 5); Heading("Actions", 6);
+        // MO2's own headers, taken from the same table the row's columns come from so
+        // the two cannot describe different lists.
+        foreach (var (column, label) in Mo2ModRow.Headers)
+            Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
         var help = new StandardButton { Name = "ModsHelpButton", ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
             LeftIcon = IconValues.HelpOutline, Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None, Size = StandardButton.Sizes.Medium,

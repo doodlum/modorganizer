@@ -9,13 +9,32 @@ namespace Mo2.Frontend;
 
 internal static class Mo2PluginRow
 {
+    // MO2's own plugin list columns, in the order its model declares them
+    // (src/pluginlist.h, EColumn) and under the headers it gives them
+    // (pluginlist.cpp). The enable box sits in the name column as it does in MO2,
+    // and the row's actions are on its right-click menu rather than in a column.
+    internal const int Name = 0, Flags = 1, Priority = 2, ModIndex = 3,
+        FormVersion = 4, HeaderVersion = 5, Author = 6, Description = 7;
+
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        $"{Mo2TableRow.GripColumn},{Mo2TableRow.StatusColumn},*,70,150,{Mo2TableRow.ActionsColumn}") };
+        "*,30,56,72,86,96,104,*") };
+
+    internal static readonly (int Column, string Name)[] Headers = [
+        (Name, "Name"), (Flags, "Flags"), (Priority, "Priority"), (ModIndex, "Mod Index"),
+        (FormVersion, "Form Version"), (HeaderVersion, "Header Version"),
+        (Author, "Author"), (Description, "Description")];
+
     internal static readonly HashSet<int> HiddenColumns = [];
-    internal static readonly (int Column, string Name)[] OptionalColumns = [(3, "Type"), (4, "Masters")];
+    internal static readonly (int Column, string Name)[] OptionalColumns =
+        Headers.Where(x => x.Column != Name).ToArray();
+
+    private static readonly (int Column, double Width, double Threshold)[] Optional = [
+        (Flags, 30, 300), (Priority, 56, 380), (ModIndex, 72, 460),
+        (FormVersion, 86, 900), (HeaderVersion, 96, 1060), (Author, 104, 700),
+        (Description, 200, 1240)];
 
     internal static void Fit(Grid row, double width) =>
-        Mo2TableRow.Fit(row, width, [(3, 70, 610), (4, 150, 800)], HiddenColumns.Contains);
+        Mo2TableRow.Fit(row, width, Optional, HiddenColumns.Contains);
     internal static Control Create(Mo2LiveProfile profile, ScenarioPlugin plugin)
     {
         Mo2UiLatencyProbe.Count("Plugin rows created");
@@ -37,35 +56,43 @@ internal static class Mo2PluginRow
             actionSets.Add(items); return items;
         }
         var row = Columns(); row.Name = "PluginRedesignRow";
-        var grip = Mo2EntryMenu.Create("Plugin", plugin.DisplayName, Actions); grip.Width = Mo2TableRow.GripWidth; Mo2TableRow.Add(row, grip, 0);
+        // Name column: enable box, the lock MO2 marks a fixed load order with, then the
+        // plugin's name. Its actions are on the row's right-click menu, as MO2 has them.
         var toggle = Mo2ModRow.Activation("PluginActivationToggle", plugin.DisplayName, plugin.IsActive, plugin.CanToggle && profile.CanChangeOriginalUi,
             async () => { await Change(profile.Order.FindPlugin(plugin.Key)?.IsActive != true); return profile.Order.FindPlugin(plugin.Key)?.IsActive == true; },
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.Order.FindPlugin(plugin.Key)?.CanToggle == true);
-        Mo2TableRow.Add(row, toggle, 1);
         var name = Mo2TableRow.Cell(plugin.DisplayName, plugin.IsActive ? .85 : .5);
         name.Name = "PluginName";
         ToolTip.SetTip(name, plugin.DisplayName + "\nMod: " + plugin.ModName + "\n" + plugin.Diagnostics);
         var title = new DockPanel();
         var padlock = new UnifiedIcon { Name = "PluginLockIcon", Value = new ProjektankerIcon("mdi-lock-outline"), Size = 14, Margin = new Thickness(0,0,4,0), VerticalAlignment = VerticalAlignment.Center, IsVisible = plugin.IsLocked };
         ToolTip.SetTip(padlock, "Load order locked by MO2"); DockPanel.SetDock(padlock, Dock.Left); title.Children.Add(padlock);
-        title.Children.Add(name); Mo2TableRow.Add(row, title, 2);
-        Mo2TableRow.Add(row, Mo2TableRow.Cell(Path.GetExtension(plugin.DisplayName).TrimStart('.').ToUpperInvariant(), .6), 3);
-        var masters = Mo2TableRow.Cell(string.Join(", ", plugin.Masters), .6);
-        ToolTip.SetTip(masters, masters.Text); Mo2TableRow.Add(row, masters, 4);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var info = Mo2ModRow.IconButton(plugin.HasWarning ? "mdi-alert-circle-outline" : "mdi-information-outline", "Plugin details", () => {
-            if (target != profile.CurrentTarget) return;
-            var table = row.GetVisualAncestors().OfType<TreeDataGrid>().FirstOrDefault();
-            if (table?.RowSelection is not { } selection || table.Rows is not { } rows) return;
-            var index = Enumerable.Range(0, rows.Count).FirstOrDefault(i => rows[i].Model is NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Games.ISortItemKey> m && m.Key.Equals(plugin.Key), -1);
-            if (index >= 0) { selection.Clear(); selection.Select(rows.RowIndexToModelIndex(index)); }
-            if (row.GetVisualAncestors().OfType<Mo2PluginsView>().FirstOrDefault()?.ViewModel is { } page)
-                page.ShowPluginDetails = true;
-        });
-        actions.Children.Add(info);
-        var menu = Mo2EntryMenu.Flyout(Actions);
-        var more = Mo2ModRow.IconButton("mdi-menu-down", "Plugin actions", () => { }); more.Flyout = menu; actions.Children.Add(more);
-        Mo2TableRow.Add(row, actions, 5);
+        title.Children.Add(name);
+        var nameCell = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.StatusColumn},*") };
+        Mo2TableRow.Add(nameCell, toggle, 0); Mo2TableRow.Add(nameCell, title, 1);
+        Mo2TableRow.Add(row, nameCell, Name);
+        row.ContextFlyout = Mo2EntryMenu.Flyout(Actions);
+
+        // MO2's Flags column is a glyph summarising what its tooltip spells out; a
+        // plugin MO2 has something to warn about is the one that shows a mark.
+        var flags = new UnifiedIcon { Name = "PluginFlagIcon",
+            Value = new ProjektankerIcon(plugin.HasWarning ? "mdi-alert-circle-outline" : "mdi-flag"), Size = 14,
+            Opacity = plugin.HasWarning || plugin.PluginFlags.Length > 0 ? .85 : 0,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var flagDetail = plugin.PluginFlags.Length > 0 ? plugin.PluginFlags : plugin.Diagnostics;
+        if (flagDetail.Length > 0) ToolTip.SetTip(flags, flagDetail);
+        Mo2TableRow.Add(row, flags, Flags);
+
+        var priority = Mo2TableRow.Cell(plugin.PriorityText, .6);
+        var modIndex = Mo2TableRow.Cell(plugin.ModIndex, .6);
+        var formVersion = Mo2TableRow.Cell(plugin.FormVersion, .6);
+        var headerVersion = Mo2TableRow.Cell(plugin.HeaderVersion, .6);
+        var author = Mo2TableRow.Cell(plugin.Author, .6);
+        var description = Mo2TableRow.Cell(plugin.Description, .6);
+        if (plugin.Description.Length > 0) ToolTip.SetTip(description, plugin.Description);
+        Mo2TableRow.Add(row, priority, Priority); Mo2TableRow.Add(row, modIndex, ModIndex);
+        Mo2TableRow.Add(row, formVersion, FormVersion); Mo2TableRow.Add(row, headerVersion, HeaderVersion);
+        Mo2TableRow.Add(row, author, Author); Mo2TableRow.Add(row, description, Description);
         void Refresh() {
             var ready = target == profile.CurrentTarget && profile.CanChangeOriginalUi;
             if (target == profile.CurrentTarget && profile.Order.FindPlugin(plugin.Key) is { } latest) plugin = latest;

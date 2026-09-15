@@ -101,7 +101,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         mainGrid.Margin = new Thickness(0);
         mainGrid.RowDefinitions = new RowDefinitions("Auto,*"); Grid.SetRow(tableControl, 1);
         var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,8,0,6); headings.Height = Mo2TableRow.HeadingBand;
-        foreach (var (text, column) in new[] { ("Status", 1), ("Plugin name", 2), ("Type", 3), ("Masters", 4), ("Actions", 5) })
+        // MO2's own headers, from the same table the row's columns come from.
+        foreach (var (column, text) in Mo2PluginRow.Headers)
             Mo2ModRow.Add(headings, Mo2TableRow.Heading(text), column);
         mainGrid.Children.Add(headings);
         var pluginRail = editor.FindControl<Grid>("TrophyBarColumnGrid")!;

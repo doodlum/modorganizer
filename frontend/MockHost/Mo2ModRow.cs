@@ -11,18 +11,54 @@ namespace Mo2.Frontend;
 
 internal static class Mo2ModRow
 {
+    // MO2's own mod list columns, in the order its model declares them
+    // (src/modlist.h, EColumn) and under the headers it gives them
+    // (modlist.cpp, headerData). The enable box sits in the name column as it does
+    // in MO2, and there is no actions column: MO2 puts a row's actions on its
+    // right-click menu rather than drawing buttons on every row.
+    internal const int Name = 0, Conflicts = 1, Flags = 2, Content = 3, Category = 4,
+        Author = 5, Uploader = 6, NexusId = 7, SourceGame = 8, Version = 9,
+        Installation = 10, Priority = 11, Notes = 12;
+
     internal static Grid Columns() => new() { MinWidth = 0, ColumnDefinitions = new ColumnDefinitions(
-        $"{Mo2TableRow.GripColumn},{Mo2TableRow.StatusColumn},*,80,130,84,{Mo2TableRow.ActionsColumn}") };
-    // Columns the user has switched off through the Mods view-options action. The
-    // responsive widths below still apply: a column shows only when it both fits and
-    // has not been hidden. Status, Mod name and Actions are not optional.
+        "*,30,30,88,104,104,104,74,104,78,120,56,110") };
+
+    internal static readonly (int Column, string Name)[] Headers = [
+        (Name, "Mod Name"), (Conflicts, "Conflicts"), (Flags, "Flags"), (Content, "Content"),
+        (Category, "Category"), (Author, "Author"), (Uploader, "Uploader"), (NexusId, "Nexus ID"),
+        (SourceGame, "Source Game"), (Version, "Version"), (Installation, "Installation"),
+        (Priority, "Priority"), (Notes, "Notes")];
+
+    // Columns the user has switched off. The responsive widths below still apply: a
+    // column shows only when it both fits and has not been hidden. Only the name is
+    // not optional, matching MO2, which lets every other column be turned off.
     internal static readonly HashSet<int> HiddenColumns = [];
     internal static readonly (int Column, string Name)[] OptionalColumns =
-        [(3, "Version"), (4, "Category"), (5, "Endorsed")];
+        Headers.Where(x => x.Column != Name).ToArray();
 
-    internal static void Fit(Grid grid, double width)
+    // Dropped from the right as the panel narrows, in reverse order of how much they
+    // say about a mod: the glyph columns and the priority survive longest because
+    // they are what the list is read by.
+    private static readonly (int Column, double Width, double Threshold)[] Optional = [
+        (Conflicts, 30, 300), (Flags, 30, 330), (Content, 88, 620), (Category, 104, 500),
+        (Author, 104, 1120), (Uploader, 104, 1360), (NexusId, 74, 900), (SourceGame, 104, 1240),
+        (Version, 78, 420), (Installation, 120, 1020), (Priority, 56, 380), (Notes, 110, 780)];
+
+    internal static void Fit(Grid grid, double width) =>
+        Mo2TableRow.Fit(grid, width, Optional, HiddenColumns.Contains);
+
+    // One of MO2's glyph columns. MO2 draws a small icon per condition and spells the
+    // conditions out in the tooltip; the icon is shown only when there is something to
+    // say, so an ordinary mod's row stays quiet rather than carrying three grey marks.
+    private static UnifiedIcon Glyph(string name, string detail, string icon) =>
+        Detail(new UnifiedIcon { Name = name, Value = new ProjektankerIcon(icon), Size = 14,
+            Opacity = detail.Length > 0 ? .85 : 0, HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center }, detail);
+
+    private static UnifiedIcon Detail(UnifiedIcon icon, string detail)
     {
-        Mo2TableRow.Fit(grid, width, [(3, 80, 610), (4, 130, 800), (5, 84, 940)], HiddenColumns.Contains);
+        if (detail.Length > 0) ToolTip.SetTip(icon, detail);
+        return icon;
     }
     // Kept as thin forwarders: both tables share one implementation in Mo2TableRow.
     internal static void Add(Grid grid, Control control, int column) => Mo2TableRow.Add(grid, control, column);
@@ -137,20 +173,39 @@ internal static class Mo2ModRow
             return separator;
         }
         var row = Columns(); row.Name = "ModRedesignRow";
-        Add(row, grip, 0);
-        // Just the enable box. It used to be paired with a caret opening the same
-        // actions, which the row already offers twice over — from its grip and from
-        // the caret beside the remove action — so the third copy only crowded the
-        // checkbox it sat against.
+        // Name column: the enable box then the mod's name, as MO2 draws its own name
+        // column. The row's actions are on its right-click menu, again as MO2 has it,
+        // so no column is spent on buttons that repeat what the menu already offers.
         var toggle = Activation("ModActivationToggle", mod.Name, (mod.State & 6) != 0, mod.CanManage && profile.CanChangeOriginalUi,
             async () => { await Run(() => profile.ToggleMod(mod.Id)); return (profile.FindMod(mod.Id)?.State & 6) != 0; },
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.FindMod(mod.Id)?.CanManage == true);
-        Add(row, toggle, 1);
         var title = Mo2TableRow.Cell(mod.DisplayName, (mod.State & 6) != 0 ? .85 : .5);
-        ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0))); Add(row, title, 2);
+        ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
+        var nameCell = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.StatusColumn},*") };
+        Mo2TableRow.Add(nameCell, toggle, 0); Mo2TableRow.Add(nameCell, title, 1);
+        Add(row, nameCell, Name);
+        row.ContextFlyout = Mo2EntryMenu.Flyout(Actions);
+
+        // Conflicts, Flags and Content are glyph columns in MO2, each summarising
+        // what its tooltip spells out. Material icons stand in for MO2's own.
+        var conflicts = Glyph("ModConflictIcon", mod.Conflicts, "mdi-swap-vertical-bold");
+        var flags = Glyph("ModFlagIcon", mod.Flags, "mdi-flag");
+        var content = Glyph("ModContentIcon", mod.Content, "mdi-package-variant-closed");
+        Add(row, conflicts, Conflicts); Add(row, flags, Flags); Add(row, content, Content);
+
+        var category = Mo2TableRow.Cell(mod.Category, .6);
+        var author = Mo2TableRow.Cell(mod.Author, .6);
+        var uploader = Mo2TableRow.Cell(mod.Uploader, .6);
+        var nexusId = Mo2TableRow.Cell(mod.NexusId > 0 ? mod.NexusId.ToString() : "", .6);
+        var sourceGame = Mo2TableRow.Cell(mod.SourceGame, .6);
+        var installation = Mo2TableRow.Cell(mod.InstallTime, .6);
+        var priority = Mo2TableRow.Cell(mod.PriorityText, .6);
+        var notes = Mo2TableRow.Cell(mod.Notes, .6);
+        if (mod.Notes.Length > 0) ToolTip.SetTip(notes, mod.Notes);
+
         var version = Mo2TableRow.Cell(mod.Version, .6);
-        // An available update is a filled pill with a download glyph, as the reference
-        // shows, in place of the plain version text.
+        // MO2 marks an available update on the version itself rather than in a column
+        // of its own, so the newer version is shown beside the installed one.
         var updatePill = new Border { Name = "ModUpdatePill", CornerRadius = new CornerRadius(6), Padding = new Thickness(6,1),
             Background = Brush.Parse("#1D4ED8"), VerticalAlignment = VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin,
             HorizontalAlignment = HorizontalAlignment.Left, IsVisible = mod.HasUpdate,
@@ -161,24 +216,27 @@ internal static class Mo2ModRow
             version.IsVisible = false;
             ToolTip.SetTip(updatePill, $"Update available: {mod.Version} → {mod.NewestVersion}");
         }
-        var category = Mo2TableRow.Cell(mod.Category, .6);
-        var versionCell = new Grid(); versionCell.Children.Add(version); versionCell.Children.Add(updatePill); Add(row, versionCell, 3); Add(row, category, 4);
+        var versionCell = new Grid(); versionCell.Children.Add(version); versionCell.Children.Add(updatePill);
+        Add(row, category, Category); Add(row, author, Author); Add(row, uploader, Uploader);
+        Add(row, nexusId, NexusId); Add(row, sourceGame, SourceGame); Add(row, versionCell, Version);
+        Add(row, installation, Installation); Add(row, priority, Priority); Add(row, notes, Notes);
         var isEndorsed = (mod.State & 0x10) != 0;
-        var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline"), Size = 18,
-            Opacity = mod.NexusId <= 0 ? 0 : (mod.State & 0x10) != 0 ? 1 : .45 };
-        ToolTip.SetTip(endorsed, (mod.State & 0x10) != 0 ? "Endorsed on Nexus Mods" : "MO2 does not report this mod as endorsed");
-        Add(row, endorsed, 5);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var remove = IconButton("mdi-trash-can-outline", "Remove mod…", () => { if (target == profile.CurrentTarget && profile.CanChangeOriginalUi) profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]); });
-        remove.IsEnabled = mod.CanManage; actions.Children.Add(remove);
-        var menu = Mo2EntryMenu.Flyout(Actions);
-        var more = IconButton("mdi-menu-down", "Mod actions", () => { }); more.Flyout = menu; actions.Children.Add(more); Add(row, actions, 6);
+        // MO2 shows endorsement as one of the flag glyphs rather than a column, so it
+        // rides along with the flags it belongs among.
+        var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline"), Size = 14,
+            Opacity = mod.NexusId <= 0 ? 0 : isEndorsed ? 1 : .45, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(endorsed, isEndorsed ? "Endorsed on Nexus Mods" : "MO2 does not report this mod as endorsed");
+        Add(row, endorsed, Flags);
         void Refresh() {
             var ready = RefreshActions();
             toggle.IsChecked = (mod.State & 6) != 0;
-            toggle.IsEnabled = remove.IsEnabled = ready && mod.CanManage;
+            toggle.IsEnabled = ready && mod.CanManage;
             title.Text = mod.DisplayName; title.Opacity = toggle.IsChecked == true ? .85 : .5;
             version.Text = mod.Version; category.Text = mod.Category;
+            author.Text = mod.Author; uploader.Text = mod.Uploader;
+            nexusId.Text = mod.NexusId > 0 ? mod.NexusId.ToString() : "";
+            sourceGame.Text = mod.SourceGame; installation.Text = mod.InstallTime;
+            priority.Text = mod.PriorityText; notes.Text = mod.Notes;
             ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
             var nextEndorsed = (mod.State & 0x10) != 0;
             if (nextEndorsed != isEndorsed) {
