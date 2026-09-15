@@ -60,6 +60,50 @@ internal static class Mo2TabDragDrop
         _ => bounds,
     };
 
+    // The workspace holds two columns and two rows. Halving a panel that is already
+    // half of something asks for a third of one or the other, which is a layout the
+    // workspace can neither draw nor save — the panels came out overlapping, or with
+    // a strip of empty canvas between them.
+    private const int MaxColumns = 2;
+    private const int MaxRows = 2;
+
+    // Whether a drop at this zone will split the panel it lands on, decided from what
+    // is open rather than from the geometry, so the preview drawn under the pointer
+    // and the drop that follows it cannot promise different things. A panel whose last
+    // tab is being dragged out closes, which frees the room the split needs.
+    internal static bool CanSplit(IWorkspaceViewModel workspace, PanelId sourcePanelId, IPanelViewModel target, Zone zone)
+    {
+        if (zone == Zone.Tab) return false;
+        var source = workspace.Panels.FirstOrDefault(x => x.Id == sourcePanelId);
+        if (source is null) return false;
+        if (target.Id == sourcePanelId && source.Tabs.Count < 2) return false;
+        var closing = source.Tabs.Count < 2 && target.Id != sourcePanelId ? 1 : 0;
+        return workspace.Panels.Count - closing + 1 <= MaxColumns * MaxRows;
+    }
+
+    internal static bool Fits(WorkspaceGridState state)
+    {
+        var columns = new HashSet<double>();
+        var rows = new HashSet<double>();
+        foreach (var panel in state) {
+            columns.Add(Math.Round(panel.Rect.X, 3));
+            rows.Add(Math.Round(panel.Rect.Y, 3));
+        }
+        return columns.Count <= MaxColumns && rows.Count <= MaxRows;
+    }
+
+    // The rectangle drawn under the pointer while dragging: the half a split would
+    // take, or the whole panel when the workspace has no room to split and the drop
+    // will join it as a tab instead. Previewing a half the drop cannot give promised
+    // a layout that never appeared.
+    internal static Rect PreviewRegion(IWorkspaceController controller, WorkspaceId workspaceId,
+        PanelId sourcePanelId, IPanelViewModel target, Rect bounds, Point point)
+    {
+        var zone = ZoneFor(bounds, point);
+        return controller.TryGetWorkspace(workspaceId, out var workspace) &&
+            !CanSplit(workspace, sourcePanelId, target, zone) ? bounds : RegionFor(bounds, zone);
+    }
+
     internal static WorkspaceGridState SplitState(IWorkspaceViewModel workspace, IPanelViewModel panel, Zone zone)
     {
         var states = workspace.Panels.Select(x => new PanelGridState(x.Id,
@@ -126,6 +170,10 @@ internal static class Mo2TabDragDrop
             if (panel?.ViewModel is null || header.ViewModel is null) return;
             // A panel's last tab has nowhere to move from; moving it would close the panel.
             pressedTab = null;
+            // A maximised panel is drawn over the whole canvas while its place in the
+            // layout is unchanged, so every zone under the pointer belongs to a panel
+            // that is not where it appears to be. Dragging puts it back first.
+            Mo2DeferredPanel.RestoreMaximised();
             dragging = new Source(controller.ActiveWorkspaceId, panel.ViewModel.Id, header.ViewModel.Id);
             EnsureOverlay();
             var data = new DataObject();
@@ -147,7 +195,7 @@ internal static class Mo2TabDragDrop
             if (under is null) { preview.IsVisible = false; return; }
             var origin = under.Value.View.TranslatePoint(default, window)!.Value;
             var bounds = new Rect(origin, under.Value.View.Bounds.Size);
-            var region = RegionFor(bounds, ZoneFor(bounds, point));
+            var region = PreviewRegion(controller, dragging.Workspace, dragging.Panel, under.Value.Panel, bounds, point);
             preview.Margin = new Thickness(region.X, region.Y, 0, 0);
             preview.Width = region.Width; preview.Height = region.Height;
             preview.IsVisible = true;
@@ -175,6 +223,11 @@ internal static class Mo2TabDragDrop
         PanelId sourcePanelId, PanelTabId tabId, IPanelViewModel target, Zone zone)
     {
         if (!controller.TryGetWorkspace(workspaceId, out var workspace)) return;
+        // A maximised panel is drawn over the whole canvas while its place in the
+        // layout is unchanged. Rearranging around it would place the new panel behind
+        // the one covering the screen, so it goes back first — the drag does this when
+        // it starts, and this is here for every other way a move can be asked for.
+        Mo2DeferredPanel.RestoreMaximised();
         var source = workspace.Panels.FirstOrDefault(x => x.Id == sourcePanelId);
         if (source is null) return;
         var tab = source.Tabs.FirstOrDefault(x => x.Id == tabId);
@@ -191,10 +244,18 @@ internal static class Mo2TabDragDrop
         // already gone and threw "Optional<T> has no value" out of the drop, taking
         // the window with it. Read after the close, the remaining panels are the ones
         // that are actually there, already grown into the space the closed one left.
+        // Asked before the tab closes, because this is the same question the preview
+        // answered while the pointer was still moving.
+        var splitting = CanSplit(workspace, sourcePanelId, target, zone);
         source.CloseTab(tabId);
-        OpenPageBehavior behavior = zone == Zone.Tab
-            ? new OpenPageBehavior.NewTab(target.Id)
-            : new OpenPageBehavior.NewPanel(SplitState(workspace, target, zone));
+        // Landing as a tab is what a drop does when it cannot split: the page still
+        // goes where it was dropped, which is the part the person doing the dragging
+        // chose. Refusing outright would look like the drag had failed.
+        OpenPageBehavior behavior = new OpenPageBehavior.NewTab(target.Id);
+        if (splitting) {
+            var split = SplitState(workspace, target, zone);
+            if (Fits(split)) behavior = new OpenPageBehavior.NewPanel(split);
+        }
         controller.OpenPage(workspaceId, page, behavior, selectTab: true, checkOtherPanels: false);
     }
 }

@@ -96,6 +96,10 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
         new DoubleTransition { Property = Canvas.TopProperty, Duration = ReflowDuration, Easing = new CubicEaseOut() },
     };
 
+    // Put back whichever panel is maximised, if any. Anything that rearranges the
+    // layout has to start from the layout as it is stored rather than as it is drawn.
+    internal static void RestoreMaximised() => _current?.SetMaximised(false);
+
     internal void SetMaximised(bool wanted)
     {
         if (wanted == _maximised) return;

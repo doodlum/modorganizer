@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -80,14 +81,32 @@ internal static class Mo2PhysicalityCheck
             await Reaches(window, () => panel.Opacity > .99 && ((ScaleTransform)panel.RenderTransform!).ScaleX > .999,
                 "A new panel did not settle at full size", seconds: 3);
             var left = false;
+            // Timed rather than sampled in sequence. The fade runs on the render clock
+            // and the removal on a dispatcher timer, so polling for "has it started"
+            // and then "has it finished" raced the animation both ways: under load the
+            // whole 160ms could pass between two polls, and on a quick frame the timer
+            // could fire while the last frame was still on screen. What the panel has
+            // to do is stay for its exit and be gone by the end of it.
+            var closing = System.Diagnostics.Stopwatch.StartNew();
             Mo2Physicality.AnimateOut(panel, () => left = true);
-            // The fade is driven by the render clock, which under load can be a few
-            // frames behind the call; what matters is that it starts and that the
-            // panel is not removed until it has finished.
-            await Reaches(window, () => panel.Opacity < 1, "A closing panel did not start fading", seconds: 1);
-            if (left) throw new Exception("A closing panel was removed before it had animated");
+            // What is checked is what the panel is told to do and when it is taken
+            // away, not which intermediate frames happen to be caught: catching one is
+            // a race against the renderer, and the check kept losing it in both
+            // directions while the animation itself was running perfectly well.
+            if (panel.Transitions?.OfType<DoubleTransition>()
+                    .FirstOrDefault(x => x.Property == Visual.OpacityProperty) is not { } fade)
+                throw new Exception("A closing panel was given no fade to run");
+            if (fade.Duration != Mo2Physicality.LeaveDuration)
+                throw new Exception($"A closing panel fades over {fade.Duration.TotalMilliseconds:F0}ms, " +
+                    $"not the {Mo2Physicality.LeaveDuration.TotalMilliseconds:F0}ms it is removed after");
             await Reaches(window, () => left, "A closing panel never reported finished", seconds: 3);
-            if (panel.Opacity > .01) throw new Exception("A closing panel was still visible when it was removed");
+            var took = closing.Elapsed;
+            // A frame of slack: the timer cannot fire earlier than its interval, but
+            // the clock the check reads and the one the timer uses are not the same.
+            if (took < Mo2Physicality.LeaveDuration - TimeSpan.FromMilliseconds(20))
+                throw new Exception($"A closing panel was removed after {took.TotalMilliseconds:F0}ms, " +
+                    $"before its {Mo2Physicality.LeaveDuration.TotalMilliseconds:F0}ms exit had run");
+            await Reaches(window, () => panel.Opacity <= .01, "A closing panel was still visible after its exit", seconds: 2);
             Console.WriteLine($"PASS panel lifecycle: a new panel scales and fades in over {Mo2Physicality.EnterDuration.TotalMilliseconds:F0}ms, " +
                 $"and a closed panel is removed only after its {Mo2Physicality.LeaveDuration.TotalMilliseconds:F0}ms exit has run");
         } finally { window.Close(); }
