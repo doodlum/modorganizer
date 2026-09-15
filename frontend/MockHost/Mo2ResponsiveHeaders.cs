@@ -81,10 +81,8 @@ internal static class Mo2ResponsiveHeaders
     {
         if (wanted == IsRevealed(panel)) return;
         if (wanted) Revealed.Add(panel, panel); else Revealed.Remove(panel);
-        // Applied here as well as from the layout pass, so the strip appears with the
-        // pointer rather than on whatever pass happens next.
         if (panel.FindControl<Control>("TabHeaderBorder") is { } tabs && panel.ViewModel?.Tabs.Count <= 1)
-            tabs.IsVisible = wanted;
+            tabs.IsVisible = panel.ViewModel?.IsAlone == false || wanted;
     }
 
     private static void WatchReveal(PanelView panel)
@@ -125,8 +123,12 @@ internal static class Mo2ResponsiveHeaders
                 double Blend(double full, double small) => full + (small - full) * progress;
                 Thickness ShrinkMargin(Thickness margin) => new(margin.Left, Blend(margin.Top, Math.Min(8, margin.Top)), margin.Right, Blend(margin.Bottom, 0));
                 if (panel is not null) WatchReveal(panel);
+                var alone = panel?.ViewModel?.IsAlone != false;
+                var stack = header.GetVisualAncestors().OfType<StackPanel>()
+                    .FirstOrDefault(x => x.Name == "PanelHeaderStack");
+                if (stack is not null && stack.IsVisible != alone) stack.IsVisible = alone;
                 if (panel?.FindControl<Control>("TabHeaderBorder") is { } tabs)
-                    tabs.IsVisible = hidden || panel.ViewModel?.Tabs.Count > 1 || IsRevealed(panel);
+                    tabs.IsVisible = !alone || hidden || panel.ViewModel?.Tabs.Count > 1 || IsRevealed(panel);
                 header.Margin = ShrinkMargin(state.Margin);
                 if (state.ContainerMargin is { } margin && header.Parent is Panel container)
                     container.Margin = hidden ? new Thickness(0) : ShrinkMargin(margin);
