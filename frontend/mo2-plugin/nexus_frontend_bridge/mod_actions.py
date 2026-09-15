@@ -758,6 +758,54 @@ class ModActions:
             raise ValueError('MO2 did not open a mod detail dialog; wait and try again')
         return {'opened': True, 'modName': name}
 
+    def mod_path(self, name):
+        """Where MO2 keeps a mod, for the frontend's own Open in Explorer.
+
+        MO2's context menu opens the folder through Windows; the frontend is
+        running outside the prefix and opens it with the desktop it is on, so it
+        asks MO2 where the folder is rather than asking MO2 to open it.
+        """
+        mods = self.organizer.modList()
+        if not isinstance(name, str) or name not in mods.allMods():
+            raise ValueError('Mod no longer exists')
+        return {'name': name, 'path': mods.getMod(name).absolutePath()}
+
+    def rename_mod(self, name, new_name):
+        """Rename a mod through the original list model's own editor.
+
+        The same route as renaming a separator: MO2 owns the folder rename, the
+        meta update and the modRenamed notifications every profile listens to.
+        """
+        from PyQt6.QtCore import QAbstractProxyModel, Qt
+        from PyQt6.QtWidgets import QTreeView
+        mods = self.organizer.modList()
+        names = list(mods.allMods())
+        if not isinstance(name, str) or name not in names:
+            raise ValueError('Mod no longer exists')
+        if mods.getMod(name).isSeparator():
+            return self.rename_separator(name, new_name)
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        if (not isinstance(new_name, str) or not new_name.strip() or len(new_name) > 120
+                or any(ord(c) < 32 or c in '<>:"/\\|?*' for c in new_name) or new_name.endswith(('.', ' '))):
+            raise ValueError('Choose a valid mod name (up to 120 characters)')
+        if new_name.casefold() in {n.casefold() for n in names if n != name}:
+            raise ValueError('A mod with this name already exists')
+        view = self.window.findChild(QTreeView, 'modList')
+        if view is None or not view.isEnabled(): raise ValueError('MO2 mod list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'ModList':
+            raise ValueError('Unsupported MO2 mod list model')
+        row = names.index(name)
+        index = model.index(row, 0)
+        if not index.isValid() or index.data(int(Qt.ItemDataRole.UserRole) + 1) != row:
+            raise ValueError('MO2 mod row changed; refresh before renaming')
+        view.selectionModel().clear()
+        accepted = model.setData(index, new_name, Qt.ItemDataRole.EditRole)
+        if not accepted or new_name not in mods.allMods():
+            raise ValueError('MO2 did not rename the mod')
+        return {'renamed': True, 'oldName': name, 'name': new_name}
+
     def rename_separator(self, name, collection_name):
         from PyQt6.QtCore import QAbstractProxyModel, Qt
         from PyQt6.QtWidgets import QTreeView

@@ -737,6 +737,56 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { _commands.Release(); }
     }
+    // How a folder is opened on the desktop the frontend is running on. Set by the
+    // workspace, which owns the interop; MO2's own Open in Explorer would open the
+    // folder inside the Windows prefix instead.
+    public Action<string>? OpenLocalFolder { get; set; }
+
+    // MO2's "Open in Explorer" for a mod. MO2 is asked where the mod is rather than
+    // asked to open it, because the two are on different sides of the prefix.
+    public async Task OpenModFolder(string name)
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected) return;
+            var result = await Client.SendAsync("modPath", new() { ["profilePath"] = CurrentTarget.ProfilePath, ["name"] = name });
+            var path = result.TryGetProperty("path", out var value) ? Mo2InstanceCatalog.LocalPath(value.GetString() ?? "") : "";
+            if (path.Length == 0 || !Directory.Exists(path)) { Status = "MO2 no longer has a folder for " + name; Changed?.Invoke(); return; }
+            OpenLocalFolder?.Invoke(path);
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
+
+    // MO2's Rename, through the list model's own editor so MO2 renames the folder
+    // and tells every profile about it.
+    public async Task RenameMod(string name, string newName, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = "Renaming " + name + " in MO2"; Changed?.Invoke();
+            await Client.SendAsync("renameMod", new() { ["profilePath"] = target.ProfilePath, ["name"] = name, ["newName"] = newName });
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
+    // MO2's Query Metadata, which asks Nexus for what its downloads are missing and
+    // writes the answers into the .meta files beside them. MO2's own button is
+    // pressed, so its offline-mode guard and login prompt are the ones that apply.
+    public async Task QueryDownloadMetadata()
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected) return;
+            Status = "Asking MO2 to query download metadata"; Changed?.Invoke();
+            await Client.SendAsync("queryDownloadMetadata", new() { ["profilePath"] = CurrentTarget.ProfilePath },
+                timeout: TimeSpan.FromMinutes(5));
+            Status = "MO2 is querying download metadata"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
     private int _selectionVersion;
     private string[] _selectedModNames = [];
     public IReadOnlySet<string> LinkedPlugins { get; private set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

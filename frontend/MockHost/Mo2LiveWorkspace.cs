@@ -120,6 +120,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Catalog = new(endpoint);
         using (Mo2StartupCheck.Phase("catalog")) ApplyCatalog(Catalog.Read());
         Profile.Changed += RefreshCatalog;
+        // MO2's Open in Explorer opens the folder in the prefix; the frontend opens it
+        // on the desktop it is running on, which is what the interop here is for.
+        Profile.OpenLocalFolder = folder =>
+            DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder));
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         Profile.ConfirmRemoval = mods => Mo2SeparatorDialog.ConfirmRemoval(windows, mods);

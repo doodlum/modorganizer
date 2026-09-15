@@ -36,6 +36,22 @@ internal static class Mo2SeparatorDialog
             await profile.RenameCollection(name, result.InputText.Trim(), target);
     }
 
+    // MO2's Rename on an ordinary mod. The same prompt as a separator's, because in
+    // MO2 it is the same editor on the same list.
+    public static async Task RenameMod(IWindowManager windows, Mo2LiveProfile profile, string name)
+    {
+        if (!profile.CanChangeOriginalUi) return;
+        var target = profile.CurrentTarget;
+        var mod = profile.Mods.FirstOrDefault(x => x.Name == name && !x.IsSeparator);
+        if (mod is null) return;
+        var dialog = DialogFactory.CreateStandardDialog("Rename mod", new StandardDialogParameters {
+            Text = "MO2 renames the mod's folder with it.", InputLabel = "Mod name", InputText = mod.DisplayName
+        }, [DialogStandardButtons.Cancel, new DialogButtonDefinition("Rename", ButtonDefinitionId.Accept, ButtonAction.Accept, ButtonStyling.Primary)], DialogWindowSize.Small);
+        var result = await windows.ShowDialog(dialog, DialogWindowType.Modal);
+        if (result.ButtonId == ButtonDefinitionId.Accept && !string.IsNullOrWhiteSpace(result.InputText) && result.InputText.Trim() != mod.DisplayName)
+            await profile.RenameMod(name, result.InputText.Trim(), target);
+    }
+
     public static async Task Create(IWindowManager windows, Mo2LiveProfile profile, EntityId? above)
     {
         if (!profile.CanChangeOriginalUi) return;

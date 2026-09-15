@@ -101,6 +101,14 @@ internal static class Mo2ModRow
         Mo2UiLatencyProbe.Count("Mod rows created");
         var target = profile.CurrentTarget;
         Task Run(Func<Task> action) => target == profile.CurrentTarget && profile.CanChangeOriginalUi ? action() : Task.CompletedTask;
+        // The control this row ends up being, so a menu entry can reach the page it
+        // is on — the dialogs belong to the page, not to a row.
+        Control? owner = null;
+        async Task Rename() {
+            if (owner?.GetVisualAncestors().OfType<Mo2ModsView>().FirstOrDefault()?.ViewModel is not { } page) return;
+            if (mod.IsSeparator) await page.RenameSeparatorDialog(mod.Name);
+            else await page.RenameModDialog(mod.Name);
+        }
         var actionSets = new List<MenuItem[]>();
         MenuItem[] Actions() {
             MenuItem[] items = [
@@ -108,6 +116,13 @@ internal static class Mo2ModRow
             Mo2EntryMenu.Action((mod.State & 2) != 0 ? "Disable" : "Enable", () => Run(() => profile.ToggleMod(mod.Id)), mod.CanManage && !mod.IsSeparator),
             Mo2EntryMenu.Action("Move earlier", () => Run(() => adapter.Move(mod.Id, -1)), mod.CanManage),
             Mo2EntryMenu.Action("Move later", () => Run(() => adapter.Move(mod.Id, 1)), mod.CanManage),
+            // MO2's Send to..., which is how a mod is moved the length of the list
+            // without dragging it there.
+            Mo2EntryMenu.Action("Send to top", () => Run(() => adapter.Move(mod.Id, 0, absolute: true)), mod.CanManage),
+            Mo2EntryMenu.Action("Send to bottom", () => Run(() => adapter.Move(mod.Id, int.MaxValue, absolute: true)), mod.CanManage),
+            // MO2's Open in Explorer and Rename, both through MO2 itself.
+            Mo2EntryMenu.Action("Open in Explorer", () => Run(() => profile.OpenModFolder(mod.Name))),
+            Mo2EntryMenu.Action("Rename…", () => Run(() => Rename()), mod.CanManage),
             Mo2EntryMenu.Action("Remove…", () => Run(() => { profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]); return Task.CompletedTask; }), mod.CanManage),
             // MO2's own colour actions, which paint a separator's row and an ordinary
             // mod's Notes cell.
@@ -192,15 +207,15 @@ internal static class Mo2ModRow
                 Write(expand, TemplatedControl.ForegroundProperty);
                 Write(tagIcon, TemplatedControl.ForegroundProperty);
             }
-            TreeDataGridRow? owner = null;
-            void Highlight() => highlight.Background = owner?.IsSelected == true
+            TreeDataGridRow? host = null;
+            void Highlight() => highlight.Background = host?.IsSelected == true
                 ? (IBrush)Application.Current!.FindResource("SurfaceTranslucentMidBrush")!
-                : owner?.IsPointerOver == true ? (IBrush)Application.Current!.FindResource("SurfaceTranslucentLowBrush")! : Brushes.Transparent;
+                : host?.IsPointerOver == true ? (IBrush)Application.Current!.FindResource("SurfaceTranslucentLowBrush")! : Brushes.Transparent;
             void RowChanged(object? sender, AvaloniaPropertyChangedEventArgs e) {
                 if (e.Property == TreeDataGridRow.IsSelectedProperty || e.Property == Avalonia.Input.InputElement.IsPointerOverProperty) Highlight();
             }
-            separator.AttachedToVisualTree += (_,_) => { owner = separator.FindAncestorOfType<TreeDataGridRow>(); if (owner is not null) owner.PropertyChanged += RowChanged; Highlight(); };
-            separator.DetachedFromVisualTree += (_,_) => { if (owner is not null) owner.PropertyChanged -= RowChanged; owner = null; };
+            separator.AttachedToVisualTree += (_,_) => { host = separator.FindAncestorOfType<TreeDataGridRow>(); if (host is not null) host.PropertyChanged += RowChanged; Highlight(); };
+            separator.DetachedFromVisualTree += (_,_) => { if (host is not null) host.PropertyChanged -= RowChanged; host = null; };
             void RefreshSeparator() {
                 if (target != profile.CurrentTarget) return;
                 RefreshActions(); groupTitle.Text = mod.DisplayName;
@@ -208,11 +223,12 @@ internal static class Mo2ModRow
                 Paint();
             }
             Paint();
+            owner = separator;
             separator.AttachedToVisualTree += (_,_) => { profile.Changed += RefreshSeparator; RefreshSeparator(); };
             separator.DetachedFromVisualTree += (_,_) => profile.Changed -= RefreshSeparator;
             return separator;
         }
-        var row = Columns(); row.Name = "ModRedesignRow";
+        var row = Columns(); row.Name = "ModRedesignRow"; owner = row;
         // Name column: the enable box then the mod's name, as MO2 draws its own name
         // column. The row's actions are on its right-click menu, again as MO2 has it,
         // so no column is spent on buttons that repeat what the menu already offers.

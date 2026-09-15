@@ -33,6 +33,7 @@ internal static class Mo2QtWidgets
     internal const string HiddenFilesTip = "Filter the list so that hidden files are shown.";
     internal const string DownloadsRefreshTip = "Refresh the downloads.";
     internal const string QueryMetadata = "Query Metadata";
+    internal const string QueryMetadataTip = "Ask MO2 to look up what its downloads are missing on Nexus Mods.";
     internal const string ArchivesNote = "Currently detected archives.";
     internal const string FiltersGroup = "Filters";
     internal const string FiltersClear = "Clear";

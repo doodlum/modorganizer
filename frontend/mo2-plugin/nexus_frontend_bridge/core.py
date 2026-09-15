@@ -181,6 +181,10 @@ class Bridge:
         if action == 'renameSeparator':
             if self.mod_actions is None: raise ValueError('MO2 collection management is unavailable')
             return self.mod_actions.rename_separator(request.get('name'), request.get('collectionName'))
+        if action in ('modPath', 'renameMod'):
+            if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.mod_path(request.get('name')) if action == 'modPath' \
+                else self.mod_actions.rename_mod(request.get('name'), request.get('newName'))
         if action == 'setModColor':
             if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.set_mod_color(request.get('name'), request.get('color'))
@@ -205,6 +209,10 @@ class Bridge:
             else:
                 self.profiles.manage()
             return self.snapshot()
+        if action == 'queryDownloadMetadata':
+            if self.downloads is None:
+                raise ValueError('Host downloads integration is unavailable')
+            return self.downloads.query_metadata()
         if action == 'controlDownload':
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')

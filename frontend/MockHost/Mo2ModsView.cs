@@ -65,6 +65,9 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     private readonly System.Reactive.Subjects.BehaviorSubject<Func<Mo2LiveMod,bool>> _filter = new(_ => true);
     public static readonly ComponentKey StateKey = ComponentKey.From("MO2.State");
     public int VisibleRowCount => Roots.Count;
+    // The order the list is actually in, for the checks that drive the grouping box:
+    // the rows themselves are the adapter's own, and a check cannot reach them.
+    public string[] VisibleOrder => Roots.Select(x => x.Key.ToString()).ToArray();
     public void RefreshFilter() => SetFilter(_filterChoice);
     public void SetFilter(int choice) {
         _filterChoice = choice;
@@ -609,6 +612,32 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         table.RowDragStarted += (sender, args) => ViewModel?.Adapter.OnRowDragStarted(sender, args);
         table.RowDragOver += (sender, args) => ViewModel?.Adapter.OnRowDragOver(sender, args);
         table.RowDrop += (sender, args) => ViewModel?.Adapter.OnRowDrop(sender, args);
+        // What MO2's own list does with a mod without going through a menu: opening a
+        // mod is a double-click, the space bar switches it on and off, and Delete
+        // takes it out — through the same dialog its menu entry uses, so the
+        // confirmation is the same one.
+        Mo2LiveMod[] Selected() {
+            var keys = ViewModel?.Adapter.SelectedModels.Select(x => x.Key).ToHashSet() ?? [];
+            return ViewModel?.LiveProfile?.Mods.Where(x => keys.Contains(x.Id)).ToArray() ?? [];
+        }
+        table.DoubleTapped += async (_, e) => {
+            if (ViewModel?.LiveProfile is not { } live || Selected() is not [var mod]) return;
+            e.Handled = true;
+            if (mod.IsSeparator) await ViewModel.RenameSeparatorDialog(mod.Name);
+            else await live.ShowModDetails(mod.Id);
+        };
+        table.KeyDown += (_, e) => {
+            if (ViewModel?.LiveProfile is not { } live || Selected() is not { Length: > 0 } chosen) return;
+            if (e.Key == Avalonia.Input.Key.Space) {
+                e.Handled = true;
+                live.Toggle(chosen.Where(x => !x.IsSeparator && x.CanManage)
+                    .Select(x => NexusMods.Abstractions.Loadouts.LoadoutItemId.From(x.Id)).ToArray());
+            } else if (e.Key == Avalonia.Input.Key.Delete) {
+                e.Handled = true;
+                live.Remove(chosen.Where(x => x.CanManage)
+                    .Select(x => NexusMods.Abstractions.Loadouts.LoadoutItemId.From(x.Id)).ToArray());
+            }
+        };
 
 
         this.WhenActivated(disposables => {

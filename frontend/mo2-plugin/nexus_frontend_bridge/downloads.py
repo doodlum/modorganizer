@@ -173,6 +173,49 @@ class Downloads:
             return {'requested': action}
         raise ValueError('MO2 no longer manages this download; refresh the list')
 
+    def query_metadata(self):
+        """Press MO2's own Query Metadata button.
+
+        DownloadsTab::queryInfos asks the download manager to fill in what its
+        archives are missing, over the network, and MO2 writes the answers into
+        the .meta files the snapshot already reads. Pressed rather than
+        reimplemented so the offline-mode guard, the login prompt and the
+        progress it shows are MO2's own.
+
+        MO2 asks, in a message box, whether to leave offline mode. That question
+        is the user's to answer in MO2, so the box is dismissed and the refusal
+        reported rather than answered here.
+        """
+        from PyQt6.QtCore import QEvent, QObject, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+        if self.window is None:
+            raise ValueError('MO2 download controls are not ready')
+        button = self.window.findChild(QPushButton, 'btnQueryDownloadsInfo')
+        if button is None or not self.window.isEnabled() or not button.isEnabled():
+            raise ValueError('MO2 cannot query download metadata right now')
+        refused = []
+
+        class Capture(QObject):
+            def eventFilter(inner, watched, event):
+                if isinstance(watched, QMessageBox) and event.type() == QEvent.Type.Polish:
+                    watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                    def dismiss():
+                        refused.append(watched.text())
+                        watched.reject()
+                    QTimer.singleShot(0, dismiss)
+                return False
+
+        app = QApplication.instance()
+        capture = Capture()
+        app.installEventFilter(capture)
+        try:
+            button.click()
+        finally:
+            app.removeEventFilter(capture)
+        if refused:
+            raise ValueError(refused[0].replace('\n', ' '))
+        return {'queried': True}
+
     def start_nexus(self, mod_id, file_id, game):
         if not isinstance(game, str) or game.casefold() != self.game_domain().casefold():
             raise ValueError("The Nexus file belongs to a different game")

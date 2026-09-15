@@ -530,6 +530,10 @@ public partial class MockApp : Application
                         // Awaited here, like the page audit: it walks every page and
                         // measures the rows each one draws, which takes longer than the
                         // screenshot path waits before shutting the app down.
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_WIDGET_BEHAVIOUR") == "1") {
+                            try { await Mo2WidgetBehaviourCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL MO2 widget behaviour: " + error.Message); }
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PRESET_FIT") == "1") {
                             try { await Mo2PresetFitCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PRESET_FIT_DIRECTORY")); }
                             catch (Exception error) { Console.WriteLine("FAIL MO2 preset fit: " + error.Message); }

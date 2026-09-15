@@ -91,8 +91,8 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // pointed at whatever that block last set rather than at the page.
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
             () => _qtRefresh?.Invoke()));
-        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadata,
-            "mdi-cloud-search-outline", () => { }));
+        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadataTip,
+            "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); }));
         Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
         // And the row MO2 puts under that list: the box that shows the downloads it
         // has been told to hide, and the field that narrows the list.
@@ -127,6 +127,13 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             if (ViewModel is not { } model) return;
             var target = model.Profile.CurrentTarget;
             foreach (var file in model.Selected.Where(x => !x.Partial).ToArray()) await model.Profile.InstallArchive(file.Path, target);
+        };
+        // MO2 installs a download when it is double-clicked, which is how its own
+        // list is worked; the button beside the list does the same thing.
+        native.DoubleTapped += (_, e) => {
+            if (ViewModel is not { } model || !model.Selected.Any(x => !x.Partial)) return;
+            e.Handled = true;
+            install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         };
         delete.Click += async (_, _) => {
             if (ViewModel is not { } model) return;

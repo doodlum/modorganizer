@@ -32,6 +32,9 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
     public string? CollectionKey { get; set; }
     public Func<NexusMods.MnemonicDB.Abstractions.EntityId?, Task> CreateSeparatorDialog { get; }
     public Func<string, Task> RenameSeparatorDialog { get; }
+    // MO2's Rename on a mod, which is the same dialog over the same route: MO2's
+    // own list editor renames the folder and tells every profile.
+    public Func<string, Task> RenameModDialog { get; }
     public Func<Task> CreateCollection { get; set; } = () => Task.CompletedTask;
     // The instances the frontend is connected to, for MO2's own profile box above the
     // mod list. Supplied by the workspace, which is what reads the catalogue; the page
@@ -84,6 +87,7 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         LiveProfile = mods as Mo2LiveProfile;
         CreateSeparatorDialog = above => LiveProfile is { } profile ? Mo2SeparatorDialog.Create(windows, profile, above) : Task.CompletedTask;
         RenameSeparatorDialog = name => LiveProfile is { } profile ? Mo2SeparatorDialog.Rename(windows, profile, name) : Task.CompletedTask;
+        RenameModDialog = name => LiveProfile is { } profile ? Mo2SeparatorDialog.RenameMod(windows, profile, name) : Task.CompletedTask;
         IsMo2Profile = LiveProfile is not null;
         CollectionName = IsMo2Profile ? _mo2CollectionName : mods.CollectionName;
         CommandDeleteGroup = new(async (_, token) => {
