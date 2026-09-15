@@ -213,7 +213,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         listContainer.Content = null;
         var list = new Grid { ColumnDefinitions = new ColumnDefinitions("*,36"), RowDefinitions = new RowDefinitions("Auto,*") };
         var columns = Mo2ModRow.Columns(); columns.Margin = new Thickness(0,8,0,6);
-        void Heading(string label, int column) => Mo2ModRow.Add(columns, new TextBlock { Text = label, Margin = new Thickness(3,0), FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 12, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis }, column);
+        void Heading(string label, int column) => Mo2ModRow.Add(columns, Mo2TableRow.Heading(label), column);
         Heading("Status", 1); Heading("Mod name", 2); Heading("Version", 3); Heading("Category", 4); Heading("Endorsed", 5); Heading("Actions", 6);
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
         var help = new StandardButton { Name = "ModsHelpButton", ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,

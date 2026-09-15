@@ -15,9 +15,12 @@ namespace Mo2.Frontend;
 internal static class Mo2PanelChrome
 {
     internal const double Padding = 24;
-    // The narrowest a page title is allowed to get before its actions have to wrap.
-    // Below this the two-word titles broke one word per line.
-    internal const double TitleFloor = 200;
+    // The narrowest a page title may be before it stands down and gives the line to
+    // the actions. It has to clear the longest title the frontend uses — "External
+    // Files" — at the header's own type size, and no more: set at 200 it took the
+    // title off pages with seven actions in an ordinary half-width panel, which left
+    // nothing on screen saying which page you were looking at.
+    internal const double TitleFloor = 140;
     internal const double CompactPadding = 12;
     // Below this height the header/toolbar eat the content, so everything tightens.
     // The same threshold Mo2ResponsiveHeaders collapses the header at, so the padding
@@ -128,6 +131,25 @@ internal static class Mo2PanelChrome
         Try();
     }
 
+    // The search control every page shows: a magnifier on the header's line that
+    // reveals the page's own filter row beneath the separator. Mods and Plugins
+    // already worked this way; Archives, Data, Logs and Saves kept their search box,
+    // level picker and file picker on the header line itself, which is why those four
+    // headers looked unlike the rest and ran out of room first.
+    internal static Button SearchAction(Control filters, string tip = "Search")
+    {
+        filters.IsVisible = false;
+        Button? action = null;
+        action = Mo2TableRow.IconButton("mdi-magnify", tip, () => {
+            filters.IsVisible = !filters.IsVisible;
+            if (!filters.IsVisible) return;
+            // Opening it puts the caret where the typing goes, as the Mods search does.
+            filters.GetVisualDescendants().OfType<TextBox>().FirstOrDefault()?.Focus();
+        });
+        action.Name = "SearchToggleButton";
+        return action;
+    }
+
     // Maximising the panel this page is shown in. It lives on the page's own header
     // rather than in the panel's tab strip: a button inserted into that strip laid
     // out correctly and never painted a pixel, while the header actions beside it
@@ -179,60 +201,30 @@ internal static class Mo2PanelChrome
         return action;
     }
 
+
     // The title line: actions docked right, header filling the rest. Shared so the
     // grid and docked entry points cannot drift apart.
     private static Control HeaderLine(PageHeader header, Control[] actions, Button maximise)
     {
-        // A DockPanel let the actions take their full width first, which starved the
-        // title in a narrow panel and wrapped it one character per line. A grid gives
-        // the title a star column with a floor, and the actions wrap instead of
-        // stealing space. The maximise action has a column of its own so a page with
-        // one wide toolbar — Downloads — cannot push it off the line.
-        var line = new Grid { Name = "PanelHeaderRow",
-            // Nothing on the header line may paint outside the panel. A page whose
-            // actions cannot wrap far enough is cut off at the panel's edge rather
-            // than drawn over its neighbour.
-            ClipToBounds = true,
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
         var group = new WrapPanel { Name = "PanelHeaderActions", Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+            VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
         foreach (var action in actions) {
             // Actions come from each panel's old toolbar row; take them out of it so
             // the row collapses and they sit on the title's line instead.
             if (action.Parent is Panel owner) owner.Children.Remove(action);
             action.Margin = new Thickness(2, 2, 0, 2);
             action.VerticalAlignment = VerticalAlignment.Center;
-            // Pickers and filter boxes sat at their own natural heights beside the
-            // 28px icon actions, which made the header line look assembled rather
-            // than designed. Containers (Mods hands over its whole toolbar) keep
-            // their own height.
-            if (action is ComboBox or TextBox) action.Height = Mo2TableRow.ActionSize;
             group.Children.Add(action);
         }
         maximise.Margin = new Thickness(2, 2, 0, 2);
         maximise.VerticalAlignment = VerticalAlignment.Center;
         header.MinWidth = TitleFloor;
-        Grid.SetColumn(header, 0); Grid.SetColumn(group, 1); Grid.SetColumn(maximise, 2);
-        line.Children.Add(header); line.Children.Add(group); line.Children.Add(maximise);
-        // An Auto column is never told how much room it has, so the actions measured
-        // at their full width and drew straight over the title — the External Files
-        // search box sat on top of its own description. Capping the group at whatever
-        // is left after the title's floor is what makes the WrapPanel wrap instead.
-        line.LayoutUpdated += (_, _) => {
-            if (line.Bounds.Width <= 0) return;
-            // The maximise column's own width is reserved from the constant rather
-            // than measured: on the first pass it has not been arranged yet, so
-            // measuring it reserved nothing and it never got a width at all.
-            var room = Math.Max(Mo2TableRow.ActionSize,
-                line.Bounds.Width - TitleFloor - Mo2TableRow.ActionSize - 8);
-            if (Math.Abs(group.MaxWidth - room) > .5) group.MaxWidth = room;
-            // Capping the group only wraps between actions. A page that hands over
-            // one wide control — Downloads gives its whole toolbar — has to be told
-            // the width itself, or it lays out in one row past the panel's edge.
-            foreach (var action in group.Children)
-                if (action is not Button && Math.Abs(action.MaxWidth - room) > .5) action.MaxWidth = room;
-        };
-        return line;
+        // Only as tall as its own content. Stretched, the header filled whatever
+        // height the actions beside it needed — and once those wrap in a narrow panel
+        // that is ~100px — while its own template pins the pictogram to the top and
+        // centres the title in the space. The two ended up on different lines.
+        header.VerticalAlignment = VerticalAlignment.Top;
+        return new Mo2HeaderLine(header, group, maximise);
     }
 
     // Header collapse belongs to Mo2ResponsiveHeaders, which blends the pictogram,

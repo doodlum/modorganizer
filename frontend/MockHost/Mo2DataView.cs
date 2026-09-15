@@ -74,7 +74,9 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         Grid.SetRow(location,2); root.Children.Add(location); Grid.SetRow(_status,3); root.Children.Add(_status); Grid.SetRow(_table,4); root.Children.Add(_table);
         _table.Classes.Add("MainListsStyling"); Content = root;
         _columns = new Mo2ColumnToggle("data", Render);
-        Mo2PanelChrome.Apply(this, root, header, _up, _search, _open, _reveal, _visibility, _columns.Action, refresh);
+        // Search in the row beneath, magnifier on the header line, as Mods does.
+        Mo2PanelChrome.Apply(this, root, header, _up, Mo2PanelChrome.SearchAction(toolbar, "Search this folder"),
+            _open, _reveal, _visibility, _columns.Action, refresh);
         _search.TextChanged += (_,_) => { if (ViewModel is { } model) model.SearchText = _search.Text ?? ""; Render(); };
         _conflicts.IsCheckedChanged += (_,_) => { if (ViewModel is { } model) model.ConflictsOnly = _conflicts.IsChecked == true; Render(); };
         _table.DoubleTapped += async (_,_) => await OpenFolder();

@@ -41,10 +41,15 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
         var toolbar = new Toolbar { Name = "PluginsToolbar", Margin = new Thickness(0,8,0,0) };
         toolbar.ItemsPanel = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal });
-        var sort = new Button { Content = "Sort with LOOT…", Name = "SortPluginsWithLoot", IsEnabled = false };
+        // An icon like every other header action. As a labelled button it was the one
+        // control wide enough to cost this page its title: the actions could not fit
+        // beside it, so the header gave way at ordinary panel widths.
+        var sort = Mo2TableRow.IconButton("mdi-sort-alphabetical-variant", "Sort with LOOT…",
+            async () => { if (ViewModel?.LiveProfile is { } profile) await profile.SortPlugins(profile.CurrentTarget); });
+        sort.Name = "SortPluginsWithLoot"; sort.IsEnabled = false;
         ToolTip.SetTip(sort, "Sort plugins using MO2’s original LOOT workflow");
         ToolTip.SetShowOnDisabled(sort, true);
-        sort.Click += async (_, _) => { if (ViewModel?.LiveProfile is { } profile) await profile.SortPlugins(profile.CurrentTarget); };
+
         var primary = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
         primary.Children.Add(sort);
         var history = Mo2ModRow.IconButton("mdi-dots-vertical", "Plugin actions", () => { });
@@ -69,7 +74,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         mainGrid.RowDefinitions = new RowDefinitions("Auto,*"); Grid.SetRow(tableControl, 1);
         var headings = Mo2PluginRow.Columns(); headings.Margin = new Thickness(0,8,0,6);
         foreach (var (text, column) in new[] { ("Status", 1), ("Plugin name", 2), ("Type", 3), ("Masters", 4), ("Actions", 5) })
-            Mo2ModRow.Add(headings, new TextBlock { Text = text, Margin = new Thickness(3,0), FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 12 }, column);
+            Mo2ModRow.Add(headings, Mo2TableRow.Heading(text), column);
         mainGrid.Children.Add(headings);
         Grid.SetRowSpan(editor.FindControl<Grid>("TrophyBarColumnGrid")!, 2);
         headings.LayoutUpdated += (_, _) => Mo2PluginRow.Fit(headings, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);

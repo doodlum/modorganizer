@@ -61,7 +61,8 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status);
         var scroll = new ScrollViewer { Content = _rows, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         Grid.SetRow(scroll,3); root.Children.Add(scroll); Content = root;
-        Mo2PanelChrome.Apply(this, root, header, _search, manage, refresh);
+        // Search in the row beneath, magnifier on the header line, as Mods does.
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search tools"), manage, refresh);
         _status.IsVisible = false;
         _status.PropertyChanged += (_,args) => {
             if (args.Property == TextBlock.TextProperty) _status.IsVisible = !string.IsNullOrEmpty(_status.Text);

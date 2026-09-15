@@ -44,6 +44,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--hold-host-startup-lease") { Mo2HostStartupLeaseCheck.Hold(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-original-actions") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2OriginalActionCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-row-padding") { Mo2RowPaddingCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-view-locator") { Mo2ViewLocatorCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-sorted-roots") { Mo2SortedRootsCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-download-identities") { Mo2DownloadIdentityCheck.Run(); return; }
@@ -486,6 +487,13 @@ public partial class MockApp : Application
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_REFRESH_CADENCE") == "1") {
                             try { await Mo2RefreshCadenceCheck.Run(live.Profile); }
                             catch (Exception error) { Console.WriteLine("FAIL refresh cadence: " + error.Message); }
+                        }
+                        // Awaited here rather than run from the window opening: it walks a
+                        // panel through thirteen sizes, which takes longer than the
+                        // screenshot path waits before shutting the app down.
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEADER_FIT") == "1") {
+                            try { await Mo2HeaderFitCheck.Run(); }
+                            catch (Exception error) { Console.WriteLine("FAIL header fit: " + error.Message); }
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_AUDIT") == "1") {
                             try { await Mo2PageAuditCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_DIRECTORY")); }

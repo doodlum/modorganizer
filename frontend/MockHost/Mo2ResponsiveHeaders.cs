@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -24,7 +25,6 @@ internal static class Mo2ResponsiveHeaders
         public Thickness Margin = header.Margin;
         public ScrollViewer? Viewer;
         public double ScrollAmount;
-        public double DescriptionHeight = 48;
         public void ObserveScroll(UserControl owner)
         {
             if (Viewer?.GetVisualRoot() is not null && Viewer.GetVisualAncestors().Contains(owner)) return;
@@ -62,6 +62,21 @@ internal static class Mo2ResponsiveHeaders
 
     internal static bool IsRevealed(PanelView panel) => Revealed.TryGetValue(panel, out _);
 
+    // Drives the collapse from a check without a scroll viewer to scroll. The
+    // header's two faults both showed up part-way through a collapse, which is a
+    // state no fixed window size reaches on its own.
+    private static readonly ConditionalWeakTable<PageHeader, object> Forced = new();
+    internal static void SetScrollForTesting(Control page, double amount)
+    {
+        foreach (var header in FindHeaders(page)) {
+            Forced.Remove(header);
+            Forced.Add(header, amount);
+            header.InvalidateMeasure();
+        }
+    }
+    private static double? ForcedScroll(PageHeader header) =>
+        Forced.TryGetValue(header, out var value) ? (double)value : null;
+
     internal static void Reveal(PanelView panel, bool wanted)
     {
         if (wanted == IsRevealed(panel)) return;
@@ -94,17 +109,21 @@ internal static class Mo2ResponsiveHeaders
                 var panel = header.GetVisualAncestors().OfType<PanelView>().FirstOrDefault();
                 var availableWidth = Math.Min(owner.Bounds.Width, panel?.Bounds.Width ?? owner.Bounds.Width);
                 var availableHeight = Math.Min(owner.Bounds.Height, panel?.Bounds.Height ?? owner.Bounds.Height);
-                var hidden = availableWidth < 260 || availableHeight < 300;
+                // Whether the header is shown at all is the header line's decision —
+                // it is the only thing that knows how much room the actions beside it
+                // need — and it expresses that by arranging the header at nothing
+                // rather than by setting a property this handler would then react to.
+                var hidden = header.Bounds.Width <= 0;
                 // Running out of room collapses the header outright; scrolling walks
                 // it there frame by frame. Easing the constrained case from inside
                 // this handler produced different values on every layout pass, each
                 // invalidating the next, which Avalonia ends as an infinite layout
                 // loop — so the constraint stays a state change, not an animation.
-                var progress = availableWidth < 360 || availableHeight < 400 ? 1 : state.ScrollAmount / ScrollDistance;
+                var scroll = ForcedScroll(header) ?? state.ScrollAmount;
+                var progress = availableWidth < 360 || availableHeight < 400 ? 1 : scroll / ScrollDistance;
                 var compact = progress >= 1;
                 double Blend(double full, double small) => full + (small - full) * progress;
                 Thickness ShrinkMargin(Thickness margin) => new(margin.Left, Blend(margin.Top, Math.Min(8, margin.Top)), margin.Right, Blend(margin.Bottom, 0));
-                header.IsVisible = !hidden;
                 if (panel is not null) WatchReveal(panel);
                 if (panel?.FindControl<Control>("TabHeaderBorder") is { } tabs)
                     tabs.IsVisible = hidden || panel.ViewModel?.Tabs.Count > 1 || IsRevealed(panel);
@@ -114,18 +133,22 @@ internal static class Mo2ResponsiveHeaders
                 var icon = header.GetVisualDescendants().OfType<UnifiedIcon>().FirstOrDefault(x => x.Name == "Icon");
                 if (icon is not null) {
                     icon.Size = Blend(IconSize, CompactIconSize);
+                    // Top-aligned, as the header's own template has it: at rest the
+                    // pictogram is meant to span the title and the description
+                    // together. What put it badly out of line with the title was the
+                    // description holding height it was no longer drawing — see below.
                     if (icon.Parent is Border border) border.Width = border.Height = icon.Size;
                 }
                 foreach (var text in header.GetVisualDescendants().OfType<TextBlock>()) {
                     if (text.Name == "DescriptionTextBlock") {
-                        if (double.IsPositiveInfinity(text.MaxHeight) && text.Bounds.Height > 0)
-                            state.DescriptionHeight = text.Bounds.Height;
-                        text.IsVisible = !compact;
+                        // Faded out, then taken out of the layout once it is invisible.
+                        // It used to be clipped to a remembered height instead, and that
+                        // height was captured once, before the description had wrapped
+                        // to its final number of lines — so a description that grew
+                        // afterwards was cut through the middle of its last line, which
+                        // is what the header looked clipped by.
                         text.Opacity = .65 * Math.Max(0, 1 - progress / .8);
-                        text.ClipToBounds = true;
-                        // Fade the whole description before reclaiming its height. Never
-                        // clip partially visible lines while the user scrolls.
-                        text.MaxHeight = progress < .8 ? double.PositiveInfinity : state.DescriptionHeight * Math.Clamp((1 - progress) / .2, 0, 1);
+                        text.IsVisible = text.Opacity > .01;
                     }
                     if (text.Name == "TitleTextBlock") {
                         text.FontSize = Blend(22, 18);

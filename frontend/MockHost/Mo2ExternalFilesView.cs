@@ -77,7 +77,9 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
         // lists; this page is a file tree, so it follows the original page.
         _table.Classes.Add("Compact"); Content = root;
         _columns = new Mo2ColumnToggle("external-files", () => Render());
-        Mo2PanelChrome.Apply(this, root, header, _search, _import, _cleanup, _restore, _reveal, _columns.Action, refresh);
+        // Search in the row beneath, magnifier on the header line, as Mods does.
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(toolbar, "Search external files"),
+            _import, _cleanup, _restore, _reveal, _columns.Action, refresh);
         _search.TextChanged += (_, _) => Render();
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;

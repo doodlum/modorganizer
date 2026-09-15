@@ -9,7 +9,8 @@ namespace Mo2.Frontend;
 
 internal static class Mo2PluginRow
 {
-    internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.GripColumn},46,*,70,150,60") };
+    internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
+        $"{Mo2TableRow.GripColumn},{Mo2TableRow.StatusColumn},*,70,150,{Mo2TableRow.ActionsColumn}") };
     internal static readonly HashSet<int> HiddenColumns = [];
     internal static readonly (int Column, string Name)[] OptionalColumns = [(3, "Type"), (4, "Masters")];
 
@@ -41,15 +42,15 @@ internal static class Mo2PluginRow
             async () => { await Change(profile.Order.FindPlugin(plugin.Key)?.IsActive != true); return profile.Order.FindPlugin(plugin.Key)?.IsActive == true; },
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.Order.FindPlugin(plugin.Key)?.CanToggle == true);
         Mo2TableRow.Add(row, toggle, 1);
-        var name = new TextBlock { Name = "PluginName", Text = plugin.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3,0), Opacity = plugin.IsActive ? .85 : .5 };
+        var name = Mo2TableRow.Cell(plugin.DisplayName, plugin.IsActive ? .85 : .5);
+        name.Name = "PluginName";
         ToolTip.SetTip(name, plugin.DisplayName + "\nMod: " + plugin.ModName + "\n" + plugin.Diagnostics);
         var title = new DockPanel();
         var padlock = new UnifiedIcon { Name = "PluginLockIcon", Value = new ProjektankerIcon("mdi-lock-outline"), Size = 14, Margin = new Thickness(0,0,4,0), VerticalAlignment = VerticalAlignment.Center, IsVisible = plugin.IsLocked };
         ToolTip.SetTip(padlock, "Load order locked by MO2"); DockPanel.SetDock(padlock, Dock.Left); title.Children.Add(padlock);
         title.Children.Add(name); Mo2TableRow.Add(row, title, 2);
-        Mo2TableRow.Add(row, new TextBlock { Text = Path.GetExtension(plugin.DisplayName).TrimStart('.').ToUpperInvariant(), Opacity = .6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3,0) }, 3);
-        var masters = new TextBlock { Text = string.Join(", ", plugin.Masters), Opacity = .6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3,0), TextTrimming = TextTrimming.CharacterEllipsis };
+        Mo2TableRow.Add(row, Mo2TableRow.Cell(Path.GetExtension(plugin.DisplayName).TrimStart('.').ToUpperInvariant(), .6), 3);
+        var masters = Mo2TableRow.Cell(string.Join(", ", plugin.Masters), .6);
         ToolTip.SetTip(masters, masters.Text); Mo2TableRow.Add(row, masters, 4);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var info = Mo2ModRow.IconButton(plugin.HasWarning ? "mdi-alert-circle-outline" : "mdi-information-outline", "Plugin details", () => {

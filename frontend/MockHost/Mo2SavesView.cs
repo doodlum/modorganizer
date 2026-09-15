@@ -55,7 +55,10 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_table,3); root.Children.Add(_table);
         Content = root;
         _columns = new Mo2ColumnToggle("saves", Render);
-        Mo2PanelChrome.Apply(this, root, header, _search, _details, _repair, _delete, _columns.Action, refresh); _table.Classes.Add("MainListsStyling");
+        // Search in the row beneath, magnifier on the header line, as Mods does.
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search saves"),
+            _details, _repair, _delete, _columns.Action, refresh);
+        _table.Classes.Add("MainListsStyling");
         _search.TextChanged += (_,_) => Render();
         _table.DoubleTapped += async (_,_) => await RunAction("details");
         this.WhenActivated(d => {

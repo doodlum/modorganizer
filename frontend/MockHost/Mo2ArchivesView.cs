@@ -65,7 +65,11 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_table,3); root.Children.Add(_table);
         _table.Classes.Add("MainListsStyling"); Content = root;
         _columns = new Mo2ColumnToggle("archives", Render);
-        Mo2PanelChrome.Apply(this, root, header, _filter, _browse, _extract, _columns.Action, refresh);
+        // The filter stays in its own row under the separator and the header line
+        // carries a magnifier, matching Mods and Plugins. A search box on the header
+        // line is what made this page's header the widest and the first to run out.
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search archives"),
+            _browse, _extract, _columns.Action, refresh);
         ToolTip.SetTip(_status, "Loading follows the game’s archive and plugin rules.");
         LayoutUpdated += (_,_) => {
             var showModColumn = Bounds.Width >= 520;

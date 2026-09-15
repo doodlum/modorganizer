@@ -17,6 +17,33 @@ internal static class Mo2TableRow
     // than the 24px the mod row used.
     internal const int GripColumn = 16;
     internal const int GripWidth = 20;
+    // The status and actions columns are the same on both tables; only the columns
+    // between them differ, because the two pages describe different things.
+    internal const int StatusColumn = 46;
+    internal const int ActionsColumn = 60;
+
+    // One inset for everything that sits in a table cell, headings included. Mods
+    // used 3px on its title and 4px on version, category and the update pill while
+    // Plugins used 3px throughout, so the two tables did not line up with each other
+    // and Mods did not line up with its own column headings.
+    internal static readonly Thickness CellMargin = new(3, 0);
+
+    // A cell that fills its column: the shared inset, centred, and trimmed rather
+    // than wrapped. Both rows build their text cells through this so neither can
+    // drift from the other.
+    internal static TextBlock Cell(string text, double opacity = 1)
+    {
+        return new TextBlock { Text = text, Opacity = opacity, Margin = CellMargin,
+            VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    }
+
+    // The heading above a cell, with the same inset so a column and its label share
+    // an edge.
+    internal static TextBlock Heading(string text)
+    {
+        return new TextBlock { Text = text, Margin = CellMargin, FontWeight = FontWeight.SemiBold, FontSize = 12,
+            TextTrimming = TextTrimming.CharacterEllipsis };
+    }
 
     internal static void Add(Grid grid, Control control, int column)
     {

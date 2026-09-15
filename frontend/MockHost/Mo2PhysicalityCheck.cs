@@ -136,7 +136,11 @@ internal static class Mo2PhysicalityCheck
         var original = panels.Select(x => (x.Bounds.Width, x.Bounds.Height)).ToArray();
         var bounds = workspace.Panels.Select(x => x.LogicalBounds).ToArray();
         try {
-            buttons[0]!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            // Pressed and released like a pointer would, not by raising Click. A real
+            // press also selects the panel, which makes the workspace recompute every
+            // panel's bounds while the maximise is being applied — and raising Click
+            // alone never exercised that.
+            Press(buttons[0]!, window);
             if (!target.IsMaximised) throw new Exception("Pressing maximise did not maximise the panel");
             // Mid-animation the panel is on its way, not already there.
             await Task.Delay(40); window.UpdateLayout();
@@ -144,18 +148,28 @@ internal static class Mo2PhysicalityCheck
             if (partial >= canvas.Bounds.Width - 1) throw new Exception("The panel jumped to full width instead of animating");
             await Reaches(window, () => Math.Abs(target.Bounds.Width - canvas.Bounds.Width) < 2 &&
                 Math.Abs(target.Bounds.Height - canvas.Bounds.Height) < 2, "The panel did not reach the full canvas", seconds: 3);
+            // The panel inside the shell has to grow with it. It sizes itself from the
+            // workspace's bounds, which maximising leaves alone, so the shell filled
+            // the canvas while the panel sat at its old width in the middle of it —
+            // and checking only the shell said everything was fine.
+            var inner = target.GetVisualDescendants().OfType<PanelView>().FirstOrDefault()
+                ?? throw new Exception("The maximised shell holds no panel");
+            await Reaches(window, () => Math.Abs(inner.Bounds.Width - canvas.Bounds.Width) < 2,
+                $"The panel inside is {inner.Bounds.Width:F0}px wide in a {canvas.Bounds.Width:F0}px canvas", seconds: 3);
             if (Canvas.GetLeft(target) > 1 || Canvas.GetTop(target) > 1) throw new Exception("The maximised panel is not at the canvas origin");
             if (target.ZIndex <= 0) throw new Exception("The maximised panel is not drawn above the other panels");
             if (!workspace.Panels.Select(x => x.LogicalBounds).SequenceEqual(bounds))
                 throw new Exception("Maximising changed the workspace's saved panel bounds");
 
             // Maximising another panel puts the first one back.
-            buttons[1]!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Press(buttons[1]!, window);
             if (target.IsMaximised) throw new Exception("Two panels were maximised at once");
-            buttons[1]!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Press(buttons[1]!, window);
             if (panels[1].IsMaximised) throw new Exception("Pressing maximise a second time did not restore the panel");
             await Reaches(window, () => panels.Select((x, i) => Math.Abs(x.Bounds.Width - original[i].Width) < 2 &&
                 Math.Abs(x.Bounds.Height - original[i].Height) < 2).All(x => x), "The panels did not return to their own sizes", seconds: 3);
+            await Reaches(window, () => Math.Abs(inner.Bounds.Width - original[0].Width) < 2,
+                $"The panel inside stayed {inner.Bounds.Width:F0}px after restoring to {original[0].Width:F0}px", seconds: 3);
             Console.WriteLine($"PASS panel maximise: {panels.Length} panels each carry the action, maximising animates to the " +
                 "full canvas above the others, a second panel takes over from the first, pressing again restores every panel, " +
                 "and the saved layout is untouched");
@@ -199,6 +213,18 @@ internal static class Mo2PhysicalityCheck
         for (var index = 0; index < shown.Length; index += 4)
             if (Math.Abs(shown[index] - hidden[index]) > 8) lit++;
         return lit;
+    }
+
+    // A press and release on the control itself, which is what a pointer does.
+    private static void Press(Control control, Window window)
+    {
+        var pointer = new Pointer(0, PointerType.Mouse, true);
+        var middle = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window) ?? default;
+        var properties = new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed);
+        control.RaiseEvent(new PointerPressedEventArgs(control, pointer, window, middle, 0, properties, KeyModifiers.None));
+        control.RaiseEvent(new PointerReleasedEventArgs(control, pointer, window, middle, 0,
+            new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonReleased),
+            KeyModifiers.None, MouseButton.Left));
     }
 
     private static void Wheel(ScrollViewer scroll, bool up) =>

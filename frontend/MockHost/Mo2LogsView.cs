@@ -45,7 +45,10 @@ internal sealed class Mo2LogsView : ReactiveUserControl<Mo2LogsPage>
         var refresh = Mo2TableRow.IconButton("mdi-refresh", "Refresh logs", async () => await Refresh());
         foreach (var child in bar.Children) child.Margin = new Thickness(0,0,8,6);
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_log,3); root.Children.Add(_log); Content = root;
-        Mo2PanelChrome.Apply(this, root, header, _files, _level, _filter, refresh);
+        // The log file, the level and the message filter are all filters, so they
+        // live in the row beneath the separator behind one magnifier rather than
+        // filling the header line with three controls no other page has.
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Filter log messages"), refresh);
         _level.SelectionChanged += (_,_) => Render(); _filter.TextChanged += (_,_) => Render();
         _files.SelectionChanged += async (_,_) => { if (!_updating) await Refresh(); };
         this.WhenActivated(d => {

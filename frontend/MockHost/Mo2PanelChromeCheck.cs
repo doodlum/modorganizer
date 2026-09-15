@@ -72,6 +72,14 @@ internal static class Mo2PanelChromeCheck
                     throw new Exception(name + " has no actions on its header line");
                 if (!stack.Children.OfType<Panel>().Any(x => x.Name == "PanelHeaderRow"))
                     throw new Exception(name + " actions are not in the header row");
+                // Only icon actions belong on the header line. Search boxes and
+                // pickers live in the page's own filter row beneath the separator,
+                // which is what Mods and Plugins do and what Archives, Data, Logs and
+                // Saves did not — they carried a text box, and Logs two pickers too,
+                // which is why those four headers looked unlike the rest.
+                foreach (var stray in actions.Children.Where(x => x is TextBox or ComboBox))
+                    throw new Exception($"{name} has a {stray.GetType().Name} on its header line");
+
                 // Every panel's header actions are the same size, so the row of
                 // buttons reads as one control group rather than a collection.
                 // Hidden actions have no size; only what is actually on the line has

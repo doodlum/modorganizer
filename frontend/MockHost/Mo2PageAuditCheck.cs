@@ -77,7 +77,8 @@ internal static class Mo2PageAuditCheck
             // Pages can carry more than one header and hide the ones they do not use;
             // a hidden header has no applied template, so reading it reports a page
             // with no pictogram at all.
-            var header = body.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault(x => x.IsVisible);
+            var header = body.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault(x => x.IsVisible)
+                ?? body.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault();
             if (directory is not null) Capture(window, Path.Combine(directory, "audit-" + name + ".png"));
             if (header is null) { faults.Add($"{name}: no page header"); continue; }
 
@@ -129,6 +130,8 @@ internal static class Mo2PageAuditCheck
             // maximise over, so the action hides itself there.
             if (!home && !metrics.Maximise) faults.Add($"{name}: no maximise action on its header");
             if (!metrics.Description) faults.Add($"{name}: header has no description");
+            // A header stood down for the actions has nothing on screen to measure.
+            if (header.Bounds.Width <= 0) continue;
             if (Math.Abs(metrics.Padding - Mo2PanelChrome.Padding) > .5 &&
                 Math.Abs(metrics.Padding - Mo2PanelChrome.CompactPadding) > .5)
                 faults.Add($"{name}: padding is {metrics.Padding}, not the shared {Mo2PanelChrome.Padding}");
@@ -190,10 +193,12 @@ internal static class Mo2PageAuditCheck
         // is still drawing the page before it, and an audit that reads then reports
         // one page's chrome under another page's name, with a picture to match.
         var title = (page as NexusMods.App.UI.WorkspaceSystem.IPageViewModelInterface)?.TabTitle;
+        // A header the chrome has given up so the actions can have the line is still
+        // the right page; only a visible one can be matched on its title.
         return root.GetVisualDescendants().OfType<Control>()
             .FirstOrDefault(x => x.IsEffectivelyVisible && ReferenceEquals(x.DataContext, page) &&
                 x.GetVisualDescendants().OfType<PageHeader>()
-                    .Any(h => h.IsVisible && (title is null || h.Title == title)));
+                    .Any(h => !h.IsVisible || title is null || h.Title == title));
     }
 
     private static Task Navigate(NexusMods.App.UI.LeftMenu.Items.ILeftMenuItemViewModel item) =>

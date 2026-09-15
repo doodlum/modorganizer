@@ -11,7 +11,8 @@ namespace Mo2.Frontend;
 
 internal static class Mo2ModRow
 {
-    internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.GripColumn},46,*,80,130,84,60"), MinWidth = 0 };
+    internal static Grid Columns() => new() { MinWidth = 0, ColumnDefinitions = new ColumnDefinitions(
+        $"{Mo2TableRow.GripColumn},{Mo2TableRow.StatusColumn},*,80,130,84,{Mo2TableRow.ActionsColumn}") };
     // Columns the user has switched off through the Mods view-options action. The
     // responsive widths below still apply: a column shows only when it both fits and
     // has not been hidden. Status, Mod name and Actions are not optional.
@@ -144,13 +145,13 @@ internal static class Mo2ModRow
         statusMenu.Flyout = Mo2EntryMenu.Flyout(Actions);
         status.Children.Add(statusMenu);
         Add(row, status, 1);
-        var title = new TextBlock { Text = mod.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3,0), Opacity = (mod.State & 6) != 0 ? .85 : .5 };
+        var title = Mo2TableRow.Cell(mod.DisplayName, (mod.State & 6) != 0 ? .85 : .5);
         ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0))); Add(row, title, 2);
-        var version = new TextBlock { Text = mod.Version, Opacity = .6, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4,0) };
+        var version = Mo2TableRow.Cell(mod.Version, .6);
         // An available update is a filled pill with a download glyph, as the reference
         // shows, in place of the plain version text.
         var updatePill = new Border { Name = "ModUpdatePill", CornerRadius = new CornerRadius(6), Padding = new Thickness(6,1),
-            Background = Brush.Parse("#1D4ED8"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4,0),
+            Background = Brush.Parse("#1D4ED8"), VerticalAlignment = VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin,
             HorizontalAlignment = HorizontalAlignment.Left, IsVisible = mod.HasUpdate,
             Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = {
                 new UnifiedIcon { Value = new ProjektankerIcon("mdi-cloud-download"), Size = 14 },
@@ -159,7 +160,7 @@ internal static class Mo2ModRow
             version.IsVisible = false;
             ToolTip.SetTip(updatePill, $"Update available: {mod.Version} → {mod.NewestVersion}");
         }
-        var category = new TextBlock { Text = mod.Category, Opacity = .6, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4,0) };
+        var category = Mo2TableRow.Cell(mod.Category, .6);
         var versionCell = new Grid(); versionCell.Children.Add(version); versionCell.Children.Add(updatePill); Add(row, versionCell, 3); Add(row, category, 4);
         var isEndorsed = (mod.State & 0x10) != 0;
         var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline"), Size = 18,

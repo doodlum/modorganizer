@@ -54,8 +54,15 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
         });
         // The native panel is built on demand, so its chrome appears later than this
         // shell. Adopt it the first layout pass after it exists.
-        LayoutUpdated += (_, _) => AdoptChrome();
+        LayoutUpdated += (_, _) => {
+            AdoptChrome();
+            // The native panel is built on demand, so the first ApplyBounds runs
+            // before there is anything inside to size.
+            if (_inner is null) ApplyBounds();
+        };
     }
+
+    private PanelView? _inner;
 
     private void ApplyBounds()
     {
@@ -69,6 +76,13 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
         Width = bounds.Width; Height = bounds.Height;
         SetValue(Canvas.LeftProperty, bounds.X); SetValue(Canvas.TopProperty, bounds.Y);
         ZIndex = _maximised ? 1000 : 0;
+        // The native panel sizes itself from the workspace's own bounds for the panel,
+        // and maximising deliberately leaves those alone so the saved layout survives.
+        // Without this the shell grew to the whole canvas while the panel inside it
+        // stayed its old width and sat in the middle of the gap — which looked exactly
+        // like maximise doing nothing but moving the panel.
+        _inner ??= this.GetVisualDescendants().OfType<PanelView>().FirstOrDefault();
+        if (_inner is not null) { _inner.Width = bounds.Width; _inner.Height = bounds.Height; }
     }
 
     private Transitions Reflow() => new() {
