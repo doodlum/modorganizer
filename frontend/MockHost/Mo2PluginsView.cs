@@ -135,8 +135,34 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var chooseProfile = new TextBlock { Text = "Select a profile in My Loadouts to view its plugins.",
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(24) };
+        // MO2's own espTab furniture: Sort, Restore and Save across the top with the
+        // active-plugin count beside them, and its filter field under the list.
+        var qtSort = Mo2QtWidgets.Button("SortPluginsButton", "Sort", Mo2QtWidgets.SortTip, "mdi-sort-alphabetical-variant",
+            async () => { if (ViewModel?.LiveProfile is { } live) await live.SortPlugins(live.CurrentTarget); });
+        var qtRestore = Mo2QtWidgets.Button("RestorePluginsButton", "Restore", Mo2QtWidgets.RestoreTip, "mdi-backup-restore", () => { });
+        var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline", () => { });
+        var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);
+        var qtBar = new StackPanel { Name = "PluginsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
+        qtBar.Children.Add(qtSort); qtBar.Children.Add(qtRestore); qtBar.Children.Add(qtSave); qtBar.Children.Add(qtCount);
+        var qtFilterHost = Mo2QtWidgets.Filter("PluginsQtFilter", Mo2QtWidgets.PluginFilterTip,
+            text => { if (ViewModel is { } model) model.Mo2SearchText = text; }, out _);
+        qtFilterHost.Margin = new Thickness(0, 8, 0, 0);
+
         var body = new Grid(); body.Children.Add(editor); body.Children.Add(chooseProfile);
-        layout.Children.Add(body); Content = layout;
+        var tab = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        tab.Children.Add(qtBar);
+        Grid.SetRow(body, 1); tab.Children.Add(body);
+        Grid.SetRow(qtFilterHost, 2); tab.Children.Add(qtFilterHost);
+        layout.Children.Add(tab); Content = layout;
+        // MO2 shows how many plugins are active, which is what the counter beside the
+        // sort actions reads.
+        void RefreshCount() {
+            if (ViewModel?.LiveProfile is { } live)
+                activeCount.Text = live.Order.Plugins.Count(x => x.IsActive).ToString();
+        }
+        tab.AttachedToVisualTree += (_, _) => RefreshCount();
+        tab.LayoutUpdated += (_, _) => RefreshCount();
         // Same as Mods: the toolbar rides on the header line rather than in a row
         // of its own, so both pages present one chrome.
         toolbar.Margin = new Thickness(0);

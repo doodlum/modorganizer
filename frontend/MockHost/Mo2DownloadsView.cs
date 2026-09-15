@@ -18,6 +18,10 @@ namespace Mo2.Frontend;
 
 internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
 {
+    // Set by the activation block to its own refresh, so MO2's Refresh button has
+    // something to call from outside it.
+    private Action? _qtRefresh;
+
     internal async Task ChooseArchive(Func<Task<string?>> choose)
     {
         if (ViewModel is not { } model || !model.Profile.CanUseDownloads) return;
@@ -74,7 +78,18 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         layout.Children.Add(unavailable);
         // Retained as a context marker for stale-picker checks; visible context is the native page header.
         var context = new TextBlock { Name = "DownloadProfileContext", IsVisible = false };
-        layout.Children.Add(context); Content = layout;
+        layout.Children.Add(context);
+        // MO2's own downloadTab furniture: a Refresh and a Query Metadata beside it.
+        var qtBar = new StackPanel { Name = "DownloadsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 6, Margin = new Thickness(24,0,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        // The list's own refresh is a local of the activation block, so the button is
+        // pointed at whatever that block last set rather than at the page.
+        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
+            () => _qtRefresh?.Invoke()));
+        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadata,
+            "mdi-cloud-search-outline", () => { }));
+        Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
+        Content = layout;
         // The native downloads page draws its own header and toolbar; the shared
         // chrome puts them on one line with the separator, padding and compaction
         // every other page has.
@@ -111,6 +126,8 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             var profile = model.Profile;
             System.Reactive.Disposables.Disposable.Create(() => { nexusFlyout.Hide(); linkTarget = null; }).DisposeWith(disposables);
             Action? resizeColumns = null;
+            _qtRefresh = Refresh;
+            System.Reactive.Disposables.Disposable.Create(() => _qtRefresh = null).DisposeWith(disposables);
             void Refresh()
             {
                 if (linkTarget is { } target && (target != profile.CurrentTarget || !profile.CanUseDownloads)) nexusFlyout.Hide();

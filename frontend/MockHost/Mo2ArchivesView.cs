@@ -62,7 +62,12 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         Grid.SetColumn(_extract,2); bar.Children.Add(_extract);
         var refresh = Mo2ModRow.IconButton("mdi-refresh", "Refresh archives", async () => await Refresh());
         refresh.Name = "RefreshArchives"; Grid.SetColumn(refresh,3); bar.Children.Add(refresh);
-        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(_table,3); root.Children.Add(_table);
+        // MO2's own bsaTab note above the list, which says what the list below is.
+        var note = Mo2QtWidgets.Note("ManagedArchiveLabel", Mo2QtWidgets.ArchivesNote);
+        var archiveTab = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        archiveTab.Children.Add(note);
+        Grid.SetRow(_table,1); archiveTab.Children.Add(_table);
+        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(archiveTab,3); root.Children.Add(archiveTab);
         _table.Classes.Add("MainListsStyling"); Content = root;
         _columns = new Mo2ColumnToggle("archives", Render);
         // The filter stays in its own row under the separator and the header line

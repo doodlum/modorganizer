@@ -63,6 +63,9 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
     private (string Name, bool Directory)? _selection;
     private readonly Func<Mo2ProfileTarget, string, Task<Mo2DataEntry[]>>? _read;
     private bool _active;
+    // What MO2's own dataTab checkboxes and filter field narrow the tree by.
+    private bool _onlyConflicts, _fromArchives = true, _hiddenFiles;
+    private string _qtFilter = "";
     private long _activation;
     public Mo2DataView() : this(null) { }
     internal Mo2DataView(Func<Mo2ProfileTarget, string, Task<Mo2DataEntry[]>>? read)
@@ -84,7 +87,26 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         toolbar.Children.Add(_up); Grid.SetColumn(_search,1); toolbar.Children.Add(_search); Grid.SetColumn(_open,2); toolbar.Children.Add(_open); Grid.SetColumn(_reveal,3); toolbar.Children.Add(_reveal); Grid.SetColumn(_visibility,4); toolbar.Children.Add(_visibility); Grid.SetColumn(refresh,5); toolbar.Children.Add(refresh);
         Grid.SetRow(toolbar,1); root.Children.Add(toolbar);
         var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") }; location.Children.Add(_path); Grid.SetColumn(_conflicts,1); location.Children.Add(_conflicts);
-        Grid.SetRow(location,2); root.Children.Add(location); Grid.SetRow(_status,3); root.Children.Add(_status); Grid.SetRow(_table,4); root.Children.Add(_table);
+        // MO2's own dataTab furniture: a Refresh, the three checkboxes that narrow what
+        // the tree lists, and its filter field.
+        var qtBar = new StackPanel { Name = "DataQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0,0,0,8) };
+        qtBar.Children.Add(Mo2QtWidgets.Button("DataRefreshButton", "Refresh", Mo2QtWidgets.DataRefreshTip, "mdi-refresh",
+            async () => { _actionError = null; await Refresh(); }));
+        qtBar.Children.Add(Mo2QtWidgets.Check("DataConflictsOnly", Mo2QtWidgets.ConflictsOnly, Mo2QtWidgets.ConflictsOnlyTip,
+            _onlyConflicts, value => { _onlyConflicts = value; Render(); }));
+        qtBar.Children.Add(Mo2QtWidgets.Check("DataFromArchives", Mo2QtWidgets.FromArchives, Mo2QtWidgets.FromArchivesTip,
+            _fromArchives, value => { _fromArchives = value; Render(); }));
+        qtBar.Children.Add(Mo2QtWidgets.Check("DataHiddenFiles", Mo2QtWidgets.HiddenFiles, Mo2QtWidgets.HiddenFilesTip,
+            _hiddenFiles, value => { _hiddenFiles = value; Render(); }));
+        var qtFilter = Mo2QtWidgets.Filter("DataQtFilter", Mo2QtWidgets.DataFilterTip, text => { _qtFilter = text; Render(); }, out _);
+        qtFilter.Margin = new Thickness(0,8,0,0);
+
+        var tab = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        tab.Children.Add(qtBar);
+        Grid.SetRow(_table,1); tab.Children.Add(_table);
+        Grid.SetRow(qtFilter,2); tab.Children.Add(qtFilter);
+        Grid.SetRow(location,2); root.Children.Add(location); Grid.SetRow(_status,3); root.Children.Add(_status);
+        Grid.SetRow(tab,4); root.Children.Add(tab);
         Content = root;
         _columns = new Mo2ColumnToggle("data", Render);
         // Search in the row beneath, magnifier on the header line, as Mods does.
@@ -177,7 +199,15 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
     private Mo2ColumnToggle? _columns;
     private void Render()
     {
-        var rows = _entries.Where(x => (x.Name + " " + x.Source).Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase) && (_conflicts.IsChecked != true || x.Directory || x.Origins.Distinct().Count() > 1)).ToArray();
+        // MO2's own filters, over the page's existing search: only conflicting files,
+        // whether files served from archives count, and whether hidden ones do. A
+        // folder is never filtered out by them — it is how the rest is reached.
+        var rows = _entries.Where(x => (x.Name + " " + x.Source).Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase)
+            && (_qtFilter.Length == 0 || x.Name.Contains(_qtFilter, StringComparison.OrdinalIgnoreCase))
+            && (_conflicts.IsChecked != true || x.Directory || x.Origins.Distinct().Count() > 1)
+            && (!_onlyConflicts || x.Directory || x.Origins.Distinct().Count() > 1)
+            && (_fromArchives || x.Directory || x.Archive.Length == 0)
+            && (_hiddenFiles || x.Directory || !x.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase))).ToArray();
         var source = new FlatTreeDataGridSource<Mo2DataEntry>(rows);
         // The same name cell the other two folder pages draw: the icon says whether
         // a row is a folder, where this page used to type an arrow in front of the
