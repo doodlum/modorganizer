@@ -114,10 +114,17 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
     {
         var rows = _saves.Where(x => (x.Name + " " + x.File).Contains(_search.Text ?? "",StringComparison.OrdinalIgnoreCase)).ToArray();
         var source = new FlatTreeDataGridSource<Mo2Save>(rows);
-        source.Columns.Add(new TemplateColumn<Mo2Save>("Save",new FuncDataTemplate<Mo2Save>((row,_) => {
-            var label = new TextBlock { Text = row?.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (row is not null) ToolTip.SetTip(label,row.Name + "\n" + row.File); return label;
-        }),width:new GridLength(1,GridUnitType.Star)));
+        // MO2's own two columns for this tab (mainwindow.ui, savegameList): the save's
+        // name and the file it is stored in, rather than one column carrying both.
+        static TemplateColumn<Mo2Save> Column(string header, Func<Mo2Save, string> text, GridLength width) =>
+            new(header, new FuncDataTemplate<Mo2Save>((row, _) => {
+                var label = new TextBlock { Text = row is null ? "" : text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin };
+                if (row is not null) ToolTip.SetTip(label, row.Name + "\n" + row.File);
+                return label;
+            }), width: width);
+        source.Columns.Add(Column("Name", x => x.Name, new GridLength(1, GridUnitType.Star)));
+        source.Columns.Add(Column("File", x => x.File, new GridLength(1, GridUnitType.Star)));
         source.RowSelection!.SelectionChanged += (_,_) => {
             if (ReferenceEquals(_table.Source, source)) _selectedFile = source.RowSelection.SelectedItem?.File;
             UpdateActions();

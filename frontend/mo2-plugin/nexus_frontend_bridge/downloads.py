@@ -90,11 +90,21 @@ class Downloads:
             except (configparser.Error, UnicodeError):
                 values = {}
             partial = path.name.casefold().endswith(('.unfinished', '.part'))
-            result.append({'name': path.name, 'path': str(path), 'bytes': path.stat().st_size,
+            stat = path.stat()
+            result.append({'name': path.name, 'path': str(path), 'bytes': stat.st_size,
                            'partial': partial, 'installed': values.get('installed', 'false') == 'true',
                            'hidden': values.get('removed', 'false') == 'true',
                            'paused': values.get('paused', 'false') == 'true',
-                           'failed': partial and str(path).casefold() in failed})
+                           'failed': partial and str(path).casefold() in failed,
+                           # The rest of MO2's own download columns (downloadlist.cpp):
+                           # Filetime, Mod name, Version, Nexus ID and Source Game. MO2
+                           # keeps them in the .meta beside the archive, which is already
+                           # read above, so a download without one sends "".
+                           'filetime': str(int(stat.st_mtime)),
+                           'modName': values.get('modname', ''),
+                           'version': values.get('version', ''),
+                           'modId': values.get('modid', ''),
+                           'sourceGame': values.get('gamename', '')})
         return result
 
     def _failed_paths(self):

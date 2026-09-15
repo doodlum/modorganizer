@@ -67,81 +67,34 @@ internal static class Mo2SharedListCheck
             else if (viewer.VerticalScrollBarVisibility != ScrollBarVisibility.Hidden)
                 faults.Add($"{name} shows its table's own scrollbar ({viewer.VerticalScrollBarVisibility}) as well as the rail");
 
-            // One search control, of the same kind, on both.
-            var search = page.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Search.SearchControl>().FirstOrDefault();
-            if (search is null) faults.Add($"{name} does not use the shared search control");
-
-            // One selection group, of the same kind, on both.
-            var group = page.GetVisualDescendants().OfType<Control>().FirstOrDefault(x => x.Name == "ContextControlGroup");
-            if (group is null) faults.Add($"{name} has no selection group");
-            var deselect = page.GetVisualDescendants().OfType<Control>().FirstOrDefault(x => x.Name == "DeselectItemsButton");
-            if (deselect is null) faults.Add($"{name} has no deselect action in its selection group");
-
-            // And the actions live on the header line, in the panel chrome's own group.
-            var actions = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
-            if (actions is null) faults.Add($"{name} puts nothing on its header line");
+            // No toolbar. MO2 carries none on a tab, so a page that grows one back has
+            // drifted from what this frontend is replicating.
+            var line = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
+            var drawn = line is null ? 0 : line.Children.Count;
+            if (drawn > 0) faults.Add($"{name} draws a toolbar of {drawn} actions on its header line");
 
             described.Add($"{name}: rail {rail.RowDefinitions.Count} rows, " +
-                $"{page.GetVisualDescendants().OfType<Mo2ListScrollBar>().Count()} shared scrollbar, " +
-                $"{(search is null ? 0 : 1)} search control, {(group is null ? 0 : 1)} selection group");
+                $"{page.GetVisualDescendants().OfType<Mo2ListScrollBar>().Count()} shared scrollbar, no toolbar");
         }
 
-        // The toolbar holds the same things in the same order on both pages. Each
-        // page assembled its own, so the pill, the search and the selection group
-        // could sit in any order relative to one another without anything noticing.
-        string Shape(Control page) => string.Join(" ", page.GetVisualDescendants().OfType<Toolbar>()
-            .SelectMany(toolbar => toolbar.Items.OfType<Control>())
-            .Select(item => item switch {
-                Border { Name: { } pill } when pill.EndsWith("PrimaryActions", StringComparison.Ordinal) => "pill",
-                NexusMods.App.UI.Controls.Search.SearchControl => "search",
-                Panel { Name: "ContextControlGroup" } => "selection",
-                ItemsControl inner when inner.Items.OfType<NexusMods.App.UI.Controls.Search.SearchControl>().Any() => "search",
-                _ => item.GetType().Name.ToLowerInvariant(),
-            }));
-        var shapes = new[] { ("My Mods", Shape(mods)), ("Plugins", Shape(plugins)) };
-        if (shapes[0].Item2 != shapes[1].Item2)
-            faults.Add($"the toolbars hold different things: My Mods \"{shapes[0].Item2}\", Plugins \"{shapes[1].Item2}\"");
-        described.Add($"both toolbars read \"{shapes[0].Item2}\"");
+        // Both lists carry MO2's own columns, under MO2's own headers, in MO2's own
+        // order. Read from the headings each page draws rather than from the tables
+        // they were built from, so a page that stops drawing one is caught.
+        string Headings(Control page, int expected) => string.Join(" ", page.GetVisualDescendants().OfType<Grid>()
+            .Where(x => x.ColumnDefinitions.Count == expected)
+            .Select(x => string.Join(",", x.Children.OfType<TextBlock>().Where(t => t.FontWeight == Avalonia.Media.FontWeight.SemiBold).Select(t => t.Text)))
+            .Where(x => x.Length > 0).Take(1));
+        var modHeadings = Headings(mods, Mo2ModRow.Headers.Length);
+        var pluginHeadings = Headings(plugins, Mo2PluginRow.Headers.Length);
+        var wantedMods = string.Join(",", Mo2ModRow.Headers.Select(x => x.Name));
+        var wantedPlugins = string.Join(",", Mo2PluginRow.Headers.Select(x => x.Name));
+        if (modHeadings != wantedMods) faults.Add($"My Mods heads its columns \"{modHeadings}\" rather than MO2's \"{wantedMods}\"");
+        if (pluginHeadings != wantedPlugins) faults.Add($"Plugins heads its columns \"{pluginHeadings}\" rather than MO2's \"{wantedPlugins}\"");
+        described.Add($"My Mods heads {Mo2ModRow.Headers.Length} MO2 columns and Plugins {Mo2PluginRow.Headers.Length}");
 
-        // The controls inside the toolbar, to the pixel and the glyph. Both pages
-        // reach for "an icon button" and got different ones: the overflow dots were
-        // drawn from different icons at different sizes, and the search control's own
-        // button came out a different size again.
-        (double W, double H, double Icon, string Glyph) Shape2(Control? button)
-        {
-            if (button is null) return (-1, -1, -1, "-");
-            var glyph = button.GetSelfAndVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>().FirstOrDefault();
-            return (button.Bounds.Width, button.Bounds.Height, glyph?.Size ?? -1,
-                glyph?.Value?.Value.Value is ProjektankerIcon { Value: { } icon } ? icon : glyph?.Value?.ToString() ?? "-");
-        }
-        Control? Overflow(Control page) => page.GetVisualDescendants().OfType<Control>()
-            .FirstOrDefault(x => x.Name is "ModsOverflowButton" or "PluginsOverflowButton");
-        Control? SearchToggle(Control page) => page.GetVisualDescendants()
-            .OfType<NexusMods.App.UI.Controls.Search.SearchControl>().FirstOrDefault()
-            ?.GetVisualDescendants().OfType<Button>().FirstOrDefault();
-
-        var overflows = new[] { ("My Mods", Shape2(Overflow(mods))), ("Plugins", Shape2(Overflow(plugins))) };
-        if (overflows[0].Item2 != overflows[1].Item2)
-            faults.Add($"the overflow buttons differ: My Mods {overflows[0].Item2}, Plugins {overflows[1].Item2}");
-        var searches = new[] { ("My Mods", Shape2(SearchToggle(mods))), ("Plugins", Shape2(SearchToggle(plugins))) };
-        if (searches[0].Item2 != searches[1].Item2)
-            faults.Add($"the search buttons differ: My Mods {searches[0].Item2}, Plugins {searches[1].Item2}");
-        described.Add($"overflow {overflows[0].Item2}, search {searches[0].Item2}");
-
-        // Sizes, not just names: the same control can be put on the line in a box only
-        // one page has. My Mods' search sat inside the original markup's padded items
-        // control, so the same search button was 32px tall there and 24 on Plugins.
-        string Sizes(Control page) => string.Join(" ", page.GetVisualDescendants().OfType<Toolbar>()
-            .SelectMany(toolbar => toolbar.Items.OfType<Control>())
-            .Select(item => $"{item.Bounds.Width:F0}x{item.Bounds.Height:F0}"));
-        var sizes = new[] { ("My Mods", Sizes(mods)), ("Plugins", Sizes(plugins)) };
-        if (sizes[0].Item2 != sizes[1].Item2)
-            faults.Add($"the toolbars lay out differently: My Mods {sizes[0].Item2}, Plugins {sizes[1].Item2}");
-        var heights = new[] { mods, plugins }.Select(page => page.GetVisualDescendants().OfType<Toolbar>()
-            .FirstOrDefault()?.Bounds.Height ?? -1).ToArray();
-        if (Math.Abs(heights[0] - heights[1]) > 1.5)
-            faults.Add($"the toolbars are {heights[0]:F0}px and {heights[1]:F0}px tall");
-        described.Add($"both toolbars {heights[0]:F0}px tall holding {sizes[0].Item2}");
+        // What the two toolbars held, and how they lined up with one another, used to
+        // be checked here at length. There are no toolbars to compare on this branch —
+        // the absence of one is asserted per page above instead.
 
         // The same rail, to the pixel: both pages reserve the same width for it and
         // give it the same room above and below.

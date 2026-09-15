@@ -149,23 +149,41 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                         var label = new TextBlock { Text = item?.Get<NexusMods.App.UI.Controls.NameComponent>(NexusMods.App.UI.Pages.Downloads.DownloadColumns.Name.NameComponentKey).Value.Value ?? "", TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
                         ToolTip.SetTip(label, label.Text); return label;
                     }), width: new GridLength(180)));
-                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>("Downloaded", x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(Mo2DownloadProvider.BytesKey).Value.Value, width: new GridLength(90)));
+                // MO2's own download columns (downloadlist.cpp): Status and Size beside
+                // the name, then the four it keeps in the archive's .meta.
                 columns.Add(NexusMods.App.UI.Controls.ColumnCreator.Create<NexusMods.Abstractions.Downloads.DownloadId, NexusMods.App.UI.Pages.Downloads.DownloadColumns.Status>(width: new GridLength(224)));
-                var bytesColumn = columns[1];
+                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>("Size", x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(Mo2DownloadProvider.BytesKey).Value.Value, width: new GridLength(90)));
+                void Meta(string header, NexusMods.App.UI.Controls.ComponentKey key, double width) =>
+                    columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>(
+                        header, x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(key).Value.Value, width: new GridLength(width)));
+                Meta("Filetime", Mo2DownloadProvider.FiletimeKey, 130);
+                Meta("Mod name", Mo2DownloadProvider.ModNameKey, 150);
+                Meta("Version", Mo2DownloadProvider.VersionKey, 80);
+                Meta("Nexus ID", Mo2DownloadProvider.ModIdKey, 80);
+                Meta("Source Game", Mo2DownloadProvider.SourceGameKey, 110);
                 var previousWidth = double.NaN;
+                // Each column past the status keeps its width until the panel is too
+                // narrow to hold it, then collapses. Dropped rather than removed: the
+                // list used to take columns out of the collection and put them back,
+                // which only held while there were three of them and the one being
+                // moved was known by index.
+                (int Column, double Width, double Threshold)[] optional = [
+                    (2, 90, 430), (3, 130, 900), (4, 150, 700), (5, 80, 1060), (6, 80, 1180), (7, 110, 1320)];
                 resizeColumns = () => {
                     if (Bounds.Width <= 0 || Bounds.Width == previousWidth) return;
                     previousWidth = Bounds.Width;
                     // The native Downloads table measures star columns at their
                     // minimum. Allocate its remaining width explicitly instead.
-                    var compact = Bounds.Width < 460;
-                    var bytesWidth = compact ? 0 : 90;
-                    var statusWidth = compact ? 184 : 224;
-                    columns.SetColumnWidth(0, new GridLength(Math.Max(60, Bounds.Width - 48 - bytesWidth - statusWidth)));
-                    if (compact && columns.Count == 3) columns.RemoveAt(1);
-                    else if (!compact && columns.Count == 2) columns.Insert(1, bytesColumn);
-                    if (!compact) columns.SetColumnWidth(1, new GridLength(bytesWidth));
-                    columns.SetColumnWidth(compact ? 1 : 2, new GridLength(statusWidth));
+                    var statusWidth = Bounds.Width < 460 ? 184d : 224d;
+                    var taken = statusWidth;
+                    foreach (var (column, width, threshold) in optional) {
+                        if (column >= columns.Count) continue;
+                        var show = Bounds.Width >= threshold;
+                        columns.SetColumnWidth(column, new GridLength(show ? width : 0));
+                        if (show) taken += width;
+                    }
+                    columns.SetColumnWidth(0, new GridLength(Math.Max(60, Bounds.Width - 48 - taken)));
+                    if (columns.Count > 1) columns.SetColumnWidth(1, new GridLength(statusWidth));
                 };
                 resizeColumns();
             }).DisposeWith(disposables);

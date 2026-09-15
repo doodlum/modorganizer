@@ -12,9 +12,22 @@ using System.Reactive.Disposables;
 
 namespace Mo2.Frontend;
 
-internal sealed record Mo2DataEntry(string Name, bool Directory, string[] Origins, string Archive)
+internal sealed record Mo2DataEntry(string Name, bool Directory, string[] Origins, string Archive, string Size = "", string Modified = "")
 {
     public string Source => Origins.FirstOrDefault() ?? "";
+    // MO2's Data tree names these Type, Size and Date modified
+    // (filetreemodel.cpp). A folder has no type or size of its own, and a file
+    // served out of an archive has no file to read either from.
+    public string Type => Directory ? "" : Path.GetExtension(Name).TrimStart('.').ToUpperInvariant();
+    public string SizeText => Directory || !long.TryParse(Size, out var bytes) ? "" : Bytes(bytes);
+    public string ModifiedText => !long.TryParse(Modified, out var stamp) ? ""
+        : DateTimeOffset.FromUnixTimeSeconds(stamp).LocalDateTime.ToString("yyyy-MM-dd HH:mm");
+    private static string Bytes(long value) => value switch {
+        < 1024 => value + " B",
+        < 1024 * 1024 => (value / 1024d).ToString("0.#") + " KB",
+        < 1024 * 1024 * 1024 => (value / (1024d * 1024)).ToString("0.#") + " MB",
+        _ => (value / (1024d * 1024 * 1024)).ToString("0.#") + " GB",
+    };
     public string Details => string.Join("\n", new[] { Name, Directory ? "Folder" : "Winning source: " + Source,
         Archive.Length > 0 ? "Archive: " + Archive : "", Origins.Length > 1 ? "Other sources: " + string.Join(", ", Origins.Skip(1)) : "" }.Where(x => x.Length > 0));
 }
@@ -170,10 +183,19 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         // a row is a folder, where this page used to type an arrow in front of the
         // name and leave the rows half a character out of line with each other.
         source.Columns.Add(Mo2FolderPage.NameColumn<Mo2DataEntry>(row => (row.Name, row.Directory, row.Details, false)));
-        source.Columns.Add(new TemplateColumn<Mo2DataEntry>("Mod",new FuncDataTemplate<Mo2DataEntry>((row,_) => {
-            var label = new TextBlock { Text = row?.Source, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (row is not null) ToolTip.SetTip(label,row.Details); return label;
-        }),width:new GridLength(1,GridUnitType.Star)));
+        // The rest of MO2's own Data columns (filetreemodel.cpp): Mod, Type, Size and
+        // Date modified beside the name.
+        TemplateColumn<Mo2DataEntry> Column(string header, Func<Mo2DataEntry, string> text, GridLength width) =>
+            new(header, new FuncDataTemplate<Mo2DataEntry>((row, _) => {
+                var label = new TextBlock { Text = row is null ? "" : text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin };
+                if (row is not null) ToolTip.SetTip(label, row.Details);
+                return label;
+            }), width: width);
+        source.Columns.Add(Column("Mod", x => x.Source, new GridLength(1, GridUnitType.Star)));
+        source.Columns.Add(Column("Type", x => x.Type, new GridLength(70)));
+        source.Columns.Add(Column("Size", x => x.SizeText, new GridLength(90)));
+        source.Columns.Add(Column("Date modified", x => x.ModifiedText, new GridLength(140)));
         source.RowSelection!.SelectionChanged += (_,_) => {
             if (_active && ReferenceEquals(_table.Source, source) && ViewModel is { } model && _target is { } target) {
                 _selection = source.RowSelection.SelectedItem is { } row ? (row.Name, row.Directory) : null;

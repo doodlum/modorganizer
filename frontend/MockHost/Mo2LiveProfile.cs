@@ -11,7 +11,10 @@ using NexusMods.MnemonicDB.Abstractions;
 namespace Mo2.Frontend;
 
 internal readonly record struct Mo2ProfileTarget(string Endpoint, string ProfilePath);
-internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused, bool Failed = false)
+// The trailing fields are MO2's own remaining download columns (downloadlist.cpp):
+// Filetime, Mod name, Version, Nexus ID and Source Game.
+internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused, bool Failed = false,
+    string Filetime = "", string ModName = "", string Version = "", string ModId = "", string SourceGame = "")
 {
     public bool CanControl(string operation) => operation == "delete" ? !Partial || Paused || Failed : Partial && (operation switch {
         "resume" => Paused || Failed,
@@ -112,7 +115,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         NexusGame = snapshot.TryGetProperty("nexusGame", out var game) ? game.GetString() ?? "" : "";
         Downloads = snapshot.TryGetProperty("downloads", out var downloads) ? downloads.EnumerateArray()
             .Where(x => !x.GetProperty("hidden").GetBoolean())
-            .Select(x => new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean(), x.TryGetProperty("failed", out var failed) && failed.ValueKind == JsonValueKind.True)).ToArray() : [];
+            .Select(x => new Mo2Download(x.GetProperty("name").GetString()!, x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64(), x.GetProperty("partial").GetBoolean(), x.GetProperty("installed").GetBoolean(), x.GetProperty("paused").GetBoolean(), x.TryGetProperty("failed", out var failed) && failed.ValueKind == JsonValueKind.True,
+                x.TryGetProperty("filetime", out var filetime) ? filetime.GetString() ?? "" : "",
+                x.TryGetProperty("modName", out var downloadMod) ? downloadMod.GetString() ?? "" : "",
+                x.TryGetProperty("version", out var downloadVersion) ? downloadVersion.GetString() ?? "" : "",
+                x.TryGetProperty("modId", out var downloadModId) ? downloadModId.GetString() ?? "" : "",
+                x.TryGetProperty("sourceGame", out var downloadGame) ? downloadGame.GetString() ?? "" : "")).ToArray() : [];
         var profile = snapshot.GetProperty("profile");
         if (ProfilePath != profile.GetProperty("path").GetString()) _selectedModNames = [];
         ProfilePath = profile.GetProperty("path").GetString()!;
@@ -290,7 +298,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to browse Data.");
             var result = await Client.SendAsync("readDataDirectory", new() { ["profilePath"] = target.ProfilePath, ["directory"] = directory });
-            return result.GetProperty("entries").EnumerateArray().Select(x => new Mo2DataEntry(x.GetProperty("name").GetString()!, x.GetProperty("directory").GetBoolean(), x.GetProperty("origins").EnumerateArray().Select(o => o.GetString()!).ToArray(), x.GetProperty("archive").GetString()!)).ToArray();
+            return result.GetProperty("entries").EnumerateArray().Select(x => new Mo2DataEntry(x.GetProperty("name").GetString()!, x.GetProperty("directory").GetBoolean(), x.GetProperty("origins").EnumerateArray().Select(o => o.GetString()!).ToArray(), x.GetProperty("archive").GetString()!,
+                x.TryGetProperty("size", out var size) ? size.GetString() ?? "" : "",
+                x.TryGetProperty("modified", out var modified) ? modified.GetString() ?? "" : "")).ToArray();
         } finally { _commands.Release(); }
     }
     public async Task<Mo2Archive[]> ReadArchives(Mo2ProfileTarget target)

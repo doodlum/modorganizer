@@ -128,14 +128,21 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
     {
         var rows = _archives.Where(x => (x.Name + " " + x.Mod).Contains(_filter.Text ?? "",StringComparison.OrdinalIgnoreCase)).ToArray();
         var source = new FlatTreeDataGridSource<Mo2Archive>(rows);
+        // MO2 draws this tab as a single checked column (mainwindow.ui, bsaList has
+        // columnCount 1), where the check is the archive's managed state rather than a
+        // "Loaded" word in a column of its own: "archives not checked here are not
+        // managed by MO and ignore installation order".
         source.Columns.Add(new TemplateColumn<Mo2Archive>("Archive", new FuncDataTemplate<Mo2Archive>((archive,_) => {
+            var cell = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            var check = new CheckBox { IsChecked = archive?.Active == true, IsEnabled = archive?.CanToggle == true,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, MinWidth = 0, Padding = new Thickness(0) };
             var label = new TextBlock { Text = archive?.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-            if (archive is not null) ToolTip.SetTip(label, $"{archive.Name}\nMod: {archive.Mod}\nLoaded: {(archive.Active ? "Yes" : "No")}");
-            return label;
+            cell.Children.Add(check); cell.Children.Add(label);
+            if (archive is not null) ToolTip.SetTip(cell, $"{archive.Name}\nMod: {archive.Mod}\nManaged by MO2: {(archive.Active ? "Yes" : "No")}");
+            return cell;
         }),width:new GridLength(1,GridUnitType.Star)));
-        if (_showModColumn) source.Columns.Add(new TextColumn<Mo2Archive,string>("Mod",x => x.Mod,width:new GridLength(130)));
-        source.Columns.Add(new TextColumn<Mo2Archive,string>("Loaded",x => x.Active ? "Yes" : "No",width:new GridLength(70)));
         source.RowSelection!.SelectionChanged += (_,_) => {
             if (ReferenceEquals(_table.Source, source)) _selection = source.RowSelection.SelectedItem;
             UpdateActions();

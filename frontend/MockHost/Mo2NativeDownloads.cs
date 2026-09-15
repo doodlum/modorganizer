@@ -23,6 +23,16 @@ internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
     private readonly Dictionary<string, DownloadId> _ids = new();
     private readonly Dictionary<DownloadId, Mo2Download> _values = new();
     public static readonly ComponentKey BytesKey = ComponentKey.From("MO2.DownloadBytes");
+    // MO2's own remaining download columns, so this tab can list what MO2 lists.
+    public static readonly ComponentKey FiletimeKey = ComponentKey.From("MO2.DownloadFiletime");
+    public static readonly ComponentKey ModNameKey = ComponentKey.From("MO2.DownloadModName");
+    public static readonly ComponentKey VersionKey = ComponentKey.From("MO2.DownloadVersion");
+    public static readonly ComponentKey ModIdKey = ComponentKey.From("MO2.DownloadModId");
+    public static readonly ComponentKey SourceGameKey = ComponentKey.From("MO2.DownloadSourceGame");
+    // MO2 writes the archive's own timestamp; shown as a date rather than the raw
+    // seconds the bridge carries it as.
+    internal static string Filetime(string seconds) => long.TryParse(seconds, out var value)
+        ? DateTimeOffset.FromUnixTimeSeconds(value).LocalDateTime.ToString("yyyy-MM-dd HH:mm") : "";
     public Mo2Download? Find(DownloadId id) => _values.GetValueOrDefault(id);
     private Mo2ProfileTarget? _target;
     public void Refresh(Mo2LiveProfile profile)
@@ -46,6 +56,11 @@ internal sealed class Mo2DownloadProvider : IDownloadsDataProvider
             row.Add(DownloadColumns.Game.ComponentKey, new DownloadComponents.GameComponent(profile.GameName));
             SizeFormatter.TryConvert(NexusMods.Paths.Size.From(checked((ulong)file.Bytes)), typeof(string), null, out var bytes);
             row.Add(BytesKey, new ValueComponent<string>((string)bytes));
+            row.Add(FiletimeKey, new ValueComponent<string>(Filetime(file.Filetime)));
+            row.Add(ModNameKey, new ValueComponent<string>(file.ModName));
+            row.Add(VersionKey, new ValueComponent<string>(file.Version));
+            row.Add(ModIdKey, new ValueComponent<string>(file.ModId));
+            row.Add(SourceGameKey, new ValueComponent<string>(file.SourceGame));
             var state = file.Failed ? JobStatus.Failed : file.Partial ? file.Paused ? JobStatus.Paused : JobStatus.Running : JobStatus.Completed;
             var progress = file.Partial ? Percent.Zero : Percent.One;
             var status = new DownloadComponents.StatusComponent(progress, state, Observable.Return(progress), Observable.Return(state), canRetryFailed: true, canCancelInactive: false);
