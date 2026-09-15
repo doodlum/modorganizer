@@ -35,6 +35,24 @@ statements and should be read with their dates and later corrections.
 
 ## Latest functional fixes
 
+MO2's widgets do what MO2 does with them. Finding them and drawing them whole is
+not the same as carrying their behaviour, so `MO2_VERIFY_WIDGET_BEHAVIOUR` works
+every one the way a user does — types in the filters, ticks the categories, picks
+from the boxes, presses the keys, opens the menus — and reads back what the list
+did. It drives the real thing where the behaviour is MO2's: it switches a mod in
+MO2 and switches it back, and sends a mod to the top of MO2's order and returns
+the order it found.
+
+What that turned up, and what is fixed: Query Metadata did nothing (the single
+button arrived after 2.5.2, so the hosted build is asked download by download for
+the ones whose .meta names no mod); Edit... hid the filter list rather than
+opening MO2's category editor; and the tick beside an archive moved without MO2
+moving with it. The lists also do what MO2's do without a menu — a mod opens on
+double-click, the space bar switches it, Delete takes it out through the same
+confirmation, a download installs on double-click, and an archive dropped on the
+mod list is installed. A mod's menu gains MO2's Send to top/bottom, Open in
+Explorer and Rename; a plugin's gains Open origin in Explorer.
+
 The lists are drawn at MO2's density. The borrowed theme is built for a handful
 of large cards — 46px a row, 24px of padding in every cell, 14px text — so the
 window that shows MO2's forty mods showed eleven, and no amount of matching
