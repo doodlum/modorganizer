@@ -111,16 +111,23 @@ internal static class Mo2SelectionParityCheck
         // which paints over whatever the row beneath it is painted, so the same
         // :selected style can produce a filled bar on one list and an outline on the
         // other.
-        (string Row, string Inner, string Edge) Painted(TreeDataGrid table)
+        (string Row, string Inner, string Edge, string Cells) Painted(TreeDataGrid table)
         {
             var row = table.GetVisualDescendants().OfType<TreeDataGridRow>()
                 .FirstOrDefault(x => x.IsSelected && x.Bounds.Height > 0)
                 ?? table.GetVisualDescendants().OfType<TreeDataGridRow>().FirstOrDefault(x => x.Bounds.Height > 0);
-            if (row is null) return ("-", "-", "-");
+            if (row is null) return ("-", "-", "-", "-");
             var inner = row.GetVisualDescendants().OfType<Border>().FirstOrDefault(x => x.Name == "RowBorder");
+            var cells = row.GetVisualDescendants().OfType<TreeDataGridCellsPresenter>().FirstOrDefault();
+            var cellsDesc = cells is null ? "no cells" :
+                $"bg={(cells.Background as ISolidColorBrush)?.Color.ToString() ?? "null"} " +
+                $"border={cells.BorderThickness.Top:F0} " +
+                $"brush={(cells.BorderBrush as ISolidColorBrush)?.Color.ToString() ?? "null"} " +
+                $"cr={cells.CornerRadius.TopLeft:F0}";
             return ((row.Background as ISolidColorBrush)?.Color.ToString() ?? "none",
                 inner is null ? "no inner border" : (inner.Background as ISolidColorBrush)?.Color.ToString() ?? "none",
-                $"{row.BorderThickness.Top:F0}/{(inner?.BorderThickness.Top ?? 0):F0}");
+                $"{row.BorderThickness.Top:F0}/{(inner?.BorderThickness.Top ?? 0):F0}",
+                cellsDesc);
         }
 
         var modsTableEarly = mods.GetVisualDescendants().OfType<TreeDataGrid>().First(x => x.RowSelection is not null);
@@ -136,6 +143,8 @@ internal static class Mo2SelectionParityCheck
             faults.Add($"a selected row is filled {modsPaint.Row} on My Mods and {pluginsPaint.Row} on Plugins");
         if (modsPaint.Edge != pluginsPaint.Edge)
             faults.Add($"a selected row is outlined {modsPaint.Edge} on My Mods and {pluginsPaint.Edge} on Plugins");
+        if (modsPaint.Cells != pluginsPaint.Cells)
+            faults.Add($"a selected CellsPresenter is [{modsPaint.Cells}] on My Mods and [{pluginsPaint.Cells}] on Plugins");
         modsTableEarly.RowSelection.Clear(); pluginsTableEarly.RowSelection.Clear();
         await Task.Delay(300);
 

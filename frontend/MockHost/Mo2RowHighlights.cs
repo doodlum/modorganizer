@@ -42,8 +42,6 @@ internal static class Mo2RowHighlights
         foreach (var row in FindRows(view)) {
             var visuals = RowDecorations(row).ToArray();
             row.Height = row.MinHeight = 40;
-            // Hover and selection read as a rounded darkened bar, matching the
-            // separators, rather than a square block with a light outline.
             row.CornerRadius = new Avalonia.CornerRadius(8);
             row.BorderThickness = new Avalonia.Thickness(0);
             foreach (var cell in visuals.OfType<TreeDataGridTemplateCell>()) cell.Padding = new Avalonia.Thickness(0);

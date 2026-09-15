@@ -100,20 +100,63 @@ internal static class Mo2TableRow
         }
     }
 
-    // Hover and selection read as a darkened bar rather than the default accent
-    // fill, with no outline. Installed on the table so both pages share one look.
+    // Row styling that matches the NMA SortOrder design: a rounded card at rest,
+    // a translucent overlay on hover, and a border outline on selection. Targeting
+    // the CellsPresenter for hover and selection keeps the row's own background
+    // free for conflict highlights, and produces the outline the SortOrder theme
+    // uses rather than a filled bar the default theme uses.
     internal static void InstallRowStyles(Control table)
     {
-        Avalonia.Styling.Style Row(string pseudo, string brush) => new(x => Avalonia.Styling.Selectors.Class(Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x), pseudo)) {
+        // Resting: the same card appearance the SortOrder rows have.
+        table.Styles.Add(new Avalonia.Styling.Style(x =>
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x)) {
             Setters = {
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
-                    Application.Current!.FindResource(brush)),
+                    Application.Current!.FindResource("SurfaceMidBrush")),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderThicknessProperty, new Thickness(0)),
+            }
+        });
+
+        // Hover: a translucent overlay on the cells, not a fill on the row.
+        Func<Avalonia.Styling.Selector?, Avalonia.Styling.Selector> CellsIn(string pseudo) => x =>
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridCellsPresenter>(
+                Avalonia.Styling.Selectors.Template(
+                    Avalonia.Styling.Selectors.Class(
+                        Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x), pseudo)));
+
+        table.Styles.Add(new Avalonia.Styling.Style(CellsIn(":pointerover")) {
+            Setters = {
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
+                    Application.Current!.FindResource("SurfaceTranslucentLowBrush")),
+            }
+        });
+
+        // Selected: a border outline, not a background fill.
+        table.Styles.Add(new Avalonia.Styling.Style(CellsIn(":selected")) {
+            Setters = {
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, (IBrush?)null),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderBrushProperty,
+                    Application.Current!.FindResource("StrokeTranslucentModerateBrush")),
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BorderThicknessProperty, new Thickness(2)),
                 new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.CornerRadiusProperty, new CornerRadius(8)),
             }
+        });
+
+        // Selected + hover: overlay plus outline.
+        var selectedHover = new Avalonia.Styling.Style(x =>
+            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridCellsPresenter>(
+                Avalonia.Styling.Selectors.Template(
+                    Avalonia.Styling.Selectors.Class(
+                        Avalonia.Styling.Selectors.Class(
+                            Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRow>(x),
+                            ":selected"), ":pointerover")))) {
+            Setters = {
+                new Avalonia.Styling.Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
+                    Application.Current!.FindResource("SurfaceTranslucentLowBrush")),
+            }
         };
-        table.Styles.Add(Row(":pointerover", "SurfaceMidBrush"));
-        table.Styles.Add(Row(":selected", "SurfaceHighBrush"));
+        table.Styles.Add(selectedHover);
     }
 
     // The Vortex view-options control: a gear listing the optional columns plus a
