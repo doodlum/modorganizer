@@ -187,12 +187,11 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             menu.Items.Add(move);
         }
 
-        var overflow = new Button { Name = "ModsOverflowButton", Content = new UnifiedIcon { Value = IconValues.MoreVertical },
-            Width = 24, Height = 24, Padding = new Thickness(4), Flyout = menu };
+        var overflow = Mo2ModRow.IconButton("mdi-dots-vertical", "Mod actions", () => { });
+        overflow.Name = "ModsOverflowButton";
+        overflow.Flyout = menu;
         menu.Items.Add(new Separator());
         Mo2OrderHistoryMenu.Add(menu, () => ViewModel?.LiveProfile, "mods");
-        ToolTip.SetTip(overflow, "Mod actions");
-        Avalonia.Automation.AutomationProperties.SetName(overflow, "Mod actions");
         var toolbar = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.GetLogicalAncestors().OfType<Toolbar>().First();
         Mo2ListToolbar.Wrap(toolbar);
         Mo2ListToolbar.AddSearch(toolbar, native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!);
