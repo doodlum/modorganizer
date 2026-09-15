@@ -452,6 +452,11 @@ public partial class MockApp : Application
                         try { await Mo2PanelChromeCheck.Run(); }
                         catch (Exception error) { Console.WriteLine("FAIL panel chrome: " + error.Message); }
                     };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LISTS") == "1")
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2SharedListCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL shared list pages: " + error.Message); }
+                    }, TimeSpan.FromSeconds(2));
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SELECTION_PARITY") == "1")
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2SelectionParityCheck.Run(live, liveWindow); }

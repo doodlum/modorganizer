@@ -20,6 +20,23 @@ internal static class Mo2RowHighlights
     private static readonly IBrush OverwritesSelection = Brush.Parse("#66893D43");
     private static readonly IBrush OverwrittenBySelection = Brush.Parse("#664F7D43");
     private static readonly IBrush Separator = Brushes.Transparent;
+    // Keeping a table's highlights up to date: repaint when the profile says the
+    // links changed, and again on every layout pass because rows are recycled as the
+    // list scrolls and a recycled row arrives carrying the last row's colour. Both
+    // lists wrote this out separately, with their own handlers to unsubscribe.
+    public static IDisposable Attach(Control host, Control table, Mo2LiveProfile profile, bool plugins)
+    {
+        void Highlight() => Apply(table, profile, plugins);
+        EventHandler layout = (_, _) => Highlight();
+        host.LayoutUpdated += layout;
+        profile.HighlightsChanged += Highlight;
+        Highlight();
+        return System.Reactive.Disposables.Disposable.Create(() => {
+            host.LayoutUpdated -= layout;
+            profile.HighlightsChanged -= Highlight;
+        });
+    }
+
     public static void Apply(Control view,Mo2LiveProfile profile,bool plugins)
     {
         foreach (var row in FindRows(view)) {

@@ -144,7 +144,18 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             subtitle.Children.OfType<TextBlock>().First().Text = "Install mods from your MO2 downloads folder.";
         native.FindControl<StandardButton>("ViewLibraryButton")!.Text = "Downloads";
         ToolTip.SetTip(native.FindControl<StandardButton>("ViewFilesButton")!, "View this mod’s files and conflicts in MO2");
-        var group = native.FindControl<ItemsControl>("ContextControlGroup")!;
+        // The same group Plugins shows, built from the native view's own buttons so
+        // both pages draw one component rather than two that happen to look alike.
+        var nativeGroup = native.FindControl<ItemsControl>("ContextControlGroup")!;
+        var group = Mo2SelectionGroup.Adopt(nativeGroup, out var groupDeselect,
+            () => native.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
+        if (nativeGroup.Parent is Panel groupOwner) {
+            var at = groupOwner.Children.IndexOf(nativeGroup);
+            groupOwner.Children.Insert(Math.Max(0, at), group);
+        } else if (nativeGroup.Parent is ItemsControl groupHost) {
+            var at = groupHost.Items.IndexOf(nativeGroup);
+            groupHost.Items.Insert(Math.Max(0, at), group);
+        }
         var separator = new MenuItem { Name = "CreateSeparatorMenuItem", Header = "Add separator…" };
         separator.Click += async (_,_) => {
             if (ViewModel is { LiveProfile: { } profile } model)
@@ -178,12 +189,11 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         ToolTip.SetTip(overflow, "Mod actions");
         Avalonia.Automation.AutomationProperties.SetName(overflow, "Mod actions");
         var toolbar = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.GetLogicalAncestors().OfType<Toolbar>().First();
-        toolbar.ItemsPanel = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal });
-        var primary = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
-        primary.Children.Add(Mo2ModRow.IconButton("mdi-plus-circle-outline", "Add mod from archive…", () => install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent))));
-        primary.Children.Add(overflow);
-        foreach (var button in primary.Children.OfType<Button>()) button.Width = button.Height = 24;
-        var primaryGroup = new Border { Name = "ModPrimaryActions", Background = Avalonia.Media.Brush.Parse("#29292E"), CornerRadius = new CornerRadius(8), Padding = new Thickness(0), Margin = new Thickness(0,0,8,0), Child = primary };
+        Mo2ListToolbar.Wrap(toolbar);
+        var primaryGroup = Mo2ListToolbar.Pill("ModPrimaryActions",
+            Mo2ModRow.IconButton("mdi-plus-circle-outline", "Add mod from archive…",
+                () => install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent))),
+            overflow);
         toolbar.Items.Insert(0, primaryGroup);
         // The native view already grows a selection group once rows are selected: a
         // deselect action labelled with the count, then the actions that make sense in
@@ -242,17 +252,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         table.Margin = new Thickness(0);
         list.Children.Add(columns); table.ShowColumnHeaders = false; Grid.SetRow(table, 1);
         Mo2TableRow.InstallRowStyles(table);
-        var scroll = new Mo2ListScrollBar { Name = "ModsRailScrollBar", Width = 16, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
-        var rail = new Grid { RowDefinitions = new RowDefinitions("*,24,28"), Margin = new Thickness(0,16,0,8) };
-        rail.Children.Add(scroll);
-        var down = new UnifiedIcon { Value = IconValues.ArrowDownThick, Size = 20, Opacity = .3, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
-        Grid.SetRow(down, 1); rail.Children.Add(down);
-        var winner = new UnifiedIcon { Value = IconValues.TrophyOutline, Size = 20, Opacity = .5, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
-        ToolTip.SetTip(winner, "Mods lower in the list win file conflicts.");
-        Grid.SetRow(winner, 2); rail.Children.Add(winner);
+        var rail = Mo2ListRail.Create("ModsRailScrollBar", out var scroll);
         Grid.SetColumn(rail, 1); Grid.SetRow(rail, 1); list.Children.Add(table); list.Children.Add(rail);
         listContainer.Content = list;
-        Mo2ListScrollBar.Connect(scroll, table);
+        Mo2ListRail.Connect(scroll, table);
         table.AutoDragDropRows = true;
         table.CanUserSortColumns = false;
         table.RowDragStarted += (sender, args) => ViewModel?.Adapter.OnRowDragStarted(sender, args);
@@ -270,11 +273,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             this.Bind(ViewModel, vm => vm.Mo2SearchExpanded, view => view.SearchPanel.IsVisible).AddTo(disposables);
             this.OneWayBind(ViewModel, vm => vm, view => view.NativeView.ViewModel).AddTo(disposables);
             Mo2SearchQuery.Attach(native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!, ViewModel!.LiveProfile!, plugins: false).AddTo(disposables);
-            void Highlight() => Mo2RowHighlights.Apply(table, ViewModel!.LiveProfile!, plugins: false);
-            EventHandler layout = (_,_) => Highlight();
-            native.LayoutUpdated += layout;
-            ViewModel!.LiveProfile!.HighlightsChanged += Highlight;
-            System.Reactive.Disposables.Disposable.Create(() => { native.LayoutUpdated -= layout; ViewModel!.LiveProfile!.HighlightsChanged -= Highlight; }).AddTo(disposables);
+            Mo2RowHighlights.Attach(native, table, ViewModel!.LiveProfile!, plugins: false).AddTo(disposables);
             void RefreshMods() {
                 var model = ViewModel!;
                 ((Mo2ModsAdapter)model.Adapter).RefreshFilter();
@@ -300,6 +299,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             SubTabs.SelectedIndex = 0;
             void UpdateSelection() {
                     var count = ViewModel.Adapter.SelectedModels.Count;
+                    Mo2SelectionGroup.Update(group, groupDeselect, count);
                     ViewModel.LiveProfile!.HighlightMods(ViewModel.Adapter.SelectedModels.Select(x => x.Key));
                     var selected = ViewModel.Adapter.SelectedModels.Select(x => x.Key).ToHashSet();
                     var mods = ViewModel.LiveProfile!.Mods.Where(x => selected.Contains(x.Id)).ToArray();

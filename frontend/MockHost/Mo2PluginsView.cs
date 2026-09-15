@@ -40,8 +40,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var detailScroll = new ScrollViewer { Content = detailsPanel, MaxHeight = 150, IsVisible = false };
         DockPanel.SetDock(detailScroll, Dock.Bottom); layout.Children.Add(detailScroll);
         DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
-        var toolbar = new Toolbar { Name = "PluginsToolbar", Margin = new Thickness(0,8,0,0) };
-        toolbar.ItemsPanel = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal });
+        var toolbar = Mo2ListToolbar.Create("PluginsToolbar");
         // An icon like every other header action. As a labelled button it was the one
         // control wide enough to cost this page its title: the actions could not fit
         // beside it, so the header gave way at ordinary panel widths.
@@ -51,17 +50,15 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         ToolTip.SetTip(sort, "Sort plugins using MO2’s original LOOT workflow");
         ToolTip.SetShowOnDisabled(sort, true);
 
-        var primary = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
-        primary.Children.Add(sort);
+        var primaryActions = new List<Control> { sort };
         var history = Mo2ModRow.IconButton("mdi-dots-vertical", "Plugin actions", () => { });
         history.Name = "PluginsOverflowButton";
         var historyMenu = new MenuFlyout();
         historyMenu.Items.Add(Mo2EntryMenu.Action("Refresh plugins", () => ViewModel?.LiveProfile?.Refresh() ?? Task.CompletedTask));
         historyMenu.Items.Add(new Separator());
         Mo2OrderHistoryMenu.Add(historyMenu, () => ViewModel?.LiveProfile, "plugins");
-        history.Flyout = historyMenu; primary.Children.Add(history);
-        foreach (var button in primary.Children.OfType<Button>()) { button.Height = 24; button.MinHeight = 0; if (button != sort) button.Width = 24; }
-        toolbar.Items.Add(new Border { Background = Avalonia.Media.Brush.Parse("#29292E"), CornerRadius = new CornerRadius(8), Padding = new Thickness(0), Margin = new Thickness(0,0,8,0), Child = primary });
+        history.Flyout = historyMenu; primaryActions.Add(history);
+        toolbar.Items.Add(Mo2ListToolbar.Pill("PluginPrimaryActions", primaryActions.ToArray()));
         var search = _search;
         toolbar.Items.Add(search);
         TreeDataGrid? editorTable = null;
@@ -114,47 +111,17 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // started at the same place and ended in different ones.
         pluginRail.Width = Mo2TableRow.RailWidth;
         headings.LayoutUpdated += (_, _) => Mo2PluginRow.Fit(headings, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
-        // Keep NMA's help and winner indicator visible beside the plugin list,
-        // including when the list is short enough not to need a scrollbar.
+        // The same rail My Mods draws, in place of the load-order view's own trophy
+        // bar. Its scrolling is followed by the shared connection rather than a copy
+        // of it kept here, which is how this page ended up keeping the table's native
+        // scrollbar beside the rail.
         editor.FindControl<Control>("TrophyBarColumnGrid")!.IsVisible = true;
-        var rail = editor.FindControl<Grid>("TrophyBarGrid")!;
-        editor.FindControl<Control>("TrophyGradientBorder")!.IsVisible = false;
-        var pluginScroll = new Mo2ListScrollBar {
-            Name = "PluginRailScrollBar", Orientation = Avalonia.Layout.Orientation.Vertical,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Width = 16,
-            SmallChange = 40
-        };
-        Grid.SetRow(pluginScroll, 1); rail.Children.Add(pluginScroll);
-        ScrollViewer? pluginViewer = null;
-        var syncingScroll = false;
-        void SyncScroll() {
-            if (pluginViewer is null) return;
-            syncingScroll = true;
-            pluginScroll.Maximum = Math.Max(0, pluginViewer.Extent.Height - pluginViewer.Viewport.Height);
-            pluginScroll.ViewportSize = pluginViewer.Viewport.Height;
-            pluginScroll.LargeChange = pluginViewer.Viewport.Height;
-            pluginScroll.Value = pluginViewer.Offset.Y;
-            pluginScroll.IsEnabled = pluginScroll.Maximum > 0;
-            syncingScroll = false;
-        }
-        void ViewerScrolled(object? sender, ScrollChangedEventArgs args) => SyncScroll();
-        pluginScroll.PropertyChanged += (_, args) => {
-            if (!syncingScroll && args.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty && pluginViewer is not null)
-                pluginViewer.Offset = new Vector(pluginViewer.Offset.X, pluginScroll.Value);
-        };
+        editor.FindControl<Control>("TrophyBarDockPanel")!.IsVisible = false;
+        var pluginRailGrid = Mo2ListRail.Create("PluginRailScrollBar", out var pluginScroll);
+        Grid.SetRow(pluginRailGrid, 1);
+        editor.FindControl<Grid>("TrophyBarColumnGrid")!.Children.Add(pluginRailGrid);
+        Mo2ListRail.Connect(pluginScroll, tableControl);
         LayoutUpdated += (_, _) => {
-            var viewer = pluginViewer?.GetVisualRoot() is not null ? pluginViewer :
-                editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid")!.GetVisualDescendants().OfType<ScrollViewer>()
-                    .FirstOrDefault(candidate => candidate.GetVisualDescendants().Any(control => control.GetType().Name == "TreeDataGridRowsPresenter"));
-            if (viewer != pluginViewer) {
-                if (pluginViewer is not null) pluginViewer.ScrollChanged -= ViewerScrolled;
-                pluginViewer = viewer;
-                if (viewer is not null) {
-                    viewer.VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden;
-                    viewer.ScrollChanged += ViewerScrolled;
-                }
-            }
-            SyncScroll();
             // The toolbar now sits inside the header line, so subtracting both double
             // counted it and starved the list down to a couple of rows. Measure the
             // whole header stack once instead.
@@ -202,10 +169,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             search.AttachKeyboardHandlers(this, disposables);
             System.Reactive.Disposables.Disposable.Create(() => search.Adapter = null).DisposeWith(disposables);
             Mo2SearchQuery.Attach(search, profile, plugins: true).DisposeWith(disposables);
-            void Highlight() => Mo2RowHighlights.Apply(tableControl,profile,plugins:true);
-            EventHandler layout = (_,_) => Highlight(); editor.LayoutUpdated += layout;
-            profile.HighlightsChanged += Highlight;
-            System.Reactive.Disposables.Disposable.Create(() => { editor.LayoutUpdated -= layout; profile.HighlightsChanged -= Highlight; }).DisposeWith(disposables);
+            Mo2RowHighlights.Attach(editor, tableControl, profile, plugins: true).DisposeWith(disposables);
             void UpdateSelection() {
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
                 Mo2SelectionGroup.Update(selectionGroup, deselectPlugins, ViewModel.Adapter.SelectedModels.Count);

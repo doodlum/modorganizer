@@ -44,14 +44,20 @@ internal static class Mo2ModSelectionCheck
         for (var attempt = 0; attempt < 80 && view.ViewModel?.Adapter.Source.Value.Items.Count() is null or 0; attempt++)
             await Task.Delay(100);
 
-        // The native view's own selection group, not a second one beside it. A group
-        // of our own meant two deselect buttons and the count twice over.
-        var group = view.NativeView.FindControl<ItemsControl>("ContextControlGroup")
+        // The group that is actually on the toolbar, found the way anything else would
+        // find it. Looking it up through the native view's name scope returns the one
+        // the original markup declared, which is now emptied into the shared group and
+        // never shown — so this read as passing while checking a control nobody sees.
+        var group = view.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "ContextControlGroup")
             ?? throw new Exception("No selection group in the Mods toolbar");
         var deselect = view.NativeView.FindControl<NexusMods.App.UI.Controls.StandardButton>("DeselectItemsButton")
             ?? throw new Exception("Selection group has no deselect action");
+        if (!ReferenceEquals(deselect.Parent, group))
+            throw new Exception("The deselect action is not in the group that is shown");
         if (view.GetVisualDescendants().OfType<Border>().Any(x => x.Name == "ModSelectionGroup"))
             throw new Exception("A second selection group is still on the toolbar");
+        if (view.GetVisualDescendants().OfType<Control>().Count(x => x.Name == "ContextControlGroup") != 1)
+            throw new Exception("More than one selection group is on the page");
         if (view.ViewModel!.Adapter.Source.Value.Selection is not TreeDataGridRowSelectionModel<NexusMods.App.UI.Controls.CompositeItemModel<EntityId>> selection)
             throw new Exception("Mods table has no row selection model");
 
