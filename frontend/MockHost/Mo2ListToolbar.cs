@@ -3,7 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.LogicalTree;
 using NexusMods.App.UI.Controls;
+using NexusMods.UI.Sdk.Icons;
 
 namespace Mo2.Frontend;
 
@@ -29,6 +31,11 @@ internal static class Mo2ListToolbar
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         foreach (var action in actions) {
             if (action is Button button) { button.Width = button.Height = PillActionSize; button.MinHeight = 0; }
+            // The glyph too, not only the button around it: one of these pages built
+            // its overflow by hand and got the icon's default size, so the same dots
+            // were drawn at 24 on one list and 16 on the other.
+            foreach (var glyph in action.GetSelfAndLogicalDescendants().OfType<UnifiedIcon>())
+                glyph.Size = Mo2TableRow.GlyphSize;
             row.Children.Add(action);
         }
         return new Border {
@@ -49,4 +56,18 @@ internal static class Mo2ListToolbar
     // An existing toolbar — the original app's, on My Mods — laid out the same way.
     internal static void Wrap(Toolbar toolbar) =>
         toolbar.ItemsPanel = new FuncTemplate<Panel?>(() => new WrapPanel { Orientation = Orientation.Horizontal });
+
+    // The search control sits in the toolbar itself. The original markup puts it
+    // inside a padded items control of its own, which made that page's search button
+    // 32px tall against the other list's 24 — the same control, in a box only one of
+    // them had. Taking it out is what makes both toolbars one row of one height.
+    internal static void AddSearch(Toolbar toolbar, Control search)
+    {
+        if (search.Parent is ItemsControl wrapper && !ReferenceEquals(wrapper, toolbar)) {
+            wrapper.Items.Remove(search);
+            var at = toolbar.Items.IndexOf(wrapper);
+            if (at >= 0) { toolbar.Items.RemoveAt(at); toolbar.Items.Insert(at, search); return; }
+        } else if (search.Parent is Panel owner) owner.Children.Remove(search);
+        if (!toolbar.Items.Contains(search)) toolbar.Items.Add(search);
+    }
 }

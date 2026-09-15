@@ -37,6 +37,8 @@ internal static class Mo2SelectionParityCheck
         }
         if (mods is null || plugins is null)
             throw new Exception($"Could not find both tables (mods={mods is not null}, plugins={plugins is not null})");
+        // Other checks drive these same two tables from the same window opening.
+        using var turn = await Mo2CheckTurn.Take();
 
         var behaviours = new List<Behaviour>();
         foreach (var (name, page) in new[] { ("My Mods", mods), ("Plugins", plugins) }) {
@@ -103,6 +105,39 @@ internal static class Mo2SelectionParityCheck
             Same("a selected row is painted", x => x.SelectedRow);
             Same("a row under the pointer is painted", x => x.HoveredRow);
         }
+
+        // What a selected row actually looks like, rather than what style was declared
+        // for it. The plugin rows are wrapped in a border of the original view's own,
+        // which paints over whatever the row beneath it is painted, so the same
+        // :selected style can produce a filled bar on one list and an outline on the
+        // other.
+        (string Row, string Inner, string Edge) Painted(TreeDataGrid table)
+        {
+            var row = table.GetVisualDescendants().OfType<TreeDataGridRow>()
+                .FirstOrDefault(x => x.IsSelected && x.Bounds.Height > 0)
+                ?? table.GetVisualDescendants().OfType<TreeDataGridRow>().FirstOrDefault(x => x.Bounds.Height > 0);
+            if (row is null) return ("-", "-", "-");
+            var inner = row.GetVisualDescendants().OfType<Border>().FirstOrDefault(x => x.Name == "RowBorder");
+            return ((row.Background as ISolidColorBrush)?.Color.ToString() ?? "none",
+                inner is null ? "no inner border" : (inner.Background as ISolidColorBrush)?.Color.ToString() ?? "none",
+                $"{row.BorderThickness.Top:F0}/{(inner?.BorderThickness.Top ?? 0):F0}");
+        }
+
+        var modsTableEarly = mods.GetVisualDescendants().OfType<TreeDataGrid>().First(x => x.RowSelection is not null);
+        var pluginsTableEarly = plugins.GetVisualDescendants().OfType<TreeDataGrid>().First(x => x.RowSelection is not null);
+        modsTableEarly.RowSelection!.Clear(); pluginsTableEarly.RowSelection!.Clear();
+        modsTableEarly.RowSelection.Select(new IndexPath(0));
+        pluginsTableEarly.RowSelection.Select(new IndexPath(0));
+        await Task.Delay(700);
+        window.UpdateLayout();
+        var modsPaint = Painted(modsTableEarly);
+        var pluginsPaint = Painted(pluginsTableEarly);
+        if (modsPaint.Row != pluginsPaint.Row)
+            faults.Add($"a selected row is filled {modsPaint.Row} on My Mods and {pluginsPaint.Row} on Plugins");
+        if (modsPaint.Edge != pluginsPaint.Edge)
+            faults.Add($"a selected row is outlined {modsPaint.Edge} on My Mods and {pluginsPaint.Edge} on Plugins");
+        modsTableEarly.RowSelection.Clear(); pluginsTableEarly.RowSelection.Clear();
+        await Task.Delay(300);
 
         // And the other half of it: selecting in one table marks what goes with it in
         // the other. Selecting mods has always marked the plugins they install;
@@ -172,12 +207,71 @@ internal static class Mo2SelectionParityCheck
                 $"(the profile linked {byPlugins.Linked} mods; the mods table has " +
                 $"{modsTable.GetVisualDescendants().OfType<TreeDataGridRow>().Count()} rows drawn)");
 
+        // What a click does, which is how a selection is actually made. Everything
+        // above drives the selection model directly and would pass even if pressing a
+        // row did nothing at all on one of the two pages.
+        int ClickRow(TreeDataGrid table, int index)
+        {
+            table.RowSelection!.Clear();
+            var row = table.GetVisualDescendants().OfType<TreeDataGridRow>()
+                .Where(x => x.Bounds.Height > 0 && x.TranslatePoint(default, window) is not null)
+                .OrderBy(x => x.TranslatePoint(default, window)!.Value.Y).Skip(index).FirstOrDefault();
+            if (row is null) return -1;
+            // On the row's name, away from the toggle and the actions at either end.
+            var target = row.GetVisualDescendants().OfType<TextBlock>()
+                .FirstOrDefault(x => x.Text is { Length: > 2 }) as Control ?? row;
+            var pointer = new Avalonia.Input.Pointer(0, Avalonia.Input.PointerType.Mouse, true);
+            var at = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window) ?? default;
+            var pressed = new Avalonia.Input.PointerPointProperties(
+                Avalonia.Input.RawInputModifiers.LeftMouseButton, Avalonia.Input.PointerUpdateKind.LeftButtonPressed);
+            target.RaiseEvent(new Avalonia.Input.PointerPressedEventArgs(target, pointer, window, at, 0, pressed, Avalonia.Input.KeyModifiers.None));
+            target.RaiseEvent(new Avalonia.Input.PointerReleasedEventArgs(target, pointer, window, at, 0,
+                new Avalonia.Input.PointerPointProperties(Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PointerUpdateKind.LeftButtonReleased),
+                Avalonia.Input.KeyModifiers.None, Avalonia.Input.MouseButton.Left));
+            return table.RowSelection.SelectedIndexes.Count;
+        }
+
+        var clicked = (Mods: ClickRow(modsTable, 1), Plugins: 0);
+        await Task.Delay(400);
+        clicked = (clicked.Mods, ClickRow(pluginsTable, 1));
+        await Task.Delay(400);
+        if (clicked.Mods != clicked.Plugins)
+            faults.Add($"clicking a row selects {clicked.Mods} on My Mods and {clicked.Plugins} on Plugins");
+        else if (clicked.Mods != 1)
+            faults.Add($"clicking a row selected {clicked.Mods} rows on both pages");
+        modsTable.RowSelection!.Clear(); pluginsTable.RowSelection!.Clear();
+        await Task.Delay(300);
+
+        // A selection has to survive MO2 telling the frontend something changed.
+        // Plugins keeps its selection across an activation update by name; if Mods
+        // drops its own on the same refresh, working in the two lists feels different
+        // in the way that matters most — the work you had selected disappears.
+        modsTable.RowSelection!.Clear(); pluginsTable.RowSelection!.Clear();
+        await Task.Delay(300);
+        modsTable.RowSelection.Select(new IndexPath(0));
+        modsTable.RowSelection.Select(new IndexPath(1));
+        pluginsTable.RowSelection.Select(new IndexPath(0));
+        pluginsTable.RowSelection.Select(new IndexPath(1));
+        await Task.Delay(600);
+        var before = (Mods: modsTable.RowSelection.SelectedIndexes.Count, Plugins: pluginsTable.RowSelection.SelectedIndexes.Count);
+        await live.Profile.Refresh();
+        await Task.Delay(1500);
+        window.UpdateLayout();
+        var after = (Mods: modsTable.RowSelection.SelectedIndexes.Count, Plugins: pluginsTable.RowSelection.SelectedIndexes.Count);
+        if (before.Mods != before.Plugins)
+            faults.Add($"could not select the same number of rows to begin with: {before.Mods} and {before.Plugins}");
+        else if (after.Mods != after.Plugins)
+            faults.Add($"after a refresh My Mods holds {after.Mods} of {before.Mods} selected rows and Plugins {after.Plugins}");
+        modsTable.RowSelection.Clear(); pluginsTable.RowSelection.Clear();
+        await Task.Delay(300);
+
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
         Console.WriteLine($"PASS selection parity: both tables take {(first.MultiSelect ? "many rows" : "one row")} at a time, " +
             $"report \"{first.CountText}\" when three are picked, hide that group again with nothing selected, clear from the " +
             $"page's own deselect action, and paint a selected row {first.SelectedRow} with {first.HoveredRow} under the " +
             $"pointer; selecting a mod marks {pluginsMarkedByMods} of its plugins and selecting a plugin marks " +
-            $"{modsMarkedByPlugins} of the mods that install it");
+            $"{modsMarkedByPlugins} of the mods that install it; a refresh leaves {after.Mods} of {before.Mods} rows " +
+            $"selected in both, and a click on a row selects exactly it on either page");
     }
 
     // How many rows a table is currently painting as linked to the other table's

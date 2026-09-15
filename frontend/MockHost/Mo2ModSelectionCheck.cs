@@ -41,6 +41,8 @@ internal static class Mo2ModSelectionCheck
                 ?? window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault();
         }
         if (view is null) throw new Exception("Mods page did not open");
+        // Other checks drive this same table from the same window opening.
+        using var turn = await Mo2CheckTurn.Take();
         for (var attempt = 0; attempt < 80 && view.ViewModel?.Adapter.Source.Value.Items.Count() is null or 0; attempt++)
             await Task.Delay(100);
 

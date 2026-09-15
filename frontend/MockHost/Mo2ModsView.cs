@@ -195,6 +195,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         Avalonia.Automation.AutomationProperties.SetName(overflow, "Mod actions");
         var toolbar = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.GetLogicalAncestors().OfType<Toolbar>().First();
         Mo2ListToolbar.Wrap(toolbar);
+        Mo2ListToolbar.AddSearch(toolbar, native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!);
         var primaryGroup = Mo2ListToolbar.Pill("ModPrimaryActions",
             Mo2ModRow.IconButton("mdi-plus-circle-outline", "Add mod from archive…",
                 () => install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent))),

@@ -60,7 +60,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         history.Flyout = historyMenu; primaryActions.Add(history);
         toolbar.Items.Add(Mo2ListToolbar.Pill("PluginPrimaryActions", primaryActions.ToArray()));
         var search = _search;
-        toolbar.Items.Add(search);
+        Mo2ListToolbar.AddSearch(toolbar, search);
         TreeDataGrid? editorTable = null;
         // The same selection group My Mods gets from the original app's toolbar:
         // how many rows are selected, a way to clear them, and the actions that

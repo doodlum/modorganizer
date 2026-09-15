@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
 using NexusMods.App.UI.Controls;
+using NexusMods.UI.Sdk.Icons;
 
 namespace Mo2.Frontend;
 
@@ -33,7 +34,17 @@ internal static class Mo2SharedListCheck
             plugins ??= Page<Mo2PluginsView>();
         }
         if (mods is null || plugins is null) throw new Exception("Could not find both pages");
+        // Other checks drive these same two tables from the same window opening.
+        using var turn = await Mo2CheckTurn.Take();
         await Task.Delay(1500);
+
+        // From no selection: the group on the header line is meant to grow when rows
+        // are selected, so comparing the two toolbars while one page happens to have
+        // a selection compares the selection, not the toolbar.
+        foreach (var page in new[] { mods, plugins })
+            foreach (var table in page.GetVisualDescendants().OfType<TreeDataGrid>())
+                table.RowSelection?.Clear();
+        await Task.Delay(500);
 
         var faults = new List<string>();
         var described = new List<string>();
@@ -91,6 +102,46 @@ internal static class Mo2SharedListCheck
         if (shapes[0].Item2 != shapes[1].Item2)
             faults.Add($"the toolbars hold different things: My Mods \"{shapes[0].Item2}\", Plugins \"{shapes[1].Item2}\"");
         described.Add($"both toolbars read \"{shapes[0].Item2}\"");
+
+        // The controls inside the toolbar, to the pixel and the glyph. Both pages
+        // reach for "an icon button" and got different ones: the overflow dots were
+        // drawn from different icons at different sizes, and the search control's own
+        // button came out a different size again.
+        (double W, double H, double Icon, string Glyph) Shape2(Control? button)
+        {
+            if (button is null) return (-1, -1, -1, "-");
+            var glyph = button.GetSelfAndVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>().FirstOrDefault();
+            return (button.Bounds.Width, button.Bounds.Height, glyph?.Size ?? -1,
+                glyph?.Value?.Value.Value is ProjektankerIcon { Value: { } icon } ? icon : glyph?.Value?.ToString() ?? "-");
+        }
+        Control? Overflow(Control page) => page.GetVisualDescendants().OfType<Control>()
+            .FirstOrDefault(x => x.Name is "ModsOverflowButton" or "PluginsOverflowButton");
+        Control? SearchToggle(Control page) => page.GetVisualDescendants()
+            .OfType<NexusMods.App.UI.Controls.Search.SearchControl>().FirstOrDefault()
+            ?.GetVisualDescendants().OfType<Button>().FirstOrDefault();
+
+        var overflows = new[] { ("My Mods", Shape2(Overflow(mods))), ("Plugins", Shape2(Overflow(plugins))) };
+        if (overflows[0].Item2 != overflows[1].Item2)
+            faults.Add($"the overflow buttons differ: My Mods {overflows[0].Item2}, Plugins {overflows[1].Item2}");
+        var searches = new[] { ("My Mods", Shape2(SearchToggle(mods))), ("Plugins", Shape2(SearchToggle(plugins))) };
+        if (searches[0].Item2 != searches[1].Item2)
+            faults.Add($"the search buttons differ: My Mods {searches[0].Item2}, Plugins {searches[1].Item2}");
+        described.Add($"overflow {overflows[0].Item2}, search {searches[0].Item2}");
+
+        // Sizes, not just names: the same control can be put on the line in a box only
+        // one page has. My Mods' search sat inside the original markup's padded items
+        // control, so the same search button was 32px tall there and 24 on Plugins.
+        string Sizes(Control page) => string.Join(" ", page.GetVisualDescendants().OfType<Toolbar>()
+            .SelectMany(toolbar => toolbar.Items.OfType<Control>())
+            .Select(item => $"{item.Bounds.Width:F0}x{item.Bounds.Height:F0}"));
+        var sizes = new[] { ("My Mods", Sizes(mods)), ("Plugins", Sizes(plugins)) };
+        if (sizes[0].Item2 != sizes[1].Item2)
+            faults.Add($"the toolbars lay out differently: My Mods {sizes[0].Item2}, Plugins {sizes[1].Item2}");
+        var heights = new[] { mods, plugins }.Select(page => page.GetVisualDescendants().OfType<Toolbar>()
+            .FirstOrDefault()?.Bounds.Height ?? -1).ToArray();
+        if (Math.Abs(heights[0] - heights[1]) > 1.5)
+            faults.Add($"the toolbars are {heights[0]:F0}px and {heights[1]:F0}px tall");
+        described.Add($"both toolbars {heights[0]:F0}px tall holding {sizes[0].Item2}");
 
         // The same rail, to the pixel: both pages reserve the same width for it and
         // give it the same room above and below.

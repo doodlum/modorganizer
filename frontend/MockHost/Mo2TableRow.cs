@@ -68,10 +68,15 @@ internal static class Mo2TableRow
     // drift apart. Panel chrome sizes its non-button controls to match.
     internal const double ActionSize = 28;
 
+    // The glyph inside an action, whatever draws the action. A button built by hand
+    // with a UnifiedIcon and no size gets the icon's own default of 24, which is how
+    // the same set of dots came out two different sizes on the two lists' toolbars.
+    internal const double GlyphSize = 16;
+
     internal static Button IconButton(string icon, string tip, Action click)
     {
         var button = new Button { Width = ActionSize, Height = ActionSize, Padding = new Thickness(4), Background = Brushes.Transparent,
-            Content = new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = 16 } };
+            Content = new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = GlyphSize } };
         ToolTip.SetTip(button, tip);
         Avalonia.Automation.AutomationProperties.SetName(button, tip);
         button.Click += (_, e) => { e.Handled = true; click(); };

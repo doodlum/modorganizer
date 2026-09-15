@@ -63,8 +63,11 @@ internal static class Mo2RowHighlights
                 // from, and the mod a selected plugin was installed by.
                 brush = profile.IsDataSourceHighlighted(name) || profile.LinkedMods.Contains(name) ? Linked : profile.WinningMods.Contains(name) ? OverwritesSelection : profile.LosingMods.Contains(name) ? OverwrittenBySelection : name.EndsWith("_separator",StringComparison.OrdinalIgnoreCase) ? Separator : null;
             }
-            if (brush is null && !plugins) row.Background = Brushes.Transparent;
-            else if (brush is null) row.ClearValue(TemplatedControl.BackgroundProperty);
+            // Cleared, not painted transparent. A local value beats a style, so writing
+            // Transparent here left the mod rows unable to show the selected and
+            // hovered fills the shared row styles give them — selecting a mod barely
+            // marked it while selecting a plugin filled the row.
+            if (brush is null) row.ClearValue(TemplatedControl.BackgroundProperty);
             else if (!ReferenceEquals(row.Background,brush)) row.Background = brush;
             if (plugins) {
                 foreach (var border in visuals.OfType<Border>()) {
