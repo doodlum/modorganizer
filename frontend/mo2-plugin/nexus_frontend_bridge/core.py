@@ -56,6 +56,9 @@ class Bridge:
             'sortPluginsUnavailableReason': getattr(self.mod_actions, 'sort_unavailable_reason', lambda: 'Plugin sorting is unavailable in this MO2 host.')(),
             'selectedExecutable': self.executables.selector().currentText() if self.executables is not None else '',
             'executables': self.executables.snapshot() if self.executables is not None else [],
+            # The ones MO2 keeps on its own toolbar, which is the same pinning the
+            # frontend draws beside its Run button and had been keeping separately.
+            'pinnedExecutables': self.executables.pinned() if self.executables is not None else [],
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
             'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],

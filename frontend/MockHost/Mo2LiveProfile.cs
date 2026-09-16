@@ -132,6 +132,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public IReadOnlyList<Mo2Tool> Tools { get; private set; } = [];
     public string SelectedExecutable { get; private set; } = "";
     public IReadOnlyList<string> Executables { get; private set; } = [];
+    // The ones MO2 is showing on its own toolbar. The frontend drew a row of pinned
+    // shortcuts beside its Run button out of a file of its own, so the same idea was
+    // kept in two places: an executable pinned in MO2 did not appear here, and one
+    // pinned here was unknown to MO2. MO2's toolbar is the answer for executables;
+    // the tool plugins beside them are the frontend's own, since MO2 pins no tool.
+    public IReadOnlyList<string> PinnedExecutables { get; private set; } = [];
     public string ProfilePath { get; private set; } = "";
     public string Status { get; private set; } = "Connecting to MO2…";
     public event Action? Changed;
@@ -180,6 +186,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         ExecutableIcons = snapshot.TryGetProperty("executableIcons", out var icons) ? icons.EnumerateObject().ToDictionary(x => x.Name,x => x.Value.GetString() ?? "") : new Dictionary<string,string>();
         SelectedExecutable = snapshot.TryGetProperty("selectedExecutable", out var selectedExecutable) ? selectedExecutable.GetString() ?? "" : "";
         Executables = snapshot.TryGetProperty("executables", out var executables) ? executables.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
+        PinnedExecutables = snapshot.TryGetProperty("pinnedExecutables", out var pinned)
+            ? pinned.EnumerateArray().Select(x => x.GetString()!).ToArray() : [];
         LogsDirectory = snapshot.GetProperty("instance").TryGetProperty("logsPath", out var logs) && logs.GetString() is { } logsPath ? Mo2InstanceCatalog.LocalPath(logsPath) : null;
         DownloadsDirectory = snapshot.GetProperty("instance").TryGetProperty("downloadsPath", out var downloadsPath) && downloadsPath.GetString() is { } downloadFolder ? Mo2InstanceCatalog.LocalPath(downloadFolder) : null;
         OriginalUiVisible = snapshot.GetProperty("instance").TryGetProperty("uiVisible", out var visible) && visible.ValueKind is JsonValueKind.True or JsonValueKind.False ? visible.GetBoolean() : null;

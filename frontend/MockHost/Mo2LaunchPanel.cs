@@ -115,8 +115,19 @@ internal sealed class Mo2LaunchPanel : Border
         string pinsKey = "";
         void RefreshPins() {
             string[] saved;
-            try { saved = Mo2ToolPins.Read().Where(x => x.StartsWith(profile.Endpoint + "|",StringComparison.Ordinal)).ToArray(); }
-            catch { saved = []; }
+            // MO2's own toolbar first, then whatever tool plugins were pinned here.
+            // The executables were kept in this file too, so an executable MO2 was
+            // showing on its toolbar did not appear beside Run and one pinned here
+            // was unknown to MO2 — the same idea held in two places, disagreeing.
+            // MO2 is the answer for executables now; it pins no tool plugin, so
+            // those stay the frontend's own.
+            var fromMo2 = profile.PinnedExecutables.Select(x => profile.Endpoint + "|exe:" + x).ToArray();
+            try {
+                saved = fromMo2.Concat(Mo2ToolPins.Read()
+                    .Where(x => x.StartsWith(profile.Endpoint + "|",StringComparison.Ordinal))
+                    .Where(x => !x.StartsWith(profile.Endpoint + "|exe:", StringComparison.Ordinal))).ToArray();
+            }
+            catch { saved = fromMo2; }
             var key = string.Join("|", saved) + profile.Endpoint + string.Join("|",profile.ExecutableIcons.Values) + string.Join("|",profile.Tools.Select(x => x.Icon));
             if (key != pinsKey) {
                 pinsKey = key; pins.Children.Clear();

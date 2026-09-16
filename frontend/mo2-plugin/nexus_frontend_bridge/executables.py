@@ -33,6 +33,21 @@ class Executables:
         selector = self.selector()
         return [selector.itemText(index) for index in range(1, selector.count())]
 
+    def pinned(self):
+        """The executables MO2 is showing on its own toolbar.
+
+        MainWindow::updatePinnedExecutables puts one action per shown executable on
+        the toolbar and names it custom__<title>, so MO2's toolbar is read rather
+        than its settings file: what is on it is what MO2 decided to put there, and
+        it moves as soon as MO2 is told to move it.
+        """
+        from PyQt6.QtWidgets import QToolBar
+        toolbar = self.window.findChild(QToolBar, 'toolBar')
+        if toolbar is None:
+            return []
+        return [action.text() for action in toolbar.actions()
+                if (action.objectName() or '').startswith('custom__')]
+
     def icons(self):
         from .icons import icon_png
         selector = self.selector()

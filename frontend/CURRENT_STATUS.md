@@ -2775,3 +2775,44 @@ All twenty-three, on all six tabs. The source was then restored byte for byte fr
 the copy taken before the revert, rebuilt, and the check passes again. An assertion
 that has never been seen to fail is not evidence that the thing it asserts is true,
 and this one had only ever been seen to pass.
+
+## One pin list instead of two
+
+The row of shortcuts beside Run was drawn out of a file of the frontend's own, and
+MO2 keeps that list itself — the executables it shows on its toolbar and in its Run
+menu (`MainWindow::updatePinnedExecutables`). The same idea was held in two places
+and could disagree: an executable pinned in MO2 did not appear beside Run, and one
+pinned here was unknown to MO2.
+
+MO2's toolbar is the answer for executables now. The snapshot reports
+`pinnedExecutables`, read off MO2's own toolbar — the actions it names `custom__…`
+— rather than out of its settings file, so it is what MO2 actually decided to show
+and it moves as soon as MO2 is told to move it. Pinning an executable, from this row
+or from the Tools page, goes through MO2's own **Toolbar and Menu**. Tool plugins
+stay in the frontend's file, because MO2 pins no tool plugin.
+
+The check reads the row against MO2's toolbar and then moves one through MO2 and
+back: on this host New Vegas went onto the row and came off again, the row came back
+to exactly what it read before, and all three `toolbar=` flags in `ModOrganizer.ini`
+are `false` as they were.
+
+## Where the goal stands
+
+| Requirement | Evidence |
+| --- | --- |
+| All pages reproduce MO2's Qt widgets | `MO2_VERIFY_QT_WIDGETS` passes; every widget named in `src/mainwindow.ui` — parsed from it, not typed out — has a counterpart |
+| As visible in the window as in MO2 | `MO2_VERIFY_PRESET_FIT` passes in MO2's own layout, every widget on all six tabs drawn whole; `MO2_VERIFY_REACHABLE_ACTIONS` and the preset check's own reachability pass, the latter shown to fail when the fix is reverted |
+| Under MO2's matching layout preset | The preset check applies it and walks all six tabs; `MO2_VERIFY_LAYOUT_PRESET` covers the preset and its Undo |
+| Separator colours work | `MO2_VERIFY_SEPARATOR_COLOR` passes — MO2 coloured the separator through its own action, read back both ways, each name legible against it |
+| All content fits | `MO2_VERIFY_HEADER_FIT` at 13 sizes, `MO2_VERIFY_PRESET_FIT` at MO2's own panel widths |
+| As dense as MO2 | `MO2_VERIFY_DENSITY`: every page within 4px of MO2's 22px line |
+| All MO2 behaviour | `MO2_VERIFY_ROW_MENUS` compares all six of MO2's own row menus both ways round; `MO2_VERIFY_WIDGET_BEHAVIOUR` drives every widget |
+| Every widget tested live | `MO2_VERIFY_WIDGET_BEHAVIOUR` — driven against the live MO2 host, never against a fixture |
+
+What each check cannot say is said in its own output: the entries with nothing on
+this host to exercise them name themselves rather than passing quietly, and the
+three MO2 dialogs that are modal — Restore, the category editor and Edit
+Executables — are reached but deliberately not opened.
+
+Still open and unchanged by this work: cold first-display latency, and the combined
+end-to-end login/download/install/gameplay run.

@@ -772,6 +772,40 @@ internal static class Mo2WidgetBehaviourCheck
             }
         } else faults.Add("there is no shortcut menu beside the executables box");
 
+        // The row of pinned shortcuts beside Run. MO2 keeps that list itself — the
+        // executables it shows on its own toolbar — and this row was drawn out of a
+        // file of the frontend's own, so the same idea was held in two places and
+        // could disagree. Read against MO2's toolbar, and moved by asking MO2.
+        if (live.LaunchPanel?.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PinnedToolShortcuts") is { } pinRow) {
+            string[] Pinned() => pinRow.GetVisualDescendants().OfType<Button>()
+                .Where(x => x.Name == "PinnedToolShortcut")
+                .Select(x => (ToolTip.GetTip(x) as string) ?? "").ToArray();
+            var mo2Pins = live.Profile.PinnedExecutables.ToArray();
+            var shown = Pinned();
+            var missing = mo2Pins.Where(x => !shown.Contains(x)).ToArray();
+            if (missing.Length > 0)
+                faults.Add($"MO2 shows {string.Join(", ", missing)} on its toolbar and this row does not");
+            else {
+                var subject = live.Profile.Executables.FirstOrDefault(x => !mo2Pins.Contains(x));
+                if (subject is null)
+                    worked.Add($"the pinned row draws MO2's {mo2Pins.Length} toolbar executable(s), and MO2 already pins them all, so none was moved");
+                else {
+                    // Pinned through MO2's own Toolbar and Menu and taken off again,
+                    // with the row read back both times.
+                    await live.Profile.ToggleShortcut(subject, "Toolbar and Menu", live.Profile.CurrentTarget);
+                    await Until(() => Pinned().Contains(subject), seconds: 30);
+                    var after = Pinned();
+                    await live.Profile.ToggleShortcut(subject, "Toolbar and Menu", live.Profile.CurrentTarget);
+                    await Until(() => !Pinned().Contains(subject), seconds: 30);
+                    var back = Pinned();
+                    if (!after.Contains(subject)) faults.Add($"pinning {subject} in MO2 did not put it on the row beside Run");
+                    else if (back.Contains(subject)) faults.Add($"{subject} was left pinned");
+                    else if (!back.SequenceEqual(shown)) faults.Add($"the pinned row was left reading {string.Join(", ", back)} rather than {string.Join(", ", shown)}");
+                    else worked.Add($"the pinned row follows MO2's toolbar: {subject} went on it and came off again with MO2's own Toolbar and Menu");
+                }
+            }
+        } else faults.Add("there is no row of pinned shortcuts beside Run");
+
         await Navigate(restore);
         await Task.Delay(600);
 

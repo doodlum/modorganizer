@@ -128,10 +128,15 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         var all = profile.Executables.Select(name => (Key: "exe:" + name, Name: name, Description: "Launch with this profile’s mods", Enabled: true, Icon: profile.ExecutableIcons.GetValueOrDefault(name) ?? "", Run: (Func<Task>)(() => profile.CurrentTarget == target ? profile.Launch(name) : Task.CompletedTask)))
             .Concat(_tools.Select(tool => (Key: "tool:" + JsonSerializer.Serialize(tool.Id), Name: tool.Name, Description: tool.Description.Length > 0 ? tool.Description : tool.Group.Length > 0 ? tool.Group : "MO2 extension tool", Enabled: tool.Enabled, Icon: tool.Icon, Run: (Func<Task>)(() => profile.RunTool(tool, target))))).ToArray();
         string PinKey(string key) => target.Endpoint + "|" + key;
+        // Whether a row counts as pinned: MO2's toolbar for an executable, this
+        // page's own file for a tool plugin, which MO2 does not pin.
+        bool Pinned(string key) => key.StartsWith("exe:", StringComparison.Ordinal)
+            ? profile.PinnedExecutables.Contains(key[4..])
+            : _pins.Contains(PinKey(key));
         var selected = "exe:" + profile.SelectedExecutable;
         var sections = new[] { "Default launcher", "Pinned tools", "Tools" };
         foreach (var section in sections) {
-            var entries = all.Where(x => section == "Default launcher" ? x.Key == selected : section == "Pinned tools" ? x.Key != selected && _pins.Contains(PinKey(x.Key)) : x.Key != selected && !_pins.Contains(PinKey(x.Key)))
+            var entries = all.Where(x => section == "Default launcher" ? x.Key == selected : section == "Pinned tools" ? x.Key != selected && Pinned(x.Key) : x.Key != selected && !Pinned(x.Key))
                 .Where(x => (x.Name + " " + x.Description).Contains(_search.Text ?? "", StringComparison.OrdinalIgnoreCase));
             if (section == "Pinned tools") entries = entries.OrderBy(x => _pins.IndexOf(PinKey(x.Key)));
             var items = entries.ToArray(); if (items.Length == 0) continue;
@@ -149,8 +154,18 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
                     ToolTip.SetTip(up, "Move pinned tool earlier"); up.Click += (_,_) => { var i = _pins.IndexOf(PinKey(entry.Key)); if (i > 0) { (_pins[i-1],_pins[i]) = (_pins[i],_pins[i-1]); SavePins(); Render(); } };
                     Grid.SetColumn(up,2); row.Children.Add(up);
                 }
-                var pin = new Button { Content = _pins.Contains(PinKey(entry.Key)) ? "Unpin" : "Pin", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1) };
-                pin.Click += (_,_) => { if (!_pins.Remove(PinKey(entry.Key))) _pins.Add(PinKey(entry.Key)); SavePins(); Render(); };
+                // Pinning an executable is MO2's own Toolbar and Menu — MO2 keeps that
+                // list, shows it on its toolbar and in its Run menu, and this page used
+                // to keep a second one beside it. A tool plugin is still pinned here,
+                // because MO2 pins no tool.
+                var executable = entry.Key.StartsWith("exe:", StringComparison.Ordinal) ? entry.Key[4..] : null;
+                var isPinned = Pinned(entry.Key);
+                var pin = new Button { Content = isPinned ? "Unpin" : "Pin", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1),
+                    IsEnabled = executable is null || profile.CanChangeOriginalUi };
+                if (executable is not null)
+                    pin.Click += async (_,_) => { await profile.ToggleShortcut(executable, "Toolbar and Menu", target); Render(); };
+                else
+                    pin.Click += (_,_) => { if (!_pins.Remove(PinKey(entry.Key))) _pins.Add(PinKey(entry.Key)); SavePins(); Render(); };
                 Grid.SetColumn(pin,3); row.Children.Add(pin);
                 var launch = new Button { Content = "▶", Name = "LaunchToolButton", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Tag = entry.Enabled, IsEnabled = entry.Enabled && profile.CanChangeOriginalUi, Margin = new Thickness(6,1,1,1) };
                 ToolTip.SetTip(launch, "Open " + entry.Name); launch.Click += async (_,_) => await entry.Run();
