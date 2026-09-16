@@ -44,9 +44,11 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
             Icon = IconValues.Package };
         header.Children.Add(title);
         var actions = new WrapPanel();
-        var add = new Button { Content = "Add MO2 instance…", Margin = new Thickness(0, 0, 8, 8) };
+        // Named for the MO2 window actions they answer for — actionChange_Game and
+        // actionAdd_Profile — so MO2_VERIFY_QT_ACTIONS can find them.
+        var add = new Button { Name = "Mo2AddInstance", Content = "Add MO2 instance…", Margin = new Thickness(0, 0, 8, 8) };
         var refresh = new Button { Content = "Refresh", Margin = new Thickness(0, 0, 8, 8) };
-        var manage = new Button { Content = "Manage current instance’s profiles…", Margin = new Thickness(0, 0, 8, 8) };
+        var manage = new Button { Name = "Mo2ManageProfiles", Content = "Manage current instance’s profiles…", Margin = new Thickness(0, 0, 8, 8) };
         var originalUi = new Button { Name = "OriginalMo2Ui", Content = "Show original MO2", Margin = new Thickness(0, 0, 8, 8) };
         // MO2's own settings and notifications had no route from the frontend at
         // all. They open the host's dialogs rather than being reimplemented here,

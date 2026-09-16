@@ -172,13 +172,18 @@ internal static class Mo2QtWidgets
     // MO2 counts the active plugins beside its list on an LCD readout. The count is
     // what the tab is read for; the readout itself is a Qt affectation, so it is a
     // plain figure here.
+    //
+    // MO2 names the caption beside it too — activeModslabel and activePluginsLabel —
+    // so it carries a name here as well: a caption nothing can look up is a caption
+    // no check can find missing.
     internal static StackPanel Counter(string name, out TextBlock value)
     {
         value = new TextBlock { Name = name, Text = "0", FontWeight = FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center };
         return new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center, Children = {
-                new TextBlock { Text = ActiveLabel, Opacity = .6, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Name = name.Replace("Counter", "Label"), Text = ActiveLabel, Opacity = .6,
+                    VerticalAlignment = VerticalAlignment.Center },
                 value,
             } };
     }

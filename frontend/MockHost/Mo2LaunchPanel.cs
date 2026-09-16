@@ -64,6 +64,8 @@ internal sealed class Mo2LaunchPanel : Border
     public Mo2LaunchPanel(Mo2LiveProfile profile)
     {
         Model = new(profile);
+        // MO2's startGroup, the box it runs an executable from.
+        Name = "Mo2RunRow";
         NativeButton = new LaunchButtonView { ViewModel = Model };
         Background = (IBrush)Application.Current!.FindResource("SurfaceLowBrush")!;
         CornerRadius = new CornerRadius(8); Padding = new Thickness(12);

@@ -10,6 +10,18 @@ namespace Mo2.Frontend;
 // actually worked from — and which nothing else looks at, so a page that quietly
 // stopped drawing its Refresh or its filter would not have been noticed.
 //
+// What MO2 draws is read out of src/mainwindow.ui by Mo2QtWidgetSource, not typed
+// out here. The list that used to be typed out held 38 names over five pages and
+// MO2's file holds 73 over six: the mod list's own "Filter:" readout and its Clear
+// all Filters button, both lists, the Saves tab entirely, and the run row were
+// never looked for. A hand-written expectation agrees with MO2 only on the day it
+// is written, and nothing said when it had stopped.
+//
+// So every name in MO2's file has to be accounted for below, and every account has
+// to name a widget that is still in MO2's file. A widget added to mainwindow.ui
+// fails this check until it is answered for; an answer for a widget MO2 has
+// removed fails it too.
+//
 // Run this on its own, not alongside MO2_VERIFY_ROW_STYLE or
 // MO2_VERIFY_SHARED_LISTS. Reaching a page means navigating the selected panel,
 // which tears down and rebuilds the view that was in it; the two list checks then
@@ -18,29 +30,138 @@ namespace Mo2.Frontend;
 // rebuild itself is what they cannot tolerate.
 internal static class Mo2QtWidgetCheck
 {
-    // What MO2 puts on each tab, by the name the widget is built under. Taken from
-    // src/mainwindow.ui: espTab's sort and backup actions, dataTab's refresh and its
-    // three filter checkboxes, downloadTab's two buttons, bsaTab's note, and the
-    // mod pane's own filter group.
-    private static readonly (string Page, string[] Widgets)[] Wanted = [
-        // The mod pane, top to bottom: the line above the list (profile box, list
-        // options, open folders, the two backups and the active count), the Filters
-        // group beside it with its own two rows of controls, and the line under the
-        // list (the button that shows the filter list, what the list is narrowed to,
-        // the grouping box and the filter field).
-        ("my-mods", ["ModsQtBar", "ModsProfileLabel", "ModsProfileBox", "ModsListOptionsButton",
-                     "ModsOpenFolderButton", "RestoreModsButton", "SaveModsButton", "ActiveModsCounter",
-                     "ModCategoriesGroup", "ModsFiltersClear", "ModsFiltersEdit", "ModsFiltersAnd",
-                     "ModsFiltersOr", "ModsFiltersSeparators",
-                     "ModsFilterBar", "ModsDisplayCategoriesButton", "ModsFilterLabel", "ModsGroupBox", "ModsQtFilter"]),
-        ("plugins", ["PluginsQtBar", "SortPluginsButton", "RestorePluginsButton", "SavePluginsButton",
-                     "ActivePluginsCounter", "PluginsQtFilter"]),
-        ("data", ["DataQtBar", "DataRefreshButton", "DataConflictsOnly", "DataFromArchives",
-                  "DataHiddenFiles", "DataQtFilter"]),
-        ("archives", ["ManagedArchiveLabel"]),
-        ("downloads", ["DownloadsQtBar", "DownloadsRefreshButton", "DownloadsQueryButton",
-                       "DownloadsFilterBar", "DownloadsHiddenFiles", "DownloadsQtFilter"]),
-    ];
+    // How a widget of MO2's is answered for here.
+    internal enum Kind
+    {
+        // Drawn on the page named, as the tab MO2 puts it on is drawn.
+        Page,
+        // Drawn in the window whatever page is open: MO2 keeps its run row and its
+        // menus outside the tabs, and so does this frontend.
+        Window,
+        // A Qt container with nothing of its own on screen — a splitter, a layout
+        // host, the central widget. Its contents are answered for separately.
+        Container,
+        // A menu or a toolbar: no widget of its own, only the actions it carries.
+        // Answered by requiring every action MO2 puts on it to be one
+        // MO2_VERIFY_QT_ACTIONS offers here, which is where they are driven.
+        Carries,
+    }
+
+    internal sealed record Answer(Kind Kind, string Page, string Counterpart, Func<Control, bool> Match, string Note = "");
+
+    private static Answer Named(string page, string name, string note = "") =>
+        new(Kind.Page, page, name, x => x.Name == name, note);
+    private static Answer List(string page, string note) =>
+        new(Kind.Page, page, "its list", x => x is Avalonia.Controls.TreeDataGrid, note);
+    private static Answer Chrome(string name, string note = "") =>
+        new(Kind.Window, "", name, x => x.Name == name, note);
+    private static Answer Holds(string reason) => new(Kind.Container, "", reason, _ => true, reason);
+    private static Answer Carries(string note = "") => new(Kind.Carries, "", "the actions it carries", _ => true, note);
+
+    // MO2's widget, and what this frontend draws for it. Everything in
+    // src/mainwindow.ui appears here exactly once.
+    internal static readonly Dictionary<string, Answer> Answers = new() {
+        // The window itself and the boxes Qt lays its widgets out in.
+        ["MainWindow"] = Holds("the window"),
+        ["centralWidget"] = Holds("the window's body"),
+        ["categoriesSplitter"] = Holds("the split between the filter list and the mod pane"),
+        ["splitter"] = Holds("the split between the mod pane and the tabs"),
+        ["widget"] = Holds("the row holding And, Or and the separators box"),
+        ["widget_2"] = Holds("the row holding Clear and Edit..."),
+        ["layoutWidget"] = Holds("the column holding the mod list and the rows around it"),
+        ["layoutWidget_2"] = Holds("the column holding the run row and the tabs"),
+        ["dockWidgetContents"] = Holds("the log dock's body"),
+        ["tabWidget"] = Holds("the tab strip, which is the workspace's own panel of tabs here"),
+        ["espTab"] = Holds("the Plugins tab, walked by this check as a page"),
+        ["bsaTab"] = Holds("the Archives tab, walked by this check as a page"),
+        ["dataTab"] = Holds("the Data tab, walked by this check as a page"),
+        ["savesTab"] = Holds("the Saves tab, walked by this check as a page"),
+        ["downloadTab"] = Holds("the Downloads tab, walked by this check as a page"),
+
+        // The filter list beside the mod list, and the two rows of controls in it.
+        ["categoriesGroup"] = Named("my-mods", "ModCategoriesGroup"),
+        ["filters"] = Named("my-mods", "ModCategories"),
+        ["filtersClear"] = Named("my-mods", "ModsFiltersClear"),
+        ["filtersEdit"] = Named("my-mods", "ModsFiltersEdit"),
+        ["filtersAnd"] = Named("my-mods", "ModsFiltersAnd"),
+        ["filtersOr"] = Named("my-mods", "ModsFiltersOr"),
+        ["filtersSeparators"] = Named("my-mods", "ModsFiltersSeparators"),
+
+        // The line above the mod list.
+        ["label_3"] = Named("my-mods", "ModsProfileLabel", "MO2's \"Profile\" caption"),
+        ["profileBox"] = Named("my-mods", "ModsProfileBox"),
+        ["listOptionsBtn"] = Named("my-mods", "ModsListOptionsButton"),
+        ["openFolderMenu"] = Named("my-mods", "ModsOpenFolderButton"),
+        ["restoreModsButton"] = Named("my-mods", "RestoreModsButton"),
+        ["saveModsButton"] = Named("my-mods", "SaveModsButton"),
+        ["activeModslabel"] = Named("my-mods", "ActiveModsLabel", "MO2's \"Active:\" caption"),
+        ["activeModsCounter"] = Named("my-mods", "ActiveModsCounter"),
+        ["modList"] = List("my-mods", "MO2's mod list"),
+
+        // The line under it.
+        ["displayCategoriesBtn"] = Named("my-mods", "ModsDisplayCategoriesButton"),
+        ["label_2"] = Named("my-mods", "ModsFilterLabel", "MO2's \"Filter\" caption"),
+        ["currentCategoryLabel"] = Named("my-mods", "ModsCurrentCategoryLabel", "what the list is narrowed to"),
+        ["clearFiltersButton"] = Named("my-mods", "ModsClearFiltersButton"),
+        ["groupCombo"] = Named("my-mods", "ModsGroupBox"),
+        ["modFilterEdit"] = Named("my-mods", "ModsQtFilter"),
+
+        // MO2's run row, which it keeps beside the tabs rather than on one.
+        ["startGroup"] = Chrome("Mo2RunRow", "the box MO2 runs an executable from"),
+        ["executablesListBox"] = Chrome("ExecutablesListBox"),
+        ["startButton"] = new(Kind.Window, "", "the Run button",
+            x => x is NexusMods.App.UI.LeftMenu.Items.LaunchButtonView, "MO2's startButton"),
+        ["linkButton"] = Chrome("ShortcutMenuButton", "MO2's shortcut menu"),
+
+        // The Plugins tab.
+        ["sortButton"] = Named("plugins", "SortPluginsButton"),
+        ["restoreButton"] = Named("plugins", "RestorePluginsButton"),
+        ["saveButton"] = Named("plugins", "SavePluginsButton"),
+        ["activePluginsLabel"] = Named("plugins", "ActivePluginsLabel", "MO2's \"Active:\" caption"),
+        ["activePluginsCounter"] = Named("plugins", "ActivePluginsCounter"),
+        ["espList"] = List("plugins", "MO2's plugin list"),
+        ["espFilterEdit"] = Named("plugins", "PluginsQtFilter"),
+
+        // The Archives tab.
+        ["managedArchiveLabel"] = Named("archives", "ManagedArchiveLabel"),
+        ["bsaList"] = Named("archives", "ArchivesTable"),
+
+        // The Data tab.
+        ["dataTabRefresh"] = Named("data", "DataRefreshButton"),
+        ["dataTree"] = List("data", "MO2's Data tree"),
+        ["dataTabShowOnlyConflicts"] = Named("data", "DataConflictsOnly"),
+        ["dataTabShowFromArchives"] = Named("data", "DataFromArchives"),
+        ["dataTabShowHiddenFiles"] = Named("data", "DataHiddenFiles"),
+        ["dataTabFilter"] = Named("data", "DataQtFilter"),
+
+        // The Saves tab, which MO2 draws as its list alone.
+        ["savegameList"] = Named("saves", "SavesTable"),
+
+        // The Downloads tab.
+        ["btnRefreshDownloads"] = Named("downloads", "DownloadsRefreshButton"),
+        ["btnQueryDownloadsInfo"] = Named("downloads", "DownloadsQueryButton"),
+        ["downloadView"] = List("downloads", "MO2's download list"),
+        ["showHiddenBox"] = Named("downloads", "DownloadsHiddenFiles"),
+        ["downloadFilterEdit"] = Named("downloads", "DownloadsQtFilter"),
+
+        // The window's chrome. MO2's menu bar and toolbar carry actions rather than
+        // widgets of their own, so what is asked of them is that every action they
+        // carry is one MO2_VERIFY_QT_ACTIONS answers for and drives.
+        ["menuBar"] = Carries("MO2's menu bar, whose five menus are answered one by one"),
+        ["menuFile"] = Carries(),
+        ["menuView"] = Carries(),
+        ["menuTools"] = Carries(),
+        ["menuHelp"] = Carries(),
+        ["menuToolbars"] = Carries(),
+        ["toolBar"] = Carries("MO2's toolbar, whose executables are the pinned row here"),
+        // MO2 fills its Run menu at runtime from the executables it is configured
+        // with, so its own file declares it empty; the executables box and the
+        // pinned row beside it are where those are run from here.
+        ["menuRun"] = Chrome("ExecutablesListBox", "MO2 fills its Run menu from its executables"),
+        ["statusBar"] = Chrome("Mo2StatusBar", "what MO2 reports along the bottom of its window"),
+        ["logDock"] = Chrome("Mo2LogsMenuItem", "the way to MO2's log, which MO2 docks and this frontend opens as a page"),
+        ["logList"] = Chrome("Mo2LogsMenuItem", "the same; the lines themselves are the Logs page's list"),
+    };
 
     internal static async Task Run(Mo2LiveWorkspace live, Window window)
     {
@@ -55,12 +176,36 @@ internal static class Mo2QtWidgetCheck
             ["plugins"] = () => Navigate(menu.LeftMenuItemExternalChanges!),
             ["data"] = () => Navigate(menu.DataItem),
             ["archives"] = () => Navigate(menu.ArchivesItem),
+            ["saves"] = () => Navigate(menu.SavesItem),
             ["downloads"] = () => Navigate(menu.LeftMenuItemLibrary),
         };
 
         using var turn = await Mo2CheckTurn.Take();
+        // MO2 keeps its run row on screen always; this frontend can fold it away.
+        // Compared against MO2 with it open, and put back as it was found.
+        using var sidebar = await Mo2SidebarState.Open(window, live);
         var faults = new List<string>();
         var described = new List<string>();
+
+        // MO2's own file is the list of what has to be here. Read first, so a run
+        // that cannot find it fails rather than checking nothing.
+        var source = Mo2QtWidgetSource.Locate();
+        var widgets = Mo2QtWidgetSource.Read(source);
+        if (widgets.Length == 0) throw new Exception("No widget was read from " + source);
+
+        // Both ways round. A widget MO2 has and this file does not answer for is the
+        // fault this check exists to catch; an answer for a widget MO2 no longer has
+        // is an expectation that has quietly stopped meaning anything.
+        var unanswered = widgets.Where(x => !Answers.ContainsKey(x.Name)).Select(x => $"{x.Name} ({x.Class})").ToArray();
+        if (unanswered.Length > 0)
+            faults.Add($"src/mainwindow.ui names {unanswered.Length} widget(s) nothing answers for: {string.Join(", ", unanswered)}");
+        var stale = Answers.Keys.Where(x => !widgets.Any(w => w.Name == x)).ToArray();
+        if (stale.Length > 0)
+            faults.Add($"{stale.Length} answer(s) name a widget MO2 has removed: {string.Join(", ", stale)}");
+        // Everything below reads an answer by name. A widget with none is already a
+        // fault above; looking one up anyway would end the run in a
+        // KeyNotFoundException and report that instead of what was actually wrong.
+        widgets = widgets.Where(x => Answers.ContainsKey(x.Name)).ToArray();
 
         // Navigating replaces the selected panel's tab, so whatever was in it has to
         // go back. Left on My Mods, this took Plugins off screen for good, and the
@@ -70,25 +215,38 @@ internal static class Mo2QtWidgetCheck
         var restore = selected?.SelectedTab.Contents.ViewModel is ScenarioLoadOrderPage
             ? menu.LeftMenuItemExternalChanges! : menu.LeftMenuItemLoadout;
 
-        foreach (var (page, widgets) in Wanted) {
+        // MO2's menus and its toolbar hold actions rather than widgets. Every one
+        // they hold has to be an action MO2_VERIFY_QT_ACTIONS offers here and
+        // drives; a menu that carries nothing answered is the same fault as a
+        // missing widget.
+        var menus = widgets.Where(x => Answers[x.Name].Kind == Kind.Carries).ToArray();
+        var carried = 0;
+        foreach (var host in menus) {
+            var entries = Mo2QtWidgetSource.Carries(host.Name, source);
+            // A menu bar carries menus, which are answered in their own right.
+            var wanted = entries.Where(x => !widgets.Any(w => w.Name == x)).ToArray();
+            var lost = wanted.Where(x => !Mo2QtActionCheck.Answers.ContainsKey(x)).ToArray();
+            if (entries.Length == 0) faults.Add($"{host.Name} carries nothing in {Path.GetFileName(source)}");
+            else if (lost.Length > 0) faults.Add($"{host.Name} carries {string.Join(", ", lost)}, which nothing offers here");
+            else carried += wanted.Length;
+        }
+        if (menus.Length > 0 && faults.Count == 0)
+            described.Add($"MO2's {menus.Length} menus and its toolbar carry {carried} action(s), every one offered here");
+
+        // The chrome first, from wherever the window happens to be: MO2 keeps these
+        // outside its tabs and so does this frontend.
+        var chrome = widgets.Where(x => Answers[x.Name].Kind == Kind.Window).ToArray();
+        var missingChrome = (await Missing(window, live, chrome)).ToArray();
+        if (missingChrome.Length > 0) faults.Add("the window is missing " + string.Join(", ", missingChrome));
+        else if (chrome.Length > 0) described.Add($"the window carries all {chrome.Length} MO2 keeps outside its tabs");
+
+        foreach (var page in open.Keys) {
+            var wanted = widgets.Where(x => Answers[x.Name] is { Kind: Kind.Page } answer && answer.Page == page).ToArray();
+            if (wanted.Length == 0) continue;
             await open[page]();
-            // A page is built when it is first shown, so the frame right after
-            // navigating is still the one before it.
-            string[] missing = [];
-            for (var attempt = 0; attempt < 60; attempt++) {
-                await Task.Delay(100);
-                window.UpdateLayout();
-                // Drawn, not merely built. A collapsed control is still a visual child,
-                // so looking it up by name alone passed for a category filter that was
-                // hidden at every panel width the default layout uses.
-                var present = window.GetVisualDescendants().OfType<Control>()
-                    .Where(x => x.Name is { } name && widgets.Contains(name) && x.IsEffectivelyVisible && x.Bounds.Width > 0)
-                    .Select(x => x.Name!).ToHashSet();
-                missing = widgets.Where(x => !present.Contains(x)).ToArray();
-                if (missing.Length == 0) break;
-            }
+            var missing = (await Missing(window, live, wanted)).ToArray();
             if (missing.Length > 0) faults.Add($"{page} is missing {string.Join(", ", missing)}");
-            else described.Add($"{page} carries all {widgets.Length}");
+            else described.Add($"{page} carries all {wanted.Length}");
         }
 
         // MO2's displayCategoriesBtn does something as well as being there: it is what
@@ -120,8 +278,55 @@ internal static class Mo2QtWidgetCheck
         await Task.Delay(600);
 
         if (faults.Count > 0) Console.WriteLine("FAIL MO2 widgets: " + string.Join("; ", faults));
-        else Console.WriteLine("PASS MO2 widgets: every page draws the widgets MO2 puts beside its list — " +
-            string.Join(", ", described));
+        else Console.WriteLine($"PASS MO2 widgets: all {widgets.Length} widgets MO2 names in {Path.GetFileName(source)} " +
+            "have a counterpart here and it is drawn — " + string.Join(", ", described) +
+            (sidebar.WasCollapsed ? ", with the sidebar opened for the run row as MO2 keeps it and closed again" : ""));
+
+        // Drawn, not merely built. A collapsed control is still a visual child, so
+        // looking it up by name alone passed for a category filter that was hidden at
+        // every panel width the default layout uses. The exception is a widget MO2
+        // itself declares hidden — its Clear all Filters button — which only has to
+        // be there to be shown when a filter goes on.
+        static async Task<List<string>> Missing(Window window, Mo2LiveWorkspace live, Mo2QtWidgetSource.Widget[] wanted)
+        {
+            var missing = new List<string>();
+            // A page is built when it is first shown, so the frame right after
+            // navigating is still the one before it.
+            for (var attempt = 0; attempt < 60; attempt++) {
+                await Task.Delay(100);
+                window.UpdateLayout();
+                // MO2's run row sits in the profile sidebar, which moves into a
+                // flyout when that sidebar is collapsed and is then not in the
+                // window's tree at all. The workspace holds it so it can be read
+                // wherever it currently is.
+                var roots = live.LaunchPanel is { } panel ? new Control[] { window, panel } : [window];
+                var drawn = roots.SelectMany(root => root.GetVisualDescendants().OfType<Control>().Prepend(root)).ToArray();
+                // Said two ways round, because "there is no such control" and "it is
+                // there and nothing of it is on screen" are different faults and the
+                // fix for one is not the fix for the other.
+                missing = wanted.Select(x => {
+                    var answer = Answers[x.Name];
+                    var built = drawn.Where(answer.Match).ToArray();
+                    if (built.Length == 0) return $"{x.Name}: nothing named {answer.Counterpart} is built";
+                    if (!x.Starts) return "";
+                    var shown = built.FirstOrDefault(c => c.IsEffectivelyVisible && c.Bounds.Width > 0);
+                    if (shown is not null) return "";
+                    var first = built[0];
+                    // What squeezed it out, not only that it is out: a control with
+                    // no width is nearly always in a row that ran out of room, and
+                    // the row's own width and what its neighbours took is the part
+                    // that says which of them to give way.
+                    var row = first.GetVisualParent() as Control;
+                    var neighbours = row is null ? "" : " in " + row.GetType().Name + $"#{row.Name} {row.Bounds.Width:F0} holding " +
+                        string.Join(", ", row.GetVisualChildren().OfType<Control>()
+                            .Select(c => $"{c.Name ?? c.GetType().Name} {c.Bounds.Width:F0}"));
+                    return $"{x.Name} ({answer.Counterpart}) is built but not drawn — " +
+                        $"visible={first.IsEffectivelyVisible} bounds={first.Bounds.Width:F0}x{first.Bounds.Height:F0}{neighbours}";
+                }).Where(x => x.Length > 0).ToList();
+                if (missing.Count == 0) break;
+            }
+            return missing;
+        }
 
         // The same route the page audit takes. Reached for by reflection first, which
         // found no Command on these items and so never left the page it started on —

@@ -513,6 +513,37 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             text => Model().SetColumnFilters(text, "", ""), out filterField);
         qtFilter.MinWidth = 140;
         Grid.SetColumn(qtFilter, 5); filterBar.Children.Add(qtFilter);
+        // MO2 draws these six on one line because its mod pane is the width of a
+        // window. Here the pane is one panel of a workspace beside another, and with
+        // the filter list showing the column under the list came out 216px against
+        // the 305px the six of them ask for — so the stretching column between them
+        // went to nothing and MO2's readout of what the list is narrowed to was
+        // drawn 0px wide. Nothing had caught it: a control with no width is skipped
+        // by the fit checks, which look for one that leaves its panel rather than
+        // one squeezed out of it.
+        //
+        // Narrow, they take two lines rather than one of them taking none. The
+        // order is still MO2's, read left to right and then down.
+        void Reflow()
+        {
+            var room = filterBar.Bounds.Width;
+            if (room <= 0) return;
+            // What the row asks for on one line, measured rather than assumed, so
+            // this follows the theme's own metrics instead of a number typed here.
+            var wanted = new Control[] { categoriesToggle!, filterLabel, groupBox, qtFilter }
+                .Sum(x => x.DesiredSize.Width) + 56;
+            var stacked = room < wanted;
+            if (stacked == filterBar.RowDefinitions.Count > 1) return;
+            filterBar.RowDefinitions = new RowDefinitions(stacked ? "Auto,Auto" : "Auto");
+            filterBar.ColumnDefinitions = new ColumnDefinitions(stacked ? "Auto,Auto,*,Auto" : "Auto,Auto,*,Auto,Auto,Auto");
+            Grid.SetRow(groupBox, stacked ? 1 : 0); Grid.SetRow(qtFilter, stacked ? 1 : 0);
+            Grid.SetColumn(groupBox, stacked ? 0 : 4); Grid.SetColumnSpan(groupBox, stacked ? 2 : 1);
+            Grid.SetColumn(qtFilter, stacked ? 2 : 5); Grid.SetColumnSpan(qtFilter, stacked ? 2 : 1);
+            groupBox.Margin = stacked ? new Thickness(0,4,6,0) : new Thickness(6,0);
+            qtFilter.Margin = stacked ? new Thickness(0,4,0,0) : default;
+        }
+        filterBar.SizeChanged += (_,_) => Reflow();
+        filterBar.AttachedToVisualTree += (_,_) => Reflow();
 
         // MO2's category filter sits beside the list, not above it, so the pane is a
         // column of categories and the list rather than the list alone. Its own two
@@ -609,13 +640,16 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // two mods and no plugins at all.
         var paneWidth = double.NaN;
         var toggleWas = true;
+        // Whether the filter list should be beside the list right now: its button
+        // says whether it is wanted, and the pane has to be wide enough to hold it.
+        bool WantsCategories() => categoriesToggle.IsChecked == true && Bounds.Width >= 420;
         void FitPane()
         {
             // MO2 hides the category filter when there is no room for it beside the
             // list, and its own button decides whether it is wanted at all. Set at 620
             // this never showed in a half-width panel, which is the default layout — so
             // the filter was only ever there on a maximised window.
-            categoriesGroup.IsVisible = categoriesToggle.IsChecked == true && Bounds.Width >= 420;
+            if (categoriesGroup.IsVisible != WantsCategories()) categoriesGroup.IsVisible = WantsCategories();
             // MO2 puts this group behind a splitter, so it grows with the pane. A
             // fixed 176 left its separators box drawn as "Fi" on every pane width.
             var wanted = Math.Clamp(Math.Round(Bounds.Width * .3), 200, 260);
@@ -631,7 +665,15 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             // writes something that asks for another layout pass, so running it on
             // every pass never let the passes stop — which starved the background
             // work that builds the rows, and the lists drew two mods and no plugins.
-            if (double.IsNaN(paneWidth) || Math.Abs(paneWidth - Bounds.Width) > .5 || toggleWas != (categoriesToggle.IsChecked == true)) {
+            // And whenever what is drawn disagrees with what should be. The pane's
+            // width and the button were the only two things that brought FitPane
+            // back, so a run that hid the filter list while the pane was briefly
+            // narrow — the sidebar opening, a page still being laid out — left it
+            // hidden for good once the width settled at a value already recorded.
+            // Nothing is written while the two agree, so this still asks for no
+            // layout pass of its own.
+            if (double.IsNaN(paneWidth) || Math.Abs(paneWidth - Bounds.Width) > .5 ||
+                toggleWas != (categoriesToggle.IsChecked == true) || categoriesGroup.IsVisible != WantsCategories()) {
                 paneWidth = Bounds.Width; toggleWas = categoriesToggle.IsChecked == true;
                 FitPane();
             }

@@ -173,6 +173,33 @@ The host files are distributed under this repository's GPL-3.0 license.
 
 ## Current verification
 
+`frontend/tools/verify.sh` runs `MO2_VERIFY_*` checks against a live MO2 host, one
+per run, and says what each of them said:
+
+```sh
+frontend/tools/paired_layout.py --endpoint mo2-fnv-host
+frontend/tools/verify.sh /path/to/mo2/plugins/data/frontend-bridge QT_WIDGETS QT_ACTIONS PRESET_FIT
+```
+
+It reports a check that printed no verdict as **NO VERDICT** and fails the run.
+That is not a formality: `MO2_SCREENSHOT` is what ends a run, and it waits only
+for the checks that register a turn with `Mo2CheckTurn`, so a check that does not
+register is shut down part-way and prints nothing — which in a summary that looks
+for the word `FAIL` is indistinguishable from a clean run. The runner gives those
+checks no screenshot and ends them itself once they have printed and gone quiet.
+
+Checks that need the mod and plugin lists side by side in an isolated layout are
+given one built by `tools/paired_layout.py` and rebuilt for every run, so one
+check's navigation cannot decide what the next one sees. `MO2_VERIFY_ICON_ALIASES`
+is given the icon styles as upstream shipped them, recovered from the submodule's
+own history.
+
+`MO2_VERIFY_QT_WIDGETS` and `MO2_VERIFY_QT_ACTIONS` take their expectations from
+`src/mainwindow.ui` at run time — all 73 widgets and all 24 actions MO2 declares —
+rather than from a list written down beside them. Each accounts for its side both
+ways round: something MO2 has that nothing answers for fails, and an answer for
+something MO2 has removed fails too.
+
 Build and run a small workspace integration check, saving a native screenshot:
 
 ```sh

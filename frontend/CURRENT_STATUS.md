@@ -2800,14 +2800,15 @@ are `false` as they were.
 
 | Requirement | Evidence |
 | --- | --- |
-| All pages reproduce MO2's Qt widgets | `MO2_VERIFY_QT_WIDGETS` passes; every widget named in `src/mainwindow.ui` — parsed from it, not typed out — has a counterpart |
-| As visible in the window as in MO2 | `MO2_VERIFY_PRESET_FIT` passes in MO2's own layout, every widget on all six tabs drawn whole; `MO2_VERIFY_REACHABLE_ACTIONS` and the preset check's own reachability pass, the latter shown to fail when the fix is reverted |
+| All pages reproduce MO2's Qt widgets | `MO2_VERIFY_QT_WIDGETS` passes over all 73 widgets **parsed out of `src/mainwindow.ui` at run time**, each accounted for both ways round; shown to fail when a counterpart's name is taken away |
+| All MO2's menu and toolbar actions | `MO2_VERIFY_QT_ACTIONS` passes over all 24 actions parsed out of the same file — 15 found live, 9 named as Qt's own furniture; shown to fail when an entry is reworded |
+| As visible in the window as in MO2 | `MO2_VERIFY_PRESET_FIT` passes in MO2's own layout, every widget on all six tabs drawn whole and none squeezed to nothing; `MO2_VERIFY_REACHABLE_ACTIONS` and the preset check's own reachability pass, the latter shown to fail when the fix is reverted |
 | Under MO2's matching layout preset | The preset check applies it and walks all six tabs; `MO2_VERIFY_LAYOUT_PRESET` covers the preset and its Undo |
 | Separator colours work | `MO2_VERIFY_SEPARATOR_COLOR` passes — MO2 coloured the separator through its own action, read back both ways, each name legible against it |
-| All content fits | `MO2_VERIFY_HEADER_FIT` at 13 sizes, `MO2_VERIFY_PRESET_FIT` at MO2's own panel widths |
+| All content fits | `MO2_VERIFY_HEADER_FIT` at 13 sizes, `MO2_VERIFY_PRESET_FIT` at MO2's own panel widths, now including a control given no width at all |
 | As dense as MO2 | `MO2_VERIFY_DENSITY`: every page within 4px of MO2's 22px line |
-| All MO2 behaviour | `MO2_VERIFY_ROW_MENUS` compares all six of MO2's own row menus both ways round; `MO2_VERIFY_WIDGET_BEHAVIOUR` drives every widget |
-| Every widget tested live | `MO2_VERIFY_WIDGET_BEHAVIOUR` — driven against the live MO2 host, never against a fixture |
+| All MO2 behaviour | `MO2_VERIFY_ROW_MENUS` compares all six of MO2's own row menus both ways round; `MO2_VERIFY_QT_ACTIONS` drives MO2's own window actions |
+| Every widget tested live | `MO2_VERIFY_WIDGET_BEHAVIOUR` works 27 of the 30 widgets MO2's file declares workable, against the live host and never a fixture, and names the other three and why each cannot be driven; the count comes from MO2's file and from what the check actually reached for, so a widget it stops working fails it |
 
 What each check cannot say is said in its own output: the entries with nothing on
 this host to exercise them name themselves rather than passing quietly, and the
@@ -2869,3 +2870,223 @@ separator left by the same class of interruption was removed the same way.
 The lesson is the one this audit keeps finding one layer out: a check that cannot
 fail is not evidence, and that applies to the commands used to verify the checks
 just as much as to the checks themselves.
+
+## The widget list MO2 writes, not the one we remembered
+
+The line in the table above used to say that every widget named in
+`src/mainwindow.ui` was checked, "parsed from it, not typed out". **Nothing parsed
+it.** `Mo2QtWidgetCheck` carried a hand-written array of 38 names over five pages,
+and no code anywhere in `frontend/` opened `mainwindow.ui`. A list like that agrees
+with MO2 on the day it is written and says nothing afterwards, which is the same
+fault as an assertion that cannot fail.
+
+`Mo2QtWidgetSource` now reads the file at run time — every `<widget>` with a name,
+the tab it sits in, and MO2's own `visible` property, which is how MO2's
+`clearFiltersButton` is known to start hidden rather than that being decided here.
+The check accounts for all **73** of them, both ways round: a widget MO2 has that
+nothing answers for fails, and an answer for a widget MO2 has removed fails too.
+
+MO2's file holds 73 where the typed list held 38. What the missing 35 hid:
+
+* **MO2's readout of what the mod list is narrowed to was drawn 0px wide.**
+  `currentCategoryLabel` sits in the stretching column of the row under the list,
+  and in a panel beside another panel that row had 216px for the 305px its six
+  widgets ask for — so the stretching column went to nothing and MO2's readout, and
+  its Clear all Filters button with it, were squeezed out of existence.
+* Neither the mod list nor the plugin list, the Saves tab, the run row, the status
+  line, MO2's menu bar or its toolbar had ever been looked for at all.
+
+The row now takes two lines when one will not hold it, in MO2's own order read left
+to right and then down, rather than one of the six taking none. What it needs is
+measured from the theme's own metrics rather than compared against a number typed
+into the check.
+
+`MO2_VERIFY_PRESET_FIT` could not have caught that: it skipped any control with no
+width, because what it looks for is a control that *leaves* its panel, and one
+squeezed out of existence is not there to be found leaving anything. It now reports
+those too — excluding a caption with nothing to say, which is MO2's own behaviour
+for that label, and a scrollbar's own template parts, which are zero-sized by
+design.
+
+**Negative control.** The names were taken off the two "Active:" captions and the
+check named exactly those two, on exactly the two pages MO2 puts them on. Restored
+byte for byte (`sha256` compared before and after) and it passes again.
+
+## MO2's menus, which held no widget and so were never checked
+
+MO2's menu bar and toolbar carry `QAction`s, not widgets, so walking widgets said
+nothing about them. An earlier turn compared those 24 actions against the frontend
+**by hand** and found Settings unreachable; nothing kept that comparison true
+afterwards.
+
+`MO2_VERIFY_QT_ACTIONS` parses the same file's action list and requires each of the
+24 to be answered: 15 are found live through the control that offers them, and 9
+are named as Qt's own furniture — toolbar icon sizes, icons-or-text, and the
+toggles for Qt's own menu bar, toolbar and status bar, none of which this frontend
+draws. The menu widgets in the widget check are answered by requiring every action
+MO2 puts on each of them to be one this check offers, so `menuFile` is tied to its
+five entries rather than to a sentence.
+
+Driving them turned up one thing worth keeping: **Browse Mod Page is offered by 2
+of 12 mod rows.** MO2 gates it on a mod it knows on Nexus. Asking the first row and
+reporting "this host has none" — which is what the check did first — would have
+read as agreement on a host where it was simply the wrong row.
+
+**Negative control.** One entry was reworded from "MO2 help…" to "MO2 assistance…"
+and the check named `actionHelp` and the control it was looking in. Restored byte
+for byte and it passes again.
+
+## Checks that said nothing, and read as checks that passed
+
+`MO2_VERIFY_PANEL_CHROME` and `MO2_VERIFY_COLUMN_TOGGLE` printed no verdict at all.
+Neither registers a turn with `Mo2CheckTurn`, and `MO2_SCREENSHOT` — which is what
+ends a run — waits only for the checks that do, so both were shut down part-way
+through and printed nothing. In a summary that greps for `FAIL`, silence is
+indistinguishable from a clean run. Run without that path, both pass.
+
+`frontend/tools/verify.sh` is the runner, so this cannot be got wrong by hand
+again. It reports **NO VERDICT** as a failure, gives the checks that need one a
+freshly built isolated paired layout (`tools/paired_layout.py`), recovers the
+original icon styles from upstream's own history for the alias check, and ends the
+unregistered checks itself once they have printed a verdict and gone quiet —
+rather than waiting out a seven-minute timeout that told us nothing more.
+
+## Three checks that were describing a shape the app no longer has
+
+`MO2_VERIFY_FILTERED_ROWS` had never run in this audit: it refuses to start without
+an isolated paired layout, and every previous run had reported that refusal rather
+than a result. Given one, it failed — and each failure was one layer of the same
+kind of staleness:
+
+| What it said | What it was |
+| --- | --- |
+| "filtered rows did not settle" | Three different waits shared one message. Each now says which it is. |
+| Row 0 "has no drag handle" | Only separators carry a grip since MO2's own menu went onto the row's `ContextFlyout`. The check now asks for the menu that is there. |
+| "Not every native linked/conflict row was observed" | MO2 named `data` — the game's own Data folder, which MO2 draws no row for either. Named in the pass line rather than demanded as a row. |
+
+Neither of the first two was a defect in the app; the third was a check asking for
+something MO2 itself does not draw. All three failure messages now name what they
+found, because "the check failed" without "here is what it saw" cost three runs
+each to narrow down by hand.
+
+**Negative control.** The mod row's own `ContextFlyout` was deleted and the check
+**passed** — the first version of the menu assertion accepted a flyout anywhere
+under the row, and a mod's Notes cell carries a colour menu of its own that
+answered for it. Tightened to the row's own entry, the same deletion fails it,
+naming the row. Restored byte for byte and it passes again.
+
+## Host state left behind by an interrupted run
+
+`MO2_VERIFY_CONTROLS` threw `Sequence contains no matching element`. Read against
+MO2's own snapshot, the cause was that **`The Mod Configuration Menu` and `MCM
+Author Examples` were both disabled** — so the plugin the check works with was
+being served by MO2's `Unmanaged:` backdrop instead of by the mod, and no plugin
+had that mod's name. Compared against `artifacts/fnv-profile-baseline.sha256`
+properly, `modlist.txt` and `plugins.txt` were the two files that differed.
+
+Both mods were enabled again through MO2's own `setModActive`, and the check
+passes. Two things to record honestly rather than round off:
+
+* MO2 wrote three more plugins into `plugins.txt` as a consequence of enabling
+  `MCM Author Examples`, which is MO2 following the mod rather than anything this
+  frontend did.
+* The profile still does not hash identically to that baseline, and cannot: the
+  baseline predates the removal of the stray `__Separator interaction check`
+  separator recorded in the previous section. The baseline is stale, not the
+  profile. It is left in place rather than silently re-taken, because a baseline
+  rewritten to match whatever is there now is the same shape of fault as an
+  assertion that cannot fail.
+
+## Which of MO2's widgets were never worked
+
+`MO2_VERIFY_WIDGET_BEHAVIOUR` says what each widget did when it was worked. It said
+nothing about which of MO2's widgets were never worked at all, so "every widget is
+driven" rested on reading the check rather than on the check.
+
+The controls it reaches for are now recorded as it reaches for them, and MO2's own
+file says which there are to reach for. Every widget MO2 declares that a user can
+work — button, box, tick, radio, field: **30** of them — has to have been reached,
+or to be named in the check with the reason it cannot be. It reports the count:
+
+```
+PASS MO2 widget behaviour: all 27 of MO2's 30 workable widgets were worked — …
+Not worked, and why: filtersEdit opens MO2's category editor, which is modal;
+startButton runs the game; btnQueryDownloadsInfo asks Nexus about every download,
+which needs an account and changes MO2's metadata
+```
+
+**The assertion found one on its first run:** `displayCategoriesBtn`, the button
+that shows and hides the filter list beside the mod list, was driven only by the
+widget check — which is about what is drawn. Its behaviour now has a case of its
+own here, and the same run that named it passes with it. That is the negative
+control for this assertion as well: it named exactly the widget that was not being
+worked, and stopped naming it when the widget was worked.
+
+The three that are not driven are the three that cannot be driven without taking
+the host somewhere a check must not take it — a modal dialog that waits for
+whoever opened it, a game launch, and a Nexus round trip that rewrites MO2's
+download metadata. They are named in the output of every run rather than left out
+of the count.
+
+## A filter list that stayed hidden, found by the new check
+
+Running the widget check repeatedly turned up a fault on one run in several:
+
+```
+FAIL MO2 widgets: my-mods is missing categoriesGroup (ModCategoriesGroup) is built
+but not drawn — visible=False bounds=200x352 in Grid# 506 holding ModsQtBar 506,
+ModCategoriesGroup 200, Grid 300, …
+```
+
+The mod pane decides whether MO2's filter list fits beside the mod list, and it
+recomputed that **only when the pane's width changed or the button was pressed**.
+A moment when the pane was briefly under that width — the sidebar opening, a page
+still being laid out — hid the filter list, and once the width settled at a value
+the pane had already recorded, nothing brought the decision back. The list stayed
+hidden until the window was resized or the button was pressed twice.
+
+It now also recomputes whenever what is drawn disagrees with what should be drawn,
+and writes nothing while the two agree, so it still asks for no layout pass of its
+own — which is the constraint that made it conditional in the first place.
+
+**A fault found once in several runs is not a fault a passing run disproves.** So
+it is reproduced on purpose rather than waited for: `MO2_VERIFY_WIDGET_BEHAVIOUR`
+now hides the filter list behind its button's back and requires the pane to put it
+back. Reverting the fix and rebuilding, that case fails —
+
+```
+FAIL MO2 widget behaviour: the filter list stayed hidden after something other
+than its button hid it
+```
+
+— and with the fix restored byte for byte it passes again.
+
+This is what the derived widget check was for. The hand-written list did not name
+`categoriesGroup` on any page, so nothing would have looked for it, and the filter
+list beside MO2's mod list could have stayed hidden without a single check having
+anything to say.
+
+## A check that failed on a race and left the host changed
+
+`MO2_VERIFY_CONTROLS` ended a full sweep with no verdict at all — an unhandled
+`Host plugin activation disagrees`, which kills the process before anything is
+printed. The runner reported that as **NO VERDICT** rather than passing over it,
+which is what that reporting rule exists for.
+
+It read MO2's snapshot **once**, the instant the frontend's action returned, and
+compared. MO2 applies and writes on its own schedule, so a read taken that early
+can disagree with a frontend that is right. Worse, the throw ends the process: the
+restore in the check's `finally` had asked MO2 to put `The Mod Configuration
+Menu.esp` back, but MO2 had not written its profile yet, so the plugin was left
+disabled on the host — the same class of leftover state this audit had already had
+to clean up once.
+
+Both halves are fixed. MO2 is now asked again until it agrees, up to fifteen
+seconds, and a run that gives up says what MO2 had against what the frontend had
+rather than "disagrees". And the restore is waited for **inside** the `finally`,
+because a failing run is exactly the run whose restore has to land before the
+process ends; it was previously verified after the `try`, where a failure skipped
+it.
+
+Three consecutive runs pass, and the profile still carries the plugin enabled and
+both mods enabled afterwards.

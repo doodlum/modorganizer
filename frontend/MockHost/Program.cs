@@ -501,6 +501,14 @@ public partial class MockApp : Application
                         finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
                 }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_ACTIONS") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2QtActionCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL MO2 actions: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    }, TimeSpan.FromSeconds(2));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LISTS") == "1") {
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -2506,13 +2514,30 @@ public partial class MockApp : Application
         var mod = live.Profile.Mods.Single(x => x.Name == "The Mod Configuration Menu");
         var plugin = live.Profile.Order.Plugins.Single(x => x.ModName == mod.Name);
         var originalMods = live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).ToArray();
+        // MO2 is asked again until it agrees, rather than once. A single read taken
+        // the instant the frontend's action returned caught MO2 before it had
+        // finished applying it, and the check then threw — which ends the process,
+        // so the restore in the finally below had asked MO2 to put the plugin back
+        // but MO2 had not yet written its profile. A run that fails on a race and
+        // leaves the host changed is worse than one that fails.
         async Task AssertHost(bool active, int priority)
         {
-            var snapshot = await new Mo2BridgeClient(endpoint).SendAsync("snapshot");
-            if ((snapshot.GetProperty("plugins").EnumerateArray().Single(x => x.GetProperty("name").GetString() == plugin.DisplayName).GetProperty("state").GetInt32() == 2) != active)
-                throw new InvalidOperationException("Host plugin activation disagrees");
-            if (snapshot.GetProperty("mods").EnumerateArray().Single(x => x.GetProperty("name").GetString() == mod.Name).GetProperty("priority").GetInt32() != priority)
-                throw new InvalidOperationException("Host mod priority disagrees");
+            var until = DateTime.UtcNow.AddSeconds(15);
+            string? disagreement;
+            do {
+                var snapshot = await new Mo2BridgeClient(endpoint).SendAsync("snapshot");
+                var state = snapshot.GetProperty("plugins").EnumerateArray()
+                    .Single(x => x.GetProperty("name").GetString() == plugin.DisplayName).GetProperty("state").GetInt32();
+                var at = snapshot.GetProperty("mods").EnumerateArray()
+                    .Single(x => x.GetProperty("name").GetString() == mod.Name).GetProperty("priority").GetInt32();
+                disagreement =
+                    (state == 2) != active ? $"MO2 has {plugin.DisplayName} {(state == 2 ? "enabled" : "disabled")} where the frontend has it {(active ? "enabled" : "disabled")}"
+                    : at != priority ? $"MO2 has {mod.Name} at priority {at} where the frontend has it at {priority}"
+                    : null;
+                if (disagreement is null) return;
+                await Task.Delay(250);
+            } while (DateTime.UtcNow < until);
+            throw new InvalidOperationException("MO2 did not come to agree: " + disagreement);
         }
         try {
             live.PluginsPage!.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
@@ -2537,6 +2562,11 @@ public partial class MockApp : Application
             await live.Profile.SetPluginsActive([plugin.DisplayName], plugin.IsActive);
             var current = live.Profile.Mods.Single(x => x.Id == mod.Id);
             await live.Profile.MoveMod(mod.Id, mod.Priority - current.Priority);
+            // Waited for here, inside the finally: a run that is failing is exactly
+            // the run whose restore has to have landed before the process ends, and
+            // this used to be checked afterwards where a failure skipped it.
+            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive == plugin.IsActive &&
+                live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority, "MO2 did not take the restore");
         }
         await AssertHost(plugin.IsActive, mod.Priority);
         if (!live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).SequenceEqual(originalMods)) throw new InvalidOperationException("Original mod order was not restored");

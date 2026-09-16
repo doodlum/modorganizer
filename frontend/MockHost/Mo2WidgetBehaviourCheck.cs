@@ -35,6 +35,7 @@ internal static class Mo2WidgetBehaviourCheck
 
         var faults = new List<string>();
         var worked = new List<string>();
+        var reachedFor = new HashSet<string>(StringComparer.Ordinal);
 
         // --- The mod pane ---
         await Navigate(menu.LeftMenuItemLoadout);
@@ -158,6 +159,41 @@ internal static class Mo2WidgetBehaviourCheck
             // offers a Clear beside the field, which it shows only while there is
             // something to clear. Driven here through the filter field a user types
             // in, and each state read off the border that is actually drawn.
+            // MO2's displayCategoriesBtn, which is what shows and hides the filter
+            // list beside the mod list. It was the one workable widget in MO2's file
+            // that nothing here worked: the widget check drives it, but that check
+            // is about what is drawn, and a widget's behaviour belongs here.
+            if (Named<ToggleButton>(mods, "ModsDisplayCategoriesButton") is not { } categoryToggle)
+                faults.Add("the mod pane has no button to show and hide its filter list");
+            else {
+                Control? Group() => Named<Control>(mods, "ModCategoriesGroup");
+                var showing = Group()?.IsEffectivelyVisible == true;
+                categoryToggle.IsChecked = false;
+                await Settle();
+                if (Group()?.IsEffectivelyVisible == true) faults.Add("the filter list stayed when its button was switched off");
+                categoryToggle.IsChecked = true;
+                await Settle();
+                if (Group()?.IsEffectivelyVisible != true) faults.Add("the filter list did not come back when its button was switched on");
+                else worked.Add("the filter list beside the mod list went away with its button and came back");
+                categoryToggle.IsChecked = showing;
+                await Settle();
+                // And that the pane puts it back when something else has taken it
+                // away. The pane recomputed this only when its width changed or its
+                // button was pressed, so a moment when the pane was briefly too
+                // narrow — the sidebar opening, a page still being laid out — hid
+                // the filter list for good once the width settled at a value it had
+                // already recorded. MO2_VERIFY_QT_WIDGETS caught that as
+                // "categoriesGroup is built but not drawn" on one run in several.
+                // Reproduced here on purpose rather than waited for.
+                if (categoryToggle.IsChecked == true && Group() is { } group && group.IsEffectivelyVisible) {
+                    group.IsVisible = false;
+                    await Settle();
+                    if (Group()?.IsEffectivelyVisible != true)
+                        faults.Add("the filter list stayed hidden after something other than its button hid it");
+                    else worked.Add("the filter list came back on its own after being hidden behind its button's back");
+                }
+            }
+
             var frame = Named<Border>(mods, "ModsFilterFrame");
             var countFrame = Named<Border>(mods, "ModsCounterFrame");
             var clearAll = Named<Button>(mods, "ModsClearFiltersButton");
@@ -707,6 +743,7 @@ internal static class Mo2WidgetBehaviourCheck
         // Read off the panel itself, not off the window: a collapsed sidebar keeps the
         // whole run row in its tool flyout, where nothing in the window's tree can
         // find it, and the user's sidebar is collapsed on this host.
+        reachedFor.Add("ExecutablesListBox");
         if (live.LaunchPanel?.Executable is { } executables) {
             var listed = (executables.ItemsSource as IEnumerable<string> ?? []).ToArray();
             var wanted = new[] { Mo2LaunchPanel.EditEntry }.Concat(live.Profile.Executables).ToArray();
@@ -724,6 +761,7 @@ internal static class Mo2WidgetBehaviourCheck
         // the chosen executable, each drawn with an add or a remove icon by whether
         // the shortcut is already there (on_linkButton_pressed). Read from MO2, and
         // one of them driven through to MO2 and back.
+        reachedFor.Add("ShortcutMenuButton");
         if (live.LaunchPanel?.ShortcutMenu is { } shortcuts) {
             var chosen = live.LaunchPanel.Model.SelectedExecutable;
             var entries = await live.Profile.ReadShortcuts(chosen);
@@ -809,15 +847,49 @@ internal static class Mo2WidgetBehaviourCheck
         await Navigate(restore);
         await Task.Delay(600);
 
+        // And whether that was all of them.
+        //
+        // Everything above says what a widget did when it was worked. None of it
+        // said which of MO2's widgets were never worked at all, so the claim that
+        // every widget had been exercised rested on reading this file. The controls
+        // reached for are recorded as they are reached for, and MO2's own file says
+        // which widgets there are to reach for: every one of MO2's that a user can
+        // work — a button, a box, a tick, a radio, a field — has to have been
+        // reached here, or to be named below with the reason it cannot be.
+        string[] interactive = ["QPushButton", "QComboBox", "QCheckBox", "QRadioButton", "QLineEdit", "MOBase::LineEditClear"];
+        var undrivable = new Dictionary<string, string> {
+            ["filtersEdit"] = "opens MO2's category editor, which is modal",
+            ["startButton"] = "runs the game",
+            ["btnQueryDownloadsInfo"] = "asks Nexus about every download, which needs an account and changes MO2's metadata",
+        };
+        var workable = Mo2QtWidgetSource.Read()
+            .Where(x => interactive.Contains(x.Class) && Mo2QtWidgetCheck.Answers.ContainsKey(x.Name)).ToArray();
+        var untouched = workable
+            .Where(x => !undrivable.ContainsKey(x.Name) && !reachedFor.Contains(Mo2QtWidgetCheck.Answers[x.Name].Counterpart))
+            .Select(x => $"{x.Name} ({Mo2QtWidgetCheck.Answers[x.Name].Counterpart})").ToArray();
+        var stale = undrivable.Keys.Where(x => !workable.Any(w => w.Name == x)).ToArray();
+        if (untouched.Length > 0)
+            faults.Add($"{untouched.Length} of MO2's {workable.Length} workable widgets were never worked: {string.Join(", ", untouched)}");
+        if (stale.Length > 0)
+            faults.Add($"{stale.Length} widget(s) are excused that MO2 no longer has: {string.Join(", ", stale)}");
+
         if (faults.Count > 0) Console.WriteLine("FAIL MO2 widget behaviour: " + string.Join("; ", faults));
-        else Console.WriteLine("PASS MO2 widget behaviour: " + string.Join(", ", worked));
+        else Console.WriteLine($"PASS MO2 widget behaviour: all {workable.Length - undrivable.Count} of MO2's " +
+            $"{workable.Length} workable widgets were worked — " + string.Join(", ", worked) +
+            ". Not worked, and why: " + string.Join("; ", undrivable.Select(x => $"{x.Key} {x.Value}")));
 
         T? Find<T>() where T : Control =>
             window.GetVisualDescendants().OfType<T>().FirstOrDefault(x => x.IsEffectivelyVisible)
             ?? window.GetVisualDescendants().OfType<T>().FirstOrDefault();
 
-        static TControl? Named<TControl>(Control page, string name) where TControl : Control =>
-            page.GetVisualDescendants().OfType<TControl>().FirstOrDefault(x => x.Name == name);
+        // Every control this check reaches for is recorded as it reaches for it, so
+        // what it covered is what it did rather than a list written beside it. The
+        // coverage assertion at the end reads this back against MO2's own file.
+        TControl? Named<TControl>(Control page, string name) where TControl : Control
+        {
+            reachedFor.Add(name);
+            return page.GetVisualDescendants().OfType<TControl>().FirstOrDefault(x => x.Name == name);
+        }
 
         // Whether the page is still drawing a row by that name. A filter has two
         // halves — dropping what does not match and keeping what does — and only the

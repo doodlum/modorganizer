@@ -143,7 +143,24 @@ internal static class Mo2PresetFitCheck
                                  .Where(x => x.IsEffectivelyVisible && (Widget(x) || Caption(x)))
                                  .Where(x => x.GetVisualAncestors().OfType<Control>().All(a => a.Name is not ("TabHeaderBorder" or "TabHeaderScrollViewer")))) {
                         var at = control.TranslatePoint(default, view);
-                        if (at is null || control.Bounds.Width <= 0) continue;
+                        if (at is null) continue;
+                        // A control the row had no room for at all. Skipping these is
+                        // how MO2's readout of what the mod list is narrowed to came
+                        // to be drawn 0px wide with nothing reporting it: what is
+                        // looked for here is a control that leaves its panel, and one
+                        // squeezed out of existence is not there to be found leaving
+                        // anything. A caption with nothing to say is not a fault —
+                        // MO2's currentCategoryLabel is empty until a filter is on.
+                        // A scrollbar's own parts are left out: its page-up and
+                        // page-down buttons are zero-sized by the theme's template
+                        // whatever room the panel has, which is the scrollbar
+                        // working rather than a page running out of width.
+                        if (control.Bounds.Width <= 0) {
+                            if ((Widget(control) || control is TextBlock { Text.Length: > 0 }) &&
+                                !control.GetVisualAncestors().OfType<ScrollBar>().Any())
+                                clipped.Add($"{Describe(control)} was squeezed to nothing in a panel {bounds.Width:F0} wide");
+                            continue;
+                        }
                         examined++;
                         var box = new Rect(at.Value, control.Bounds.Size);
                         if (box.Right > bounds.Right + Slack || box.Left < bounds.Left - Slack)

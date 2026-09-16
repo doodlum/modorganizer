@@ -64,12 +64,28 @@ internal static class Mo2HighlightCheck
                 }
                 await Scan(plugins, rails[1], true);
                 await Scan(mods, rails[0], false);
-                if (!seenPlugins.SetEquals(linked) || !seenConflicts.SetEquals(winning.Concat(losing)))
-                    throw new Exception("Not every native linked/conflict row was observed");
+                // Which rows, not merely that some were missed: scrolling both lists
+                // end to end and reporting a set mismatch without naming it leaves a
+                // failing run with nothing to act on.
+                // Only the conflicts that are rows in the list. MO2 answers with its
+                // origins, and one of them is "data" — the game's own Data folder,
+                // which MO2 does not draw in its mod list either. Demanding a row for
+                // it failed a run that had agreed with MO2 about every row there was.
+                // What is left out is named in the pass line rather than dropped
+                // silently.
+                var origins = winning.Concat(losing).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var listed = profile.Mods.Select(m => m.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var conflicts = origins.Where(listed.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var unlisted = origins.Except(conflicts, StringComparer.OrdinalIgnoreCase).ToArray();
+                if (!seenPlugins.SetEquals(linked) || !seenConflicts.SetEquals(conflicts))
+                    throw new Exception("Not every native linked/conflict row was observed — " + string.Join("; ", new[] {
+                        Missing("plugin", linked, seenPlugins), Missing("conflict", conflicts, seenConflicts),
+                    }.Where(x => x.Length > 0)));
                 mods.RowSelection.Clear();
                 await Scan(plugins, rails[1], true, clear: true);
                 await Scan(mods, rails[0], false, clear: true);
-                Console.WriteLine($"PASS native selection highlights: {linked.Count} linked plugins, {winning.Count} red and {losing.Count} green conflict rows; cleared across recycled rows");
+                Console.WriteLine($"PASS native selection highlights: {linked.Count} linked plugins, {winning.Count} red and {losing.Count} green conflict rows; cleared across recycled rows" +
+                    (unlisted.Length > 0 ? $"; MO2 also named {string.Join(", ", unlisted)}, which it draws no row for and neither does this list" : ""));
             } finally {
                 mods.RowSelection?.Clear();
                 foreach (var rail in rails) rail.Value = 0;
@@ -77,5 +93,17 @@ internal static class Mo2HighlightCheck
             return winning.Concat(losing).ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
         if (target != profile.CurrentTarget) throw new Exception("Profile changed during highlight check");
+
+        // What MO2 named that no row was seen for, and what was seen that MO2 did
+        // not name — both directions, because either is a disagreement.
+        static string Missing(string kind, HashSet<string> wanted, HashSet<string> seen)
+        {
+            var unseen = wanted.Except(seen, StringComparer.OrdinalIgnoreCase).ToArray();
+            var extra = seen.Except(wanted, StringComparer.OrdinalIgnoreCase).ToArray();
+            var parts = new List<string>();
+            if (unseen.Length > 0) parts.Add($"MO2 names {unseen.Length} {kind} row(s) no row was seen for: {string.Join(", ", unseen)}");
+            if (extra.Length > 0) parts.Add($"{extra.Length} {kind} row(s) were highlighted that MO2 did not name: {string.Join(", ", extra)}");
+            return string.Join("; ", parts);
+        }
     }
 }

@@ -347,7 +347,8 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
 
     public Window CreateWindow()
     {
-        var status = new TextBlock { Text = Profile.Status, Margin = new Thickness(16, 8), TextWrapping = TextWrapping.Wrap };
+        // MO2's statusBar, along the bottom of the window.
+        var status = new TextBlock { Name = "Mo2StatusBar", Text = Profile.Status, Margin = new Thickness(16, 8), TextWrapping = TextWrapping.Wrap };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("72,232,*"), RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         var topBar = new TopBarView { ViewModel = _topBar = new Mo2TopBar(this) };
         topBar.ViewModel.WhenAnyValue(x => x.ActiveWorkspaceSubtitle).Subscribe(text =>
@@ -446,9 +447,11 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         installed.Children.Insert(3, dataItem);
         var savesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.SavesItem };
         installed.Children.Insert(4, savesItem);
-        var toolsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ToolsItem };
+        // Named after the MO2 window actions they answer for — actionTool and
+        // actionViewLog — so MO2_VERIFY_QT_ACTIONS can find them.
+        var toolsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ToolsItem, Name = "Mo2ToolsMenuItem" };
         ((StackPanel)profileSidebar.FindControl<Control>("HealthCheckItem")!.Parent!).Children.Add(toolsItem);
-        var logsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.LogsItem };
+        var logsItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.LogsItem, Name = "Mo2LogsMenuItem" };
         ((StackPanel)profileSidebar.FindControl<Control>("HealthCheckItem")!.Parent!).Children.Add(logsItem);
         var profilesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ProfilesItem };
         ((StackPanel)profileSidebar.FindControl<Control>("LibraryItem")!.Parent!).Children.Insert(0, profilesItem);
