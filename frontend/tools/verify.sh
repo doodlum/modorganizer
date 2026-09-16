@@ -30,6 +30,38 @@ bridge="$(realpath -- "$1")"; shift
 out="${MO2_VERIFY_OUTPUT:-$frontend_root/artifacts/verify}"
 mkdir -p "$out"
 
+# One sweep at a time, and the reason is this script's own cleanup: it ends every
+# run with `pkill -KILL -f bin/Release/net9.0/MockHost`, which matches any host,
+# not only the one it started. Two sweeps therefore kill each other's checks
+# part-way. That happened — a second sweep started while one was still going, and
+# WIDGET_BEHAVIOUR was killed mid-run and left a log holding build output and no
+# verdict. It is reported as NO VERDICT, which is right, but "another sweep shot
+# it" and "this check has stopped saying anything" read identically afterwards,
+# and the checks that ran alongside it cannot be told apart from clean runs either
+# — two frontends were on the same live host at once.
+#
+# So a second sweep does not start. It is refused rather than queued: a wait that
+# takes half an hour to begin looks exactly like a hang.
+#
+# The holder is written down rather than held on a descriptor. `flock` on an fd was
+# the first attempt and it does hold the lock — it holds it far too well: the fd is
+# inherited by everything the sweep starts, `dotnet run` leaves MSBuild node-reuse
+# daemons behind on purpose, and those kept the lock after the sweep had finished.
+# Every later sweep was then refused by a build server. A pid that is checked for
+# life cannot outlive the thing it stands for, and a sweep killed part-way leaves
+# nothing behind that has to be cleaned up by hand.
+lockfile="${TMPDIR:-/tmp}/mo2-verify.lock"
+if [[ -s "$lockfile" ]]; then
+    other="$(<"$lockfile")"
+    if [[ "$other" =~ ^[0-9]+$ ]] && kill -0 "$other" 2>/dev/null &&
+       tr '\0' ' ' <"/proc/$other/cmdline" 2>/dev/null | grep -q verify.sh; then
+        echo "verify.sh is already running as pid $other. Two sweeps at once cannot be trusted: this script kills any MockHost after each run, including the other sweep's, which leaves a check truncated into a log that reads as NO VERDICT." >&2
+        exit 3
+    fi
+fi
+echo $$ >"$lockfile"
+trap 'rm -f "$lockfile"' EXIT
+
 # The checks that require an isolated paired layout, and refuse to run without one.
 PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER ALERT_LIFECYCLE "
 # The checks that do not register a turn, so the screenshot path would shut them

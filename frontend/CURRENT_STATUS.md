@@ -3425,3 +3425,101 @@ removal restored byte for byte it passes again.
   disabled again. The one wait that has to land now gets thirty.
 
 Nineteen checks run live; all nineteen pass.
+
+## The six pages MO2's layout was never measured with
+
+`MO2_VERIFY_PRESET_FIT` is the check that answers *does everything fit*. It puts
+the window into MO2's own panel layout — the mod list on the left, MO2's five tabs
+on the right — and fails on a widget clipped by the panel holding it or squeezed
+below the size it asked for. It walked the preset's own tabs and nothing else, so
+it answered that question for MO2's six tabs and for no other page.
+
+The window opens twelve. **Tools, Logs, Overwrite, External Files, Health Check and
+Profiles** come off the same sidebar into the same half-width panel, and no check
+had measured one there. `MO2_VERIFY_REACHABLE_ACTIONS` builds each of them alone,
+where a page is the whole panel; `MO2_VERIFY_HEADER_FIT` measures headers and not
+bodies; `MO2_VERIFY_PANEL_CHROME` measures padding. A panel to itself is the width
+at which a control that does not fit still does, and it was the only width these
+six had ever been seen at.
+
+They are opened now through their own sidebar entries into MO2's right panel — the
+same panel, the same 470px — and measured by the same code, with the run refusing
+to measure a page that landed anywhere else. The check reports `Tools (40, 3
+handed), Logs (11, 2 handed), Overwrite (10, 7 handed), External Files (16, 6
+handed), Health Check (2, 0 handed), Profiles (21, 0 handed)` beside MO2's six, and
+every widget and caption on all twelve is drawn whole inside its panel.
+
+### That it passed first time is not the evidence
+
+A fit check that has never failed cannot be told apart from one that is not
+looking. The live window's size is the platform's to give and cannot be narrowed
+from inside the check, so `MO2_PRESET_FIT_SENSITIVITY=1` brings in the edge each
+control is measured against instead — 60% of the panel — driving the same
+comparison over the same pages. With it on, all twelve fail by name, the six new
+ones among them: `Tools: Button ("Pin") runs to 498 of 336`, `Health Check:
+TextBlock runs to 510 of 336`, `Profiles: RenameMo2ProfileButton runs to 405 of
+336`. The suite never sets it, and a run with it on is not evidence of fit — it is
+evidence that the pass is.
+
+## A default read off the wrong MO2 file
+
+The mod pane's filter list starts closed, and the reason written beside it was that
+the list takes a third of the pane before a single category has been picked. That
+is a judgement about this frontend, not a fact about MO2, and
+`MO2_VERIFY_QT_WIDGETS` carried the same reasoning inverted — that MO2 declares the
+list visible where this frontend does not, so the check opens it to measure it.
+
+MO2's `mainwindow.ui` does declare `categoriesGroup` visible. MO2 overrides it on
+every start: `restoreVisibility(ui->categoriesGroup, false)` in `mainwindow.cpp`,
+whose second argument is what a profile with nothing saved gets, with
+`displayCategoriesBtn` then set to match. **Closed is MO2's own default**, so the
+behaviour was already right and only the reason was wrong. Both comments cite that
+line now. The `.ui` says which widgets MO2 has; it does not say how MO2 starts
+them, and every widget check here reads the `.ui`.
+
+## Two sweeps at once, and the logs that could not tell you
+
+`verify.sh` ends every run with `pkill -KILL -f bin/Release/net9.0/MockHost`, which
+it has to: the app is a grandchild of the job, so killing the job's own children
+left hosts running until the machine had no memory left. But that pattern matches
+**any** host, not only the one this sweep started. Two sweeps therefore shoot each
+other's checks part-way through.
+
+That is not hypothetical — it happened here. A sweep was still going when a second
+one started, and `MO2_VERIFY_WIDGET_BEHAVIOUR` was killed mid-run, leaving a log
+holding build output and no verdict. The script reports that as NO VERDICT, which
+is right, and is exactly why it does. What it cannot report is *why*: a check shot
+by a neighbour and a check that has stopped saying anything leave the same log. Nor
+can the checks that ran alongside it be told apart from clean runs, because two
+frontends were driving the same live MO2 host at once.
+
+A sweep now writes its pid and a second one is **refused**, with the reason, rather
+than queued — a wait that takes half an hour to begin is indistinguishable from a
+hang. The three checks that fell inside that window were re-run with nothing else
+on the host.
+
+`flock` on a descriptor was the first attempt, and it failed in a way worth
+recording because it looked like it worked. The fd is inherited by everything the
+sweep starts; `dotnet run` leaves MSBuild node-reuse daemons behind on purpose; and
+those daemons held the lock after the sweep had finished, so every later sweep was
+refused by a build server. A pid that is checked for life cannot outlive the thing
+it stands for, and a sweep killed part-way leaves nothing to clean up by hand. Both
+directions were exercised: a live holder is refused with exit 3, a pid that is gone
+is ignored, and the file is removed on exit.
+
+The same defect then caught a run a second time, and how it did is the point: the
+lock was tested by starting a throwaway check, whose own cleanup killed the sweep
+already in flight. A guard added while the thing it guards is running does not
+guard that run — and neither does editing the script that run is executing, which
+bash reads by offset as it goes.
+
+## Two checks that had never finished a run
+
+`MO2_VERIFY_ROW_MENUS` and `MO2_VERIFY_ROW_STYLE` were both sitting on logs holding
+build output and nothing else, and `MO2_VERIFY_CONTROLS` on one that had never
+carried a verdict at all. None of them was broken: each had been cut off part-way
+by an interrupted sweep, which is the failure mode `verify.sh` reports as NO
+VERDICT rather than passing over. Run to the end against the live FNV host, all
+three pass — row style on both tables, MO2's own menus on all six lists compared
+entry for entry and both ways round, and the plugin-disable and mod-priority round
+trip through MO2 with the host's original state restored.
