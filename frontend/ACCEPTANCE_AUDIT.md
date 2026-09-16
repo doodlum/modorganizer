@@ -1895,3 +1895,45 @@ removed its bridge endpoint; its profile files were unchanged across the restart
 Open and unchanged by this turn: cold first-display latency, the combined
 end-to-end workflow, and a column chooser on Downloads, which MO2 has and this
 frontend does not.
+
+## 2026-09-16 — Downloads column chooser and MO2's filter borders
+
+Previous turn was progress: eleven untouched tab widgets driven and two dead
+controls fixed. This turn closed the gap that turn found and two more beside it.
+
+Downloads now carries MO2's column chooser on its heading strip
+(`DownloadListView::onHeaderCustomContextMenu`) and starts with the four columns
+MO2 hides. `Mo2ColumnToggle` gained a default hidden set — so Reset returns to
+MO2's defaults rather than to everything shown — and a pinned set, so the name is
+off the menu as MO2 leaves it off. The page's column widths are keyed by MO2's
+column names instead of by position, which would have set the wrong column's width
+once one could be hidden. Panels that name neither default nor pinned columns are
+unchanged.
+
+The mod list now shows that it is filtered, as MO2 does: `#f00` around the list and
+the active count while a filter is on, `#337733` around the list while it is
+grouped and not filtered. Drawn over the list rather than around it — the wrapped
+version put the mod table 2px off the plugin table and `MO2_VERIFY_ROW_PADDING`
+failed on it, which is recorded here because the fix is not obvious from the
+result. MO2's ridge has no Avalonia equivalent; this is 2px solid in MO2's colours.
+
+`MO2_VERIFY_WIDGET_BEHAVIOUR` gained: the column menu opened where MO2 puts it,
+its entries compared against MO2's seven hideable columns, the four MO2 hides
+required absent from the table, and Version chosen from the menu and read back off
+the drawn columns both ways; the filter ring and the count ring; the green grouping
+ring and the count deliberately not ringed by it; and `ModsClearFiltersButton` and
+`ModsCurrentCategoryLabel` driven for the first time. The ring is verified by
+counting the pixels it changes in the rendered window — 3,296 — not by reading the
+brush off the control.
+
+`src/mainwindow.ui` was parsed for every named widget under each tab rather than
+compared against a hand-written list. Every widget it reports now has a counterpart
+driven by this check, which passes 56 statements. Not yet compared:
+`executablesListBox`/`startButton`/`linkButton` against the frontend's launch panel,
+and `espFilterEdit`'s `MOBase::LineEditClear` clear affordance.
+
+Live on the FNV host: widget behaviour PASS (56), Qt widgets PASS, and the audit
+group PASS eleven for eleven including row padding, header fit, density and
+separator colour. All 24 profile files hash identically to the start of the
+session, no backup files left behind, and the saved workspace layout is unchanged.
+Cold first-display latency and the combined end-to-end workflow remain open.

@@ -22,6 +22,14 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
     // Set by the activation block to its own refresh, so MO2's Refresh button has
     // something to call from outside it.
     private Action? _qtRefresh;
+    // MO2 offers a column chooser on one list only: right-clicking the downloads
+    // header lists every column but the name as a checkbox
+    // (DownloadListView::onHeaderCustomContextMenu), and it starts with Mod name,
+    // Version, Nexus ID and Source Game hidden (setManager). This page drew all
+    // eight with no way to choose, which is both more than MO2 shows and less than
+    // MO2 offers.
+    private Mo2ColumnToggle? _columns;
+    private Action? _rebuildColumns;
 
     internal async Task ChooseArchive(Func<Task<string?>> choose)
     {
@@ -148,6 +156,11 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             Margin = new Thickness(24,0,24,6), TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(context, 1); layout.Children.Add(context);
         // MO2's own downloadTab furniture: a Refresh and a Query Metadata beside it.
+        // MO2's own four: the columns its download list keeps hidden until they are
+        // asked for. Name is not offered at all, as MO2 counts its menu from the
+        // column after it.
+        _columns = new Mo2ColumnToggle("downloads", () => _rebuildColumns?.Invoke(),
+            hiddenByDefault: ["Mod name", "Version", "Nexus ID", "Source Game"], pinned: ["Name"]);
         var qtBar = new StackPanel { Name = "DownloadsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
             Spacing = 6, Margin = new Thickness(24,0,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
         // The list's own refresh is a local of the activation block, so the button is
@@ -225,7 +238,21 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             if (native.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault() is not { ContextMenu: null } table) return;
             Mo2RowMenu.Attach<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>(
                 table, row => DownloadMenu(row), allowEmpty: true);
+            AttachColumnMenu();
         };
+        // The heading strip carries the column menu, as MO2's header does. The rows
+        // below keep the download menu: Avalonia resolves a right-click against the
+        // innermost control carrying a flyout, so the two do not collide. The strip is
+        // a template part that only exists once the table has been laid out, which is
+        // why this is called again whenever the columns are rebuilt.
+        void AttachColumnMenu()
+        {
+            if (_columns is null) return;
+            var headings = native.GetVisualDescendants()
+                .OfType<Avalonia.Controls.Primitives.TreeDataGridColumnHeadersPresenter>().FirstOrDefault();
+            if (headings is null || ReferenceEquals(headings.ContextFlyout, _columns.Menu)) return;
+            headings.ContextFlyout = _columns.Menu;
+        }
         this.WhenActivated(disposables => {
             if (ViewModel is not { } model) return;
             native.ViewModel = model;
@@ -266,50 +293,68 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     _ => null
                 };
                 if (columns is null) return;
-                columns.Clear();
-                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TemplateColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>("Name",
-                    new Avalonia.Controls.Templates.FuncDataTemplate<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>((item, _) => {
-                        var label = new TextBlock { Text = item?.Get<NexusMods.App.UI.Controls.NameComponent>(NexusMods.App.UI.Pages.Downloads.DownloadColumns.Name.NameComponentKey).Value.Value ?? "", TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                        ToolTip.SetTip(label, label.Text); return label;
-                    }), width: new GridLength(180)));
-                // MO2's own download columns (downloadlist.cpp): Status and Size beside
-                // the name, then the four it keeps in the archive's .meta.
-                columns.Add(NexusMods.App.UI.Controls.ColumnCreator.Create<NexusMods.Abstractions.Downloads.DownloadId, NexusMods.App.UI.Pages.Downloads.DownloadColumns.Status>(width: new GridLength(224)));
-                columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>("Size", x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(Mo2DownloadProvider.BytesKey).Value.Value, width: new GridLength(90)));
-                void Meta(string header, NexusMods.App.UI.Controls.ComponentKey key, double width) =>
-                    columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>(
-                        header, x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(key).Value.Value, width: new GridLength(width)));
-                Meta("Filetime", Mo2DownloadProvider.FiletimeKey, 130);
-                Meta("Mod name", Mo2DownloadProvider.ModNameKey, 150);
-                Meta("Version", Mo2DownloadProvider.VersionKey, 80);
-                Meta("Nexus ID", Mo2DownloadProvider.ModIdKey, 80);
-                Meta("Source Game", Mo2DownloadProvider.SourceGameKey, 110);
-                var previousWidth = double.NaN;
-                // Each column past the status keeps its width until the panel is too
-                // narrow to hold it, then collapses. Dropped rather than removed: the
-                // list used to take columns out of the collection and put them back,
-                // which only held while there were three of them and the one being
-                // moved was known by index.
-                (int Column, double Width, double Threshold)[] optional = [
-                    (2, 90, 430), (3, 130, 900), (4, 150, 700), (5, 80, 1060), (6, 80, 1180), (7, 110, 1320)];
-                resizeColumns = () => {
-                    if (Bounds.Width <= 0 || Bounds.Width == previousWidth) return;
-                    previousWidth = Bounds.Width;
-                    // The native Downloads table measures star columns at their
-                    // minimum. Allocate its remaining width explicitly instead.
-                    var statusWidth = Bounds.Width < 460 ? 184d : 224d;
-                    var taken = statusWidth;
-                    foreach (var (column, width, threshold) in optional) {
-                        if (column >= columns.Count) continue;
-                        var show = Bounds.Width >= threshold;
-                        columns.SetColumnWidth(column, new GridLength(show ? width : 0));
-                        if (show) taken += width;
-                    }
-                    columns.SetColumnWidth(0, new GridLength(Math.Max(60, Bounds.Width - 48 - taken)));
-                    if (columns.Count > 1) columns.SetColumnWidth(1, new GridLength(statusWidth));
-                };
-                resizeColumns();
+                // MO2's own download columns (downloadlist.cpp), with the width each
+                // keeps and the panel width below which it collapses. Kept as one list
+                // so the widths follow the columns actually drawn: they used to be
+                // written out by position, and choosing to hide one would have set the
+                // next one's width.
+                (string Header, NexusMods.App.UI.Controls.ComponentKey? Key, double Width, double Threshold)[] meta = [
+                    ("Filetime", Mo2DownloadProvider.FiletimeKey, 130, 900),
+                    ("Mod name", Mo2DownloadProvider.ModNameKey, 150, 700),
+                    ("Version", Mo2DownloadProvider.VersionKey, 80, 1060),
+                    ("Nexus ID", Mo2DownloadProvider.ModIdKey, 80, 1180),
+                    ("Source Game", Mo2DownloadProvider.SourceGameKey, 110, 1320),
+                ];
+                void BuildColumns()
+                {
+                    columns.Clear();
+                    columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TemplateColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>("Name",
+                        new Avalonia.Controls.Templates.FuncDataTemplate<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>((item, _) => {
+                            var label = new TextBlock { Text = item?.Get<NexusMods.App.UI.Controls.NameComponent>(NexusMods.App.UI.Pages.Downloads.DownloadColumns.Name.NameComponentKey).Value.Value ?? "", TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+                            ToolTip.SetTip(label, label.Text); return label;
+                        }), width: new GridLength(180)));
+                    columns.Add(NexusMods.App.UI.Controls.ColumnCreator.Create<NexusMods.Abstractions.Downloads.DownloadId, NexusMods.App.UI.Pages.Downloads.DownloadColumns.Status>(width: new GridLength(224)));
+                    columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>("Size", x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(Mo2DownloadProvider.BytesKey).Value.Value, width: new GridLength(90)));
+                    foreach (var (header, key, width, _) in meta)
+                        columns.Add(new Avalonia.Controls.Models.TreeDataGrid.TextColumn<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>, string>(
+                            header, x => x.Get<NexusMods.App.UI.Controls.ValueComponent<string>>(key!.Value).Value.Value, width: new GridLength(width)));
+                    // Every column is built and then the chosen ones taken out, so the
+                    // menu knows the whole set whichever of them is on screen.
+                    _columns!.Apply(columns);
+                    var previousWidth = double.NaN;
+                    // Each column past the status keeps its width until the panel is
+                    // too narrow to hold it, then collapses. Dropped rather than
+                    // removed: the list used to take columns out of the collection and
+                    // put them back, which only held while there were three of them
+                    // and the one being moved was known by index.
+                    var sizes = meta.ToDictionary(x => x.Header, x => (x.Width, x.Threshold), StringComparer.OrdinalIgnoreCase);
+                    sizes["Size"] = (90, 430);
+                    var optional = Enumerable.Range(2, Math.Max(0, columns.Count - 2))
+                        .Select(index => (Column: index, Size: sizes.TryGetValue(columns[index].Header?.ToString() ?? "", out var found) ? found : (Width: 100d, Threshold: 0d)))
+                        .Select(x => (x.Column, x.Size.Width, x.Size.Threshold)).ToArray();
+                    resizeColumns = () => {
+                        if (Bounds.Width <= 0 || Bounds.Width == previousWidth) return;
+                        previousWidth = Bounds.Width;
+                        // The native Downloads table measures star columns at their
+                        // minimum. Allocate its remaining width explicitly instead.
+                        var statusWidth = Bounds.Width < 460 ? 184d : 224d;
+                        var taken = statusWidth;
+                        foreach (var (column, width, threshold) in optional) {
+                            if (column >= columns.Count) continue;
+                            var show = Bounds.Width >= threshold;
+                            columns.SetColumnWidth(column, new GridLength(show ? width : 0));
+                            if (show) taken += width;
+                        }
+                        columns.SetColumnWidth(0, new GridLength(Math.Max(60, Bounds.Width - 48 - taken)));
+                        if (columns.Count > 1) columns.SetColumnWidth(1, new GridLength(statusWidth));
+                    };
+                    resizeColumns();
+                }
+                _rebuildColumns = BuildColumns;
+                BuildColumns();
+                AttachColumnMenu();
             }).DisposeWith(disposables);
+            System.Reactive.Disposables.Disposable.Create(() => _rebuildColumns = null).DisposeWith(disposables);
             Refresh();
         });
     }

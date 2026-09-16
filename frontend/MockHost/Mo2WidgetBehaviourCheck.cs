@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -149,6 +150,67 @@ internal static class Mo2WidgetBehaviourCheck
                 andRadio.IsChecked = true;
                 await Settle();
                 if (adapter.VisibleRowCount != all) faults.Add("the list was left narrowed after the And/Or pair was tried");
+            }
+
+            // MO2 says a filtered list is filtered rather than leaving it looking like
+            // mods that have gone: it rings the list in red and its count with it, and
+            // rings a grouped list in green (ModListView::onModFilterActive). It also
+            // offers a Clear beside the field, which it shows only while there is
+            // something to clear. Driven here through the filter field a user types
+            // in, and each state read off the border that is actually drawn.
+            var frame = Named<Border>(mods, "ModsFilterFrame");
+            var countFrame = Named<Border>(mods, "ModsCounterFrame");
+            var clearAll = Named<Button>(mods, "ModsClearFiltersButton");
+            var whatFor = Named<TextBlock>(mods, "ModsCurrentCategoryLabel");
+            if (frame is null || countFrame is null) faults.Add("the mod list has no frame to say it is filtered");
+            else if (clearAll is null || whatFor is null) faults.Add("the mod list has no Clear beside its filter field");
+            else if (Named<TextBox>(mods, "ModsQtFilter") is not { } field) faults.Add("the mod list has no filter field to try its frame with");
+            else {
+                var restBrush = frame.BorderBrush;
+                if (clearAll.IsVisible) faults.Add("Clear is offered with nothing filtered");
+                else if (!ReferenceEquals(restBrush, Avalonia.Media.Brushes.Transparent))
+                    faults.Add("the mod list is ringed with nothing filtered");
+                else {
+                    var name = live.Profile.Mods.FirstOrDefault(x => !x.IsSeparator)?.DisplayName ?? "";
+                    var typed = name.Length > 3 ? name[..3] : "zzzzz";
+                    field.Text = typed;
+                    await Settle();
+                    var ringed = ReferenceEquals(frame.BorderBrush, Mo2ModsView.FilteredInk);
+                    var counted = ReferenceEquals(countFrame.BorderBrush, Mo2ModsView.FilteredInk);
+                    var offered = clearAll.IsVisible;
+                    var said = whatFor.Text ?? "";
+                    // Painted, not merely assigned. A brush on a control that never
+                    // reaches the screen reads the same from every property on it,
+                    // which is the fault this whole check exists for — so the pixels
+                    // the ring changes in the rendered window are counted.
+                    var painted = await Ink(frame);
+                    // MO2's Clear empties the field and the ticks together.
+                    clearAll.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Settle();
+                    if (!ringed) faults.Add("the mod list was not ringed while it was filtered");
+                    else if (painted < 100) faults.Add($"the ring around the filtered list painted {painted} pixels");
+                    else if (!counted) faults.Add("the active count was not ringed while the list was filtered");
+                    else if (!offered) faults.Add("Clear was not offered while the list was filtered");
+                    else if (!said.Contains(typed, StringComparison.OrdinalIgnoreCase))
+                        faults.Add($"the label beside the field read \"{said}\" rather than saying the list was narrowed to \"{typed}\"");
+                    else if ((field.Text ?? "").Length > 0) faults.Add("Clear did not empty the filter field");
+                    else if (adapter.VisibleRowCount != all) faults.Add("Clear did not put every mod back");
+                    else if (!ReferenceEquals(frame.BorderBrush, Avalonia.Media.Brushes.Transparent))
+                        faults.Add("the mod list stayed ringed after Clear");
+                    else worked.Add($"a filtered list is ringed in MO2's red with its count over {painted} painted pixels, says it is narrowed to {said}, and Clear empties the field and takes the ring off");
+                }
+                // And MO2's green, which is the grouping rather than the filter.
+                if (Named<ComboBox>(mods, "ModsGroupBox") is { } groupChoice) {
+                    groupChoice.SelectedIndex = 1; await Settle();
+                    var green = ReferenceEquals(frame.BorderBrush, Mo2ModsView.GroupedInk);
+                    var countClear = ReferenceEquals(countFrame.BorderBrush, Avalonia.Media.Brushes.Transparent);
+                    groupChoice.SelectedIndex = 0; await Settle();
+                    if (!green) faults.Add("a grouped list was not ringed in MO2's green");
+                    else if (!countClear) faults.Add("the active count was ringed by a grouping, which only MO2's filter does");
+                    else if (!ReferenceEquals(frame.BorderBrush, Avalonia.Media.Brushes.Transparent))
+                        faults.Add("the list stayed ringed after the grouping came off");
+                    else worked.Add("a grouped list is ringed in MO2's green, and its count is not");
+                }
             }
 
             // The count MO2 keeps beside the list.
@@ -582,6 +644,54 @@ internal static class Mo2WidgetBehaviourCheck
                     faults.Add($"after Refresh the list shows {rows()} of MO2's {live.Profile.Downloads.Count} download(s)");
                 else worked.Add($"Refresh had MO2 read its downloads folder again and listed the {here} it came back with");
             } else faults.Add("Downloads has no Refresh");
+
+            // MO2 offers a column chooser on this one list, on its header's right-click
+            // (DownloadListView::onHeaderCustomContextMenu), and starts with four of
+            // its eight columns hidden (setManager). This page drew all eight and
+            // offered nothing. The menu is opened where MO2 puts it, a column is
+            // chosen from it, and the table is read back — a menu that lists the
+            // columns and changes none of them is the fault this is for.
+            var headings = downloads.GetVisualDescendants()
+                .OfType<Avalonia.Controls.Primitives.TreeDataGridColumnHeadersPresenter>().FirstOrDefault();
+            string[] Drawn() => downloads.GetVisualDescendants().OfType<TreeDataGrid>()
+                .Select(x => x.Columns?.Select(c => c.Header?.ToString() ?? "").ToArray() ?? [])
+                .FirstOrDefault(x => x.Length > 0) ?? [];
+            if (headings?.ContextFlyout is not MenuFlyout columnMenu) faults.Add("the downloads header carries no column menu");
+            else {
+                columnMenu.ShowAt(headings); await Settle(); columnMenu.Hide();
+                var entries = columnMenu.Items.OfType<MenuItem>().Select(x => x.Header as string ?? "").ToArray();
+                // MO2's own eight, less the name it never offers to hide.
+                string[] offered = ["Status", "Size", "Filetime", "Mod name", "Version", "Nexus ID", "Source Game"];
+                var missing = offered.Where(x => !entries.Contains(x)).ToArray();
+                if (missing.Length > 0) faults.Add($"the column menu does not offer {string.Join(", ", missing)}");
+                else if (entries.Contains("Name")) faults.Add("the column menu offers to hide the name, which MO2 keeps off it");
+                else {
+                    // MO2's four start hidden, and this page used to draw them anyway.
+                    string[] hiddenByMo2 = ["Mod name", "Version", "Nexus ID", "Source Game"];
+                    var drawn = Drawn();
+                    var extra = hiddenByMo2.Where(drawn.Contains).ToArray();
+                    if (extra.Length > 0) faults.Add($"the list draws {string.Join(", ", extra)}, which MO2 starts with hidden");
+                    else if (!drawn.Contains("Filetime")) faults.Add("the list does not draw Filetime, which MO2 starts with shown");
+                    else {
+                        // Chosen from the menu itself rather than through the object
+                        // behind it: the entry is what a user reaches.
+                        var entry = columnMenu.Items.OfType<MenuItem>().First(x => (x.Header as string) == "Version");
+                        entry.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+                        await Until(() => Drawn().Contains("Version"), seconds: 10);
+                        var chosen = Drawn();
+                        entry.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+                        await Until(() => !Drawn().Contains("Version"), seconds: 10);
+                        var back = Drawn();
+                        if (!chosen.Contains("Version")) faults.Add("choosing Version from the column menu did not draw it");
+                        else if (chosen.Length != drawn.Length + 1)
+                            faults.Add($"choosing Version drew {chosen.Length} columns against the {drawn.Length} before it");
+                        else if (!back.SequenceEqual(drawn))
+                            faults.Add($"unchoosing Version left {string.Join(", ", back)} rather than {string.Join(", ", drawn)}");
+                        else worked.Add($"the downloads header carries MO2's column menu over its {entries.Length} entries, " +
+                            $"starts with MO2's {string.Join(", ", hiddenByMo2)} hidden, and drew Version among {chosen.Length} columns when chosen and took it away again");
+                    }
+                }
+            }
         } else faults.Add("Downloads never drew");
 
         await Navigate(restore);
@@ -649,6 +759,41 @@ internal static class Mo2WidgetBehaviourCheck
         async Task Settle()
         {
             for (var pass = 0; pass < 8; pass++) { await Task.Delay(100); window.UpdateLayout(); }
+        }
+
+        // How many pixels of the rendered window a control is responsible for: the
+        // window is drawn, the control faded out, drawn again, and the two compared
+        // over its own rectangle. Opacity rather than IsVisible, so the rectangle
+        // does not move between the two. The same technique Mo2PhysicalityCheck uses,
+        // and for the same reason — a control can be laid out, visible and carrying
+        // the right brush while painting nothing at all.
+        async Task<int> Ink(Control control)
+        {
+            var origin = control.TranslatePoint(default, window) ?? default;
+            var rect = new Avalonia.PixelRect((int)origin.X, (int)origin.Y,
+                Math.Max(1, (int)Math.Ceiling(control.Bounds.Width)), Math.Max(1, (int)Math.Ceiling(control.Bounds.Height)));
+            byte[] Shot()
+            {
+                using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(
+                    new Avalonia.PixelSize(Math.Max(1, (int)window.ClientSize.Width), Math.Max(1, (int)window.ClientSize.Height)));
+                bitmap.Render(window);
+                var stride = rect.Width * 4;
+                var buffer = new byte[stride * rect.Height];
+                var handle = System.Runtime.InteropServices.GCHandle.Alloc(buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try { bitmap.CopyPixels(rect, handle.AddrOfPinnedObject(), buffer.Length, stride); }
+                finally { handle.Free(); }
+                return buffer;
+            }
+            var shown = Shot();
+            control.Opacity = 0;
+            await Task.Delay(80); window.UpdateLayout();
+            var hidden = Shot();
+            control.Opacity = 1;
+            await Task.Delay(80); window.UpdateLayout();
+            var lit = 0;
+            for (var index = 0; index < shown.Length; index += 4)
+                if (Math.Abs(shown[index] - hidden[index]) > 8) lit++;
+            return lit;
         }
 
         // Anything that goes through MO2 takes as long as MO2 takes.

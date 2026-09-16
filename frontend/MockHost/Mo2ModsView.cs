@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using Avalonia.Platform.Storage;
 using Avalonia.LogicalTree;
 using Avalonia.Input;
+using Avalonia.Media;
 using NexusMods.App.UI.Controls;
 using NexusMods.App.UI.Pages;
 using NexusMods.App.UI.Pages.LoadoutPage;
@@ -197,6 +198,11 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
     // The archives MO2 installs from, which is what it accepts on a drop.
     internal static bool IsArchive(string path) =>
         Path.GetExtension(path).ToLowerInvariant() is ".zip" or ".7z" or ".rar" or ".fomod";
+
+    // MO2's own two, out of ModListView::onModFilterActive: #f00 around a filtered
+    // list and its count, #337733 around a grouped one.
+    internal static readonly IBrush FilteredInk = new SolidColorBrush(Color.FromRgb(0xff, 0x00, 0x00));
+    internal static readonly IBrush GroupedInk = new SolidColorBrush(Color.FromRgb(0x33, 0x77, 0x33));
 
     public LoadoutView NativeView { get; } = new();
     private TabControl SubTabs => NativeView.FindControl<TabControl>("RulesTabControl")!;
@@ -469,8 +475,14 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("mods", "backup", live.CurrentTarget); });
         barActions.Children.Add(restoreMods); barActions.Children.Add(saveMods);
         var activeMods = Mo2QtWidgets.Counter("ActiveModsCounter", out var activeModsValue);
-        activeMods.Margin = new Thickness(8,0,0,0);
-        barActions.Children.Add(activeMods);
+        // MO2 rings the count in the same red it rings the list with while a filter is
+        // on (ModListView::onModFilterActive), because a count of what is shown means
+        // something different from a count of what there is. Kept at 2px whatever the
+        // state so the bar does not move when a filter goes on and off.
+        var countFrame = new Border { Name = "ModsCounterFrame", Child = activeMods, Margin = new Thickness(6,0,0,0),
+            BorderThickness = new Thickness(2), BorderBrush = Brushes.Transparent, Padding = new Thickness(2,0),
+            CornerRadius = new CornerRadius(3), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        barActions.Children.Add(countFrame);
 
         // Under the list: MO2's displayCategoriesBtn, what the list is filtered to,
         // the grouping box and the filter field.
@@ -574,7 +586,20 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             Margin = new Thickness(Mo2PanelChrome.Padding, 0, Mo2PanelChrome.Padding, Mo2PanelChrome.Padding) };
         Grid.SetColumnSpan(qtBar, 2); modsTab.Children.Add(qtBar);
         Grid.SetRow(categoriesGroup,1); modsTab.Children.Add(categoriesGroup);
+        // MO2 rings the mod list itself while it is showing less than all of it: red
+        // for a filter, green for a grouping, nothing otherwise. Without it a filter
+        // left on looks exactly like mods that have gone missing, which is the whole
+        // reason MO2 draws it. Its own is a 2px ridge; Avalonia has no ridge, so this
+        // is 2px solid in MO2's two colours, and it is 2px when clear as well so the
+        // list does not shift as the border comes and goes.
+        // Drawn over the list rather than around it. Wrapping it moved the table 2px
+        // down and right, and the mod and plugin tables are meant to start on the
+        // same line — the row-padding check caught them 2px apart. Qt insets its own
+        // viewport inside the frame, so a ridge costs it nothing either.
+        var listFrame = new Border { Name = "ModsFilterFrame", BorderThickness = new Thickness(2),
+            BorderBrush = Brushes.Transparent, CornerRadius = new CornerRadius(3), IsHitTestVisible = false };
         Grid.SetRow(list,1); Grid.SetColumn(list,1); modsTab.Children.Add(list);
+        Grid.SetRow(listFrame,1); Grid.SetColumn(listFrame,1); modsTab.Children.Add(listFrame);
         Grid.SetRow(filterBar,2); Grid.SetColumn(filterBar,1); modsTab.Children.Add(filterBar);
         // The pane's own width, as of the last pass that changed it. Everything here
         // runs on every layout pass, and anything it writes asks for another one: the
@@ -618,6 +643,14 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 narrowed = narrowed.Length > 0 ? narrowed + " · \"" + filterField!.Text + "\"" : "\"" + filterField!.Text + "\"";
             if (currentCategory.Text != narrowed) currentCategory.Text = narrowed;
             if (clearAll.IsVisible != narrowed.Length > 0) clearAll.IsVisible = narrowed.Length > 0;
+            // MO2's own two: #f00 while a filter is on, #337733 while the list is
+            // grouped and not filtered, nothing otherwise — and the count is ringed
+            // only by the filter, as MO2 rings only its QLCDNumber.
+            var wantedFrame = narrowed.Length > 0 ? FilteredInk
+                : groupBox.SelectedIndex > 0 ? GroupedInk : Brushes.Transparent;
+            if (!ReferenceEquals(listFrame.BorderBrush, wantedFrame)) listFrame.BorderBrush = wantedFrame;
+            var wantedCount = narrowed.Length > 0 ? FilteredInk : (IBrush)Brushes.Transparent;
+            if (!ReferenceEquals(countFrame.BorderBrush, wantedCount)) countFrame.BorderBrush = wantedCount;
         };
         listContainer.Content = modsTab;
         Mo2ListRail.Connect(scroll, table);

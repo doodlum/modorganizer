@@ -2470,3 +2470,75 @@ nine for nine including `MO2_VERIFY_SEPARATOR_COLOR` and `MO2_VERIFY_DENSITY`, a
 2.5.2 hung after its window closed on this host and had to be terminated; it had
 already removed its bridge endpoint and written its state, and the profile files
 were unchanged across the restart.
+
+## The chooser MO2 has, and the two borders it draws
+
+### Downloads' column chooser
+
+MO2 offers a column chooser on exactly one of its lists: right-clicking the
+downloads header lists every column but the name as a checkbox
+(`DownloadListView::onHeaderCustomContextMenu`, which counts from column 1), and
+its list starts with **Mod name, Version, Nexus ID and Source Game hidden**
+(`setManager`). This page drew all eight columns and offered no way to choose —
+both more than MO2 shows and less than MO2 offers.
+
+The chooser is now on the heading strip, where MO2 puts it, over the same
+`Mo2ColumnToggle` the folder pages use. Three things were added to that class for
+it: a default hidden set, so a page that has never been opened starts where MO2
+starts and **Reset to default** returns there rather than to everything-shown; and
+a pinned set, so the name is left off the menu entirely as MO2 leaves it off.
+Panels that name neither keep exactly what they had.
+
+The page's column widths used to be written out by position — `(2, 90, 430)` and
+so on — which would have set the wrong column's width the moment one was hidden.
+They are keyed by MO2's own column names now and read off whatever is drawn.
+
+### A filtered list says so
+
+MO2 rings its mod list in red while a filter is on and rings the active-mod count
+with it, and rings the list in green while it is grouped and not filtered
+(`ModListView::onModFilterActive`). Without it a filter left on looks exactly like
+mods that have gone missing, which is why MO2 draws it. The frontend drew neither.
+
+MO2's own `#f00` and `#337733` at 2px. Its border is a Qt ridge, which Avalonia has
+no equivalent for, so this is solid — and it is drawn **over** the list rather than
+around it: wrapping the list moved the mod table 2px off the plugin table beside
+it, which `MO2_VERIFY_ROW_PADDING` caught immediately.
+
+`ModsClearFiltersButton` and `ModsCurrentCategoryLabel` — MO2's `clearFiltersButton`
+and `currentCategoryLabel` — were already implemented and already followed the
+filter, but nothing had ever driven them. They are driven now: typed into, read for
+what they say the list is narrowed to, and pressed to clear it. Neither is in the
+Qt widget check's list, because MO2 shows the Clear only while there is something
+to clear and the label is empty until there is; a check that demanded them at rest
+would be demanding what MO2 does not draw.
+
+### Painted, not merely assigned
+
+The ring is checked by rendering the window, fading the border out, rendering again
+and counting the pixels that changed — 3,296 of them on this host. A brush on a
+control that never reaches the screen reads correct from every property on it,
+which is the fault this whole check exists for. Same technique as
+`Mo2PhysicalityCheck`, for the same reason.
+
+### Where MO2's widgets were read from this time
+
+`src/mainwindow.ui` parsed for every named widget under each tab, rather than a
+list typed out by hand:
+
+| MO2 | Widgets |
+| --- | --- |
+| mod pane | categoriesGroup, filtersClear, filtersEdit, filtersAnd, filtersOr, filtersSeparators, profileBox, listOptionsBtn, openFolderMenu, restoreModsButton, saveModsButton, activeModslabel, displayCategoriesBtn, currentCategoryLabel, clearFiltersButton, groupCombo and two labels |
+| espTab | sortButton, restoreButton, saveButton, activePluginsLabel |
+| dataTab | dataTabRefresh, dataTabShowOnlyConflicts, dataTabShowFromArchives, dataTabShowHiddenFiles, dataTabFilter |
+| downloadTab | btnRefreshDownloads, btnQueryDownloadsInfo, showHiddenBox, downloadFilterEdit |
+| bsaTab, savesTab | none — both are the list alone |
+
+Every one of them now has a counterpart that is driven by
+`MO2_VERIFY_WIDGET_BEHAVIOUR`, which reports 56 statements on this host.
+
+**Still open:** `executablesListBox`, `startButton` and `linkButton` — MO2's run
+row — have not been compared against the frontend's launch panel. The plugin list's
+own filter field is the frontend's own; MO2's `espFilterEdit` is a
+`MOBase::LineEditClear`, which has a clear affordance this has not been compared
+against.
