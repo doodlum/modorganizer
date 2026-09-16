@@ -61,6 +61,17 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         _table.Classes.Add("MainListsStyling");
         _search.TextChanged += (_,_) => Render();
         _table.DoubleTapped += async (_,_) => await RunAction("details");
+        // MO2's own saves menu (savestab.cpp, onContextMenu), which is the only place
+        // its Saves tab offers anything: fixing the mods a save wants, deleting it,
+        // and showing it in a file manager. The header line keeps the same actions;
+        // this is where MO2 users reach for them.
+        Mo2RowMenu.Attach<Mo2Save>(_table, save => [
+            Mo2EntryMenu.Action("Fix enabled mods...", () => RunAction("repair"), Ready),
+            Mo2EntryMenu.Action("Delete 1 save(s)", () => RunAction("delete"), Ready),
+            // Opened on this desktop: MO2's own explores the folder inside its prefix.
+            Mo2EntryMenu.Action("Open in Explorer...", () => { OpenSave(save); return Task.CompletedTask; },
+                ViewModel?.Profile.SavesDirectory is { Length: > 0 }),
+        ]);
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true; ++_activation;
@@ -84,7 +95,20 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
             _actionError = error; _status.Text = error;
         }
     }
-    private void UpdateActions() => _details.IsEnabled = _repair.IsEnabled = _delete.IsEnabled = _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true && _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Save;
+    // What the header buttons are enabled by, which is also what the menu asks.
+    private bool Ready => _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true &&
+        _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Save;
+    private void UpdateActions() => _details.IsEnabled = _repair.IsEnabled = _delete.IsEnabled = Ready;
+
+    // MO2 names a save relative to the folder it read it from, so the two are put
+    // back together here and the file is shown in the desktop's own file manager.
+    private void OpenSave(Mo2Save save)
+    {
+        if (ViewModel?.Profile is not { SavesDirectory: { Length: > 0 } folder } profile) return;
+        var path = Path.Combine(folder, save.File.Replace('\\', '/'));
+        if (!File.Exists(path)) { _status.Text = "MO2 no longer has " + save.File; return; }
+        profile.RevealLocalFile?.Invoke(path);
+    }
     internal async Task Refresh()
     {
         if (!_active || _reading || ViewModel is not { } model) return;

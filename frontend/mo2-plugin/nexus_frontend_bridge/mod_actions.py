@@ -69,6 +69,328 @@ class ModActions:
         self.organizer = organizer
         self.window = window
 
+    def _select_rows(self, view_name, model_name, all_names, names, subject):
+        """Select rows in one of MO2's own list views and return it with the lead.
+
+        Its context menus act on the view's selection, so a menu action is reached by
+        selecting through the view's proxy chain exactly as a click would.
+        """
+        from PyQt6.QtCore import QAbstractProxyModel, QItemSelectionModel, Qt
+        from PyQt6.QtWidgets import QTreeView
+        if not isinstance(names, list) or not names or any(not isinstance(n, str) or n not in all_names for n in names):
+            raise ValueError(subject + ' no longer exists; refresh the list')
+        if not self.window.isEnabled(): raise ValueError('Close MO2’s current dialog first')
+        view = self.window.findChild(QTreeView, view_name)
+        if view is None or not view.isEnabled(): raise ValueError('MO2 ' + subject.lower() + ' list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != model_name:
+            raise ValueError('Unsupported MO2 ' + subject.lower() + ' list model')
+        chain = []
+        proxy = view.model()
+        while isinstance(proxy, QAbstractProxyModel):
+            chain.append(proxy); proxy = proxy.sourceModel()
+        # The mod list's rows are its own mod order and it numbers them in this role;
+        # the plugin list's rows are the load order and are named in the first column,
+        # so each list is resolved the way it reports itself.
+        rows = {name: model.index(row, 0) for row, name in enumerate(all_names)} if model_name == 'ModList' else {
+            str(model.index(row, 0).data(Qt.ItemDataRole.DisplayRole)): model.index(row, 0)
+            for row in range(model.rowCount())}
+        return ModActions._select_indexes(view, chain, rows, names, subject, numbered=model_name == 'ModList')
+
+    @staticmethod
+    def _select_indexes(view, chain, rows, names, subject, numbered=False):
+        """Select the rows named, given where each one sits in the list's own model.
+
+        A row reached by name need not be a top-level one: MO2 keeps each archive
+        under the mod that supplies it. The branch holding a row is opened and the row
+        scrolled to if the view is not already drawing it, because the menu is opened
+        at the rectangle the view draws that row at — a row with no rectangle would
+        open the list's menu on nothing.
+        """
+        from PyQt6.QtCore import QItemSelectionModel, Qt
+        lead = None
+        view.selectionModel().clear()
+        for name in names:
+            if name not in rows: raise ValueError(subject + ' no longer exists; refresh the list')
+            index = rows[name]
+            if not index.isValid() or (numbered and index.data(int(Qt.ItemDataRole.UserRole) + 1) != index.row()):
+                raise ValueError('MO2 ' + subject.lower() + ' row changed; refresh the list')
+            mapped = index
+            for step in reversed(chain):
+                mapped = step.mapFromSource(mapped)
+                if not mapped.isValid(): raise ValueError('MO2 is not showing this ' + subject.lower() + '; clear its filters first')
+            branch = mapped.parent()
+            while branch.isValid():
+                view.expand(branch)
+                branch = branch.parent()
+            view.selectionModel().select(mapped, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+            if lead is None: lead = mapped
+        view.selectionModel().setCurrentIndex(lead, QItemSelectionModel.SelectionFlag.NoUpdate)
+        if view.visualRect(lead).isEmpty(): view.scrollTo(lead)
+        return view, lead
+
+    def _select_mods(self, names):
+        return self._select_rows('modList', 'ModList', list(self.organizer.modList().allMods()), names, 'Mod')
+
+    def _select_plugins(self, names):
+        return self._select_rows('espList', 'PluginList', list(self.organizer.pluginList().pluginNames()), names, 'Plugin')
+
+    @staticmethod
+    def _submenu(action):
+        """The menu an entry opens onto, filled the way showing it would fill it.
+
+        Its category menus are push buttons in a widget action rather than ordinary
+        submenus (ModListContextMenu::addMenuAsPushButton), so both shapes are read.
+        MO2's All Mods menu builds itself on aboutToShow and is empty until then, so
+        that signal is emitted before it is read or searched.
+        """
+        from PyQt6.QtWidgets import QPushButton, QWidgetAction
+        child, text = action.menu(), action.text()
+        if isinstance(action, QWidgetAction) and child is None:
+            button = action.defaultWidget()
+            if isinstance(button, QPushButton):
+                text, child = button.text(), button.menu()
+        if child is not None and not child.actions():
+            child.aboutToShow.emit()
+        return text.replace('&', ''), child
+
+    @staticmethod
+    def _menu_entries(menu):
+        """MO2's menu as plain data: what it holds, in the order it holds it."""
+        entries = []
+        for action in menu.actions():
+            if action.isSeparator():
+                entries.append({'separator': True})
+                continue
+            text, child = ModActions._submenu(action)
+            entry = {'text': text, 'enabled': action.isEnabled(),
+                     'checkable': action.isCheckable(), 'checked': action.isChecked()}
+            if child is not None:
+                entry['items'] = ModActions._menu_entries(child)
+            entries.append(entry)
+        return entries
+
+    def plugin_menu(self, names, path=None):
+        """The same for MO2's plugin list, which carries its own menu."""
+        return self._list_menu(self._select_plugins, names, path)
+
+    def mod_menu(self, names, path=None):
+        """Read, or trigger one entry of, MO2's own mod context menu.
+
+        With no path this reports what MO2 would show for the selection, which is
+        what the frontend's own menu is checked against. With one it triggers MO2's
+        action of that name — so the wording, the conditions and the work itself are
+        all MO2's, and nothing about what those actions do is reimplemented here.
+        """
+        return self._list_menu(self._select_mods, names, path)
+
+    # MO2's other four lists, by the name each is built under in mainwindow.ui and
+    # the model behind it. Every one of them answers customContextMenuRequested the
+    # same way the mod and plugin lists do — downloadView through DownloadListView,
+    # dataTree through FileTree, bsaList through the main window, savegameList
+    # through SavesTab — so the same capture reads what MO2 would have shown.
+    # Both tree widgets keep their rows in QTreeWidget's own model.
+    FILE_LISTS = {
+        'downloads': ('downloadView', 'DownloadList', 'Download'),
+        'data': ('dataTree', 'FileTreeModel', 'Data file'),
+        'archives': ('bsaList', 'QTreeModel', 'Archive'),
+        'saves': ('savegameList', 'QTreeModel', 'Save'),
+    }
+
+    def file_menu(self, view, names, path=None):
+        """Read, or trigger one entry of, the menu MO2 puts on one of its file lists.
+
+        The mod and plugin menus were the only ones the frontend could compare against
+        MO2, so the other four were checked against entries written down in the check
+        instead — which cannot notice MO2 gaining an entry, nor this frontend offering
+        one MO2 does not.
+        """
+        if view not in ModActions.FILE_LISTS:
+            raise ValueError('Unknown MO2 list')
+        self._restore_to = None
+        try:
+            return self._list_menu(lambda wanted: self._select_listed(view, wanted), names, path)
+        finally:
+            ModActions._restore_tab(self.window, self._restore_to)
+            self._restore_to = None
+
+
+    def _show_owning_tab(self, view):
+        """Bring the tab holding a view to the front, and say what was there before.
+
+        MO2 fills bsaList and savegameList when their tab is shown and not before, so
+        both answered with nothing at all while the frontend was driving them: their
+        menus cannot be read off an empty list. downloadView and dataTree are already
+        populated, and switching to their tab costs nothing.
+        """
+        from PyQt6.QtWidgets import QApplication, QTabWidget
+        tabs = self.window.findChild(QTabWidget, 'tabWidget')
+        if tabs is None: return None
+        page = view
+        while page is not None and tabs.indexOf(page) < 0:
+            page = page.parentWidget()
+        if page is None: return None
+        previous = tabs.currentWidget()
+        if page is not previous:
+            tabs.setCurrentWidget(page)
+            QApplication.processEvents()
+        return previous
+
+    @staticmethod
+    def _restore_tab(window, previous):
+        from PyQt6.QtWidgets import QApplication, QTabWidget
+        if previous is None: return
+        tabs = window.findChild(QTabWidget, 'tabWidget')
+        if tabs is not None and tabs.currentWidget() is not previous:
+            tabs.setCurrentWidget(previous)
+            QApplication.processEvents()
+
+    @staticmethod
+    def _listed_rows(model, view):
+        """Each row of one of those lists, under the name the frontend knows it by.
+
+        Two of the four do not name a row by the first column of a top-level row, and
+        a comparison that asks MO2 about a row it does not hold compares two different
+        menus — or none at all.
+
+        MO2's archive list is a tree of mods with their archives beneath, so the rows
+        the Archives page lists are its children (MainWindow::refreshBSAList builds the
+        mod as the top-level item and adds each archive under it). And MO2 labels a
+        save with a composite caption — character, slot and place — which two saves can
+        share, and this profile's two do; the file sits in the second column
+        (SavesTab::refreshSaveList writes both), which is what the Saves page names a
+        row by and what MO2's own save actions match on.
+        """
+        from PyQt6.QtCore import Qt
+        rows = {}
+        if view == 'archives':
+            for owner in range(model.rowCount()):
+                parent = model.index(owner, 0)
+                for child in range(model.rowCount(parent)):
+                    index = model.index(child, 0, parent)
+                    rows.setdefault(str(index.data(Qt.ItemDataRole.DisplayRole)), index)
+        elif view == 'saves':
+            for row in range(model.rowCount()):
+                rows.setdefault(str(model.index(row, 1).data(Qt.ItemDataRole.DisplayRole)), model.index(row, 0))
+        else:
+            for row in range(model.rowCount()):
+                index = model.index(row, 0)
+                rows.setdefault(str(index.data(Qt.ItemDataRole.DisplayRole)), index)
+        return rows
+
+    def _list_model(self, view, subject):
+        """The view for one of those lists with its own model, its tab brought forward."""
+        from PyQt6.QtCore import QAbstractProxyModel
+        from PyQt6.QtWidgets import QTreeView
+        view_name, model_name = ModActions.FILE_LISTS[view][0], ModActions.FILE_LISTS[view][1]
+        found = self.window.findChild(QTreeView, view_name)
+        if found is None: raise ValueError('MO2 ' + subject.lower() + ' list is unavailable')
+        # Left showing: the menu is opened on this view afterwards, and a view on a
+        # hidden tab has no row rectangle to open it at. The caller puts the tab back.
+        previous = self._show_owning_tab(found)
+        try:
+            model, chain = found.model(), []
+            while isinstance(model, QAbstractProxyModel):
+                chain.append(model); model = model.sourceModel()
+            if model is None: raise ValueError('MO2 ' + subject.lower() + ' list has no model')
+            # Held to the model MO2 is expected to be using rather than to whatever it
+            # turns out to have: passing the model's own name back would agree with
+            # anything, including a list this was never written for.
+            name = model.metaObject().className()
+            if name != model_name:
+                raise ValueError('Unsupported MO2 ' + subject.lower() + ' list model: ' + name)
+        except Exception:
+            # The tab was brought forward to read this list; it goes back whether or
+            # not the list turned out to be the one expected.
+            ModActions._restore_tab(self.window, previous)
+            raise
+        return found, model, chain, previous
+
+    def _select_listed(self, view, names):
+        """Select by the name the frontend's own page gives that row."""
+        subject = ModActions.FILE_LISTS[view][2]
+        found, model, chain, previous = self._list_model(view, subject)
+        self._restore_to = previous
+        if not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names):
+            raise ValueError(subject + ' no longer exists; refresh the list')
+        return ModActions._select_indexes(found, chain, ModActions._listed_rows(model, view), names, subject)
+
+    def file_list_rows(self, view):
+        """What MO2 is showing in one of those lists, so a row can be asked for by name."""
+        if view not in ModActions.FILE_LISTS: raise ValueError('Unknown MO2 list')
+        subject = ModActions.FILE_LISTS[view][2]
+        previous = None
+        try:
+            _, model, _, previous = self._list_model(view, subject)
+            return {'rows': list(ModActions._listed_rows(model, view)),
+                    'model': model.metaObject().className()}
+        finally:
+            ModActions._restore_tab(self.window, previous)
+
+    def _list_menu(self, select, names, path=None):
+        from PyQt6.QtCore import QEvent, QObject, QPoint, QTimer, Qt
+        from PyQt6.QtWidgets import QApplication, QMenu
+        # One entry, or a choice of spellings for the same entry: MO2 renames several
+        # of its own depending on where the menu was opened and whether a filter is
+        # on, so the frontend offers every name MO2 uses for one action and the one
+        # MO2 actually built is the one taken.
+        if path is not None and isinstance(path, list) and path and all(isinstance(step, str) for step in path):
+            path = [path]
+        if path is not None and (not isinstance(path, list) or not path or any(
+                not isinstance(option, list) or not option or any(not isinstance(step, str) for step in option)
+                for option in path)):
+            raise ValueError('Choose a menu entry to trigger')
+        view, lead = select(names)
+        read, errors = [], []
+
+        def find(entries_menu, steps):
+            for action in entries_menu.actions():
+                if action.isSeparator(): continue
+                text, child = ModActions._submenu(action)
+                if text != steps[0]: continue
+                if len(steps) == 1: return action
+                if child is not None: return find(child, steps[1:])
+            return None
+
+        class Capture(QObject):
+            armed = True
+            def eventFilter(inner, watched, event):
+                if not inner.armed or not isinstance(watched, QMenu) or event.type() != QEvent.Type.Polish:
+                    return False
+                inner.armed = False
+                watched.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                def run():
+                    try:
+                        if path is None:
+                            read.append(ModActions._menu_entries(watched))
+                            return
+                        found = [action for action in (find(watched, option) for option in path)
+                                 if action is not None and action.isEnabled()]
+                        if not found:
+                            errors.append('MO2 does not offer ' + ' → '.join(path[0]) + ' for this selection')
+                            return
+                        read.append(True)
+                        found[0].trigger()
+                    except Exception as error:
+                        errors.append(str(error))
+                    finally:
+                        watched.close()
+                QTimer.singleShot(0, run)
+                return False
+
+        app = QApplication.instance(); capture = Capture(); app.installEventFilter(capture)
+        visible = self.window.isVisible()
+        try:
+            rect = view.visualRect(lead)
+            view.customContextMenuRequested.emit(rect.center() if rect.isValid() else QPoint(0, 0))
+        finally:
+            app.removeEventFilter(capture)
+            if not visible: self.window.hide()
+        if errors: raise ValueError(errors[0])
+        if not read: raise ValueError('MO2 did not open that list’s menu')
+        return {'entries': read[0]} if path is None else {'triggered': path[0]}
+
     def selection_links(self, names):
         """Read native conflict models; resolve names through the virtual filesystem."""
         from PyQt6.QtCore import QAbstractProxyModel, QEvent, QObject, QTimer, Qt
@@ -395,6 +717,10 @@ class ModActions:
                 'notes': plain(cell(row, 'Notes', Qt.ItemDataRole.ToolTipRole)) or cell(row, 'Notes'),
                 'color': background_color(model, row, 0),
                 'notesColor': '' if notes_column is None else background_color(model, row, notes_column),
+                # What MO2's own mod menu branches on, so the frontend can offer the
+                # entries MO2 would offer rather than a fixed list. Read off the mod
+                # itself; an MO2 that does not expose one leaves it out.
+                **mod_menu_state(mods.getMod(name)),
             })
         return result
 
@@ -1023,6 +1349,38 @@ class ModActions:
         view.selectionModel().clear()
         model.removeRow(row)
         return {'removed': name not in mods.allMods(), 'modName': name}
+
+
+def mod_menu_state(mod):
+    """The conditions MO2's own mod menu branches on, read off the mod.
+
+    MO2 decides what a mod's menu holds from these (modlistcontextmenu.cpp): a mod
+    it knows on Nexus gets the two links, the update actions and the endorsement
+    entries; one installed for another game gets Mark as converted; one it could
+    not read gets Ignore missing data. Anything an MO2 build does not expose is
+    left out rather than guessed at, and the frontend leaves that entry out too.
+    """
+    def read(call, default=None):
+        try:
+            value = call()
+        except Exception:
+            return default
+        return value if value is not None else default
+    def name_of(value, default=''):
+        if value is None: return default
+        return str(getattr(value, 'name', value)).rsplit('.', 1)[-1]
+    url = read(mod.url, '') or ''
+    return {
+        'foreign': bool(read(mod.isForeign, False)),
+        # ENDORSED_TRUE / ENDORSED_FALSE / ENDORSED_NEVER / ENDORSED_UNKNOWN, and
+        # TRACKED_TRUE / TRACKED_FALSE / TRACKED_UNKNOWN, under MO2's own names.
+        'endorsed': name_of(read(mod.endorsedState)),
+        'tracked': name_of(read(mod.trackedState)),
+        'ignoredVersion': str(read(mod.ignoredVersion, '') or ''),
+        'validated': bool(read(mod.validated, True)),
+        'converted': bool(read(mod.converted, True)),
+        'url': url,
+    }
 
 
 def newest_version(mod):

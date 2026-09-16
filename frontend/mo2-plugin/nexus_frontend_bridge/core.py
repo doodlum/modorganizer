@@ -59,6 +59,9 @@ class Bridge:
             'profiles': self.profiles.snapshot() if self.profiles is not None else [],
             'nexusGame': self.downloads.game_domain() if self.downloads is not None else None,
             'downloads': self.downloads.snapshot() if self.downloads is not None else [],
+            # What this MO2 build can actually be asked to do with a download, so the
+            # frontend offers no entry MO2 has no action behind.
+            'downloadActions': self.downloads.available_actions() if self.downloads is not None else [],
             'profile': {'name': organizer.profileName(), 'path': organizer.profilePath()},
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
                          'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath(), 'logsPath': self.logs_path,
@@ -142,9 +145,18 @@ class Bridge:
             return overwrite.read() if action == 'readOverwrite' else overwrite.action(request.get('operation'))
         if action in ('readSaves', 'saveAction'):
             if self.mod_actions is None: raise ValueError('MO2 save integration is unavailable')
-            from .saves import read_saves, save_action, preview_save_details
+            from .saves import read_saves, save_action, preview_save_details, current_saves_directory
             if action == "saveAction" and request.get("operation") == "details": return preview_save_details(self.organizer, self.mod_actions.window, request.get("file"))
-            return read_saves(self.mod_actions.window) if action == 'readSaves' else save_action(self.mod_actions.window, request.get('file'), request.get('operation'))
+            if action != 'readSaves': return save_action(self.mod_actions.window, request.get('file'), request.get('operation'))
+            result = read_saves(self.mod_actions.window)
+            # Where MO2 is reading them from, so the frontend's own Open in Explorer
+            # can show a save on this desktop. A game plugin that cannot say is not a
+            # failure to list the saves.
+            try:
+                result['directory'] = current_saves_directory(self.organizer).absolutePath()
+            except Exception:
+                result['directory'] = ''
+            return result
         if action == 'readDataDirectory':
             from .data_files import read_directory
             return read_directory(self.organizer, request.get('directory', ''))
@@ -157,6 +169,16 @@ class Bridge:
             if action == 'setArchiveManaged': return archives.set_managed(request.get('name'), request.get('mod'), request.get('enabled'))
             if action == 'extractArchive': return archives.extract(request.get('name'), request.get('mod'))
             return archives.read() if action == 'readArchives' else archives.preview(request.get('name'))
+        if action in ('readModMenu', 'modMenuAction', 'readPluginMenu', 'pluginMenuAction'):
+            if self.mod_actions is None: raise ValueError('MO2 mod actions are unavailable')
+            reading = action.startswith('read')
+            menu = self.mod_actions.plugin_menu if 'Plugin' in action else self.mod_actions.mod_menu
+            return menu(request.get('names'), None if reading else request.get('path'))
+        if action in ('readFileMenu', 'fileMenuAction', 'readFileRows'):
+            if self.mod_actions is None: raise ValueError('MO2 mod actions are unavailable')
+            if action == 'readFileRows': return self.mod_actions.file_list_rows(request.get('view'))
+            return self.mod_actions.file_menu(request.get('view'), request.get('names'),
+                                              None if action == 'readFileMenu' else request.get('path'))
         if action in ('selectionLinks', 'createSeparator'):
             if self.mod_actions is None: raise ValueError('MO2 mod integration is unavailable')
             return self.mod_actions.selection_links(request.get('names')) if action == 'selectionLinks' else self.mod_actions.create_separator(request.get('name'), request.get('collectionName'))
@@ -221,6 +243,10 @@ class Bridge:
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')
             return self.downloads.control(request.get('path'), request.get('operation'))
+        if action == 'controlDownloadList':
+            if self.downloads is None:
+                raise ValueError('Host downloads integration is unavailable')
+            return self.downloads.control_list(request.get('operation'))
         if action in ('startNexusDownload', 'startNxmDownload', 'installArchive'):
 
             if self.downloads is None:

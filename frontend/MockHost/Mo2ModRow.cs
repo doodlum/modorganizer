@@ -109,38 +109,21 @@ internal static class Mo2ModRow
             if (mod.IsSeparator) await page.RenameSeparatorDialog(mod.Name);
             else await page.RenameModDialog(mod.Name);
         }
-        var actionSets = new List<MenuItem[]>();
-        MenuItem[] Actions() {
-            MenuItem[] items = [
-            Mo2EntryMenu.Action("View files and conflicts…", () => Run(() => profile.ShowModDetails(mod.Id))),
-            Mo2EntryMenu.Action((mod.State & 2) != 0 ? "Disable" : "Enable", () => Run(() => profile.ToggleMod(mod.Id)), mod.CanManage && !mod.IsSeparator),
-            Mo2EntryMenu.Action("Move earlier", () => Run(() => adapter.Move(mod.Id, -1)), mod.CanManage),
-            Mo2EntryMenu.Action("Move later", () => Run(() => adapter.Move(mod.Id, 1)), mod.CanManage),
-            // MO2's Send to..., which is how a mod is moved the length of the list
-            // without dragging it there.
-            Mo2EntryMenu.Action("Send to top", () => Run(() => adapter.Move(mod.Id, 0, absolute: true)), mod.CanManage),
-            Mo2EntryMenu.Action("Send to bottom", () => Run(() => adapter.Move(mod.Id, int.MaxValue, absolute: true)), mod.CanManage),
-            // MO2's Open in Explorer and Rename, both through MO2 itself.
-            Mo2EntryMenu.Action("Open in Explorer", () => Run(() => profile.OpenModFolder(mod.Name))),
-            Mo2EntryMenu.Action("Rename…", () => Run(() => Rename()), mod.CanManage),
-            Mo2EntryMenu.Action("Remove…", () => Run(() => { profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(mod.Id)]); return Task.CompletedTask; }), mod.CanManage),
-            // MO2's own colour actions, which paint a separator's row and an ordinary
-            // mod's Notes cell.
-            Mo2EntryMenu.ColorMenu("Select Color...", mod.Color.Length > 0 || mod.NotesColor.Length > 0,
-                color => Run(() => profile.SetModColor(mod.Name, color, target)), !mod.IsOverwrite)
-            ];
+        var actionSets = new List<object[]>();
+        object[] Actions() {
+            var items = Mo2ModMenu.Build(profile, adapter, () => mod, target, Run, Rename);
             actionSets.Add(items); RefreshActions(); return items;
         }
         bool RefreshActions() {
             var latest = target == profile.CurrentTarget ? profile.FindMod(mod.Id) : null;
             var ready = latest is not null && profile.CanChangeOriginalUi;
             if (latest is not null) mod = latest;
-            foreach (var items in actionSets) {
-                items[0].IsEnabled = ready;
-                items[1].Header = (mod.State & 2) != 0 ? "Disable" : "Enable";
-                items[1].IsEnabled = ready && mod.CanManage && !mod.IsSeparator;
-                items[2].IsEnabled = items[3].IsEnabled = items[4].IsEnabled = ready && mod.CanManage;
-            }
+            // The menu is built for the mod as it then was; a row whose mod has since
+            // changed hands or gone is left with nothing to take. Its shape follows
+            // MO2's conditions and is settled when it opens, so what changes here is
+            // whether its entries can be taken at all.
+            foreach (var items in actionSets)
+                foreach (var item in items.OfType<MenuItem>()) item.IsEnabled = ready && item.Tag is not false;
             return ready;
         }
         var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions);
@@ -270,6 +253,14 @@ internal static class Mo2ModRow
             notes.Opacity = brush is null ? .6 : 1;
         }
         PaintNotes();
+        // MO2 offers its colour actions on an ordinary mod only where the colour is
+        // shown — a right-click in the Notes column, not anywhere on the row
+        // (modlistcontextmenu.cpp, addRegularActions). A separator's colour is on its
+        // own menu instead, because a separator has no Notes cell to paint.
+        if (!mod.IsSeparator && !mod.IsOverwrite)
+            notesCell.ContextFlyout = Mo2EntryMenu.Flyout(() => [
+                Mo2EntryMenu.ColorMenu("Select Color...", mod.Color.Length > 0 || mod.NotesColor.Length > 0,
+                    color => Run(() => profile.SetModColor(mod.Name, color, target)))]);
 
         var version = Mo2TableRow.Cell(mod.Version, .6);
         // MO2 marks an available update on the version itself rather than in a column

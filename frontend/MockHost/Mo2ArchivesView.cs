@@ -69,6 +69,20 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         Grid.SetRow(_table,1); archiveTab.Children.Add(_table);
         Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(archiveTab,3); root.Children.Add(archiveTab);
         _table.Classes.Add("MainListsStyling"); Content = root;
+        // MO2's own archive menu (mainwindow.cpp, on_bsaList_customContextMenuRequested),
+        // which carries one entry and only that one.
+        //
+        // Browse was here too, on the grounds that MO2 opens an archive when its row is
+        // double-clicked. It does not: bsaList has no activation handler at all, only
+        // this menu and its tick. Looking inside an archive is MO2's Data preview,
+        // which the Browse action above this list reaches — a control of this page's
+        // own, where MO2's Archives tab has none. The menu is MO2's, entry for entry.
+        Mo2RowMenu.Attach<Mo2Archive>(_table, archive => [
+            Mo2EntryMenu.Action("Extract...", async () => {
+                if (ViewModel is not { } model || _target is not { } target) return;
+                await model.Profile.ExtractArchive(archive!, target); await Refresh();
+            }, ArchiveReady),
+        ]);
         _columns = new Mo2ColumnToggle("archives", Render);
         // The filter stays in its own row under the separator and the header line
         // carries a magnifier, matching Mods and Plugins. A search box on the header
@@ -127,7 +141,10 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
             }
         }
     }
-    private void UpdateActions() => _extract.IsEnabled = _browse.IsEnabled = _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true && _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Archive;
+    // What the two header actions are enabled by, which is also what the row menu asks.
+    private bool ArchiveReady => _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true &&
+        _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Archive;
+    private void UpdateActions() => _extract.IsEnabled = _browse.IsEnabled = ArchiveReady;
     private Mo2ColumnToggle? _columns;
     private void Render()
     {

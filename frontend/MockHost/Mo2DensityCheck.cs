@@ -52,7 +52,10 @@ internal static class Mo2DensityCheck
             await open();
             double tallest = 0;
             var rows = 0;
-            for (var attempt = 0; attempt < 60; attempt++) {
+            var located = false;
+            var settled = 0;
+            var previous = -1;
+            for (var attempt = 0; attempt < 80; attempt++) {
                 await Task.Delay(100);
                 window.UpdateLayout();
                 // Rows that are actually on screen in the panel that was navigated;
@@ -60,13 +63,39 @@ internal static class Mo2DensityCheck
                 // height to compare. Scoped to that panel: the window shows two at
                 // once, so measuring the whole window reported the neighbouring Mods
                 // list under every page's name.
-                var drawn = Panel(live, window).GetVisualDescendants().OfType<TreeDataGridRow>()
+                if (Panel(live, window) is not { } panel) continue;
+                // The page now in that panel, not the panel itself. A panel keeps the
+                // view it was showing before, and the retained one stays visible in the
+                // tree beside the new one: measured by panel, every page came out as
+                // its own rows plus the page before it — 24 for the eleven-plugin list
+                // after My Mods' thirteen, 32 for the archives after that. Each number
+                // was wrong and every one of them passed, because both lists draw the
+                // same 22px row.
+                if (Page(live, panel) is not { } view) continue;
+                located = true;
+                var drawn = view.GetVisualDescendants().OfType<TreeDataGridRow>()
                     .Where(x => x.IsEffectivelyVisible && x.Bounds.Height > 0).ToArray();
-                if (drawn.Length == 0) continue;
+                if (drawn.Length == 0) { previous = -1; settled = 0; continue; }
+                if (drawn.Length == previous) settled++; else { settled = 1; previous = drawn.Length; }
                 rows = drawn.Length;
                 tallest = drawn.Max(x => x.Bounds.Height);
-                if (tallest <= Mo2Density.Row + Slack) break;
+                // Wait for the count to hold still, not merely for the height to be
+                // acceptable. Every row in every list is already the right height, so
+                // the height alone was satisfied by the very first reading — taken
+                // 100ms after navigating, while the page being left and the page
+                // arriving were both in the panel. That read 24 rows for the
+                // eleven-plugin list and passed, because adding the mod list next to
+                // it changes the count and not the height.
+                if (settled >= 3 && tallest <= Mo2Density.Row + Slack) break;
             }
+            // Without the panel there is nothing this check may honestly measure.
+            // Falling back to the window measured both panels at once and summed
+            // them: after a check that navigates had run first, this reported 24
+            // rows for the eleven-plugin list — thirteen mods next door added in —
+            // and still passed, because every row in both panels is the right
+            // height. A number that is wrong in a way the assertion cannot see is
+            // worse than no number.
+            if (!located) { faults.Add($"{name}'s panel could not be found, so its rows were not measured"); continue; }
             if (rows == 0) { measured.Add($"{name} has no rows to measure"); continue; }
             measured.Add($"{name} {rows}×{tallest:F0}px");
             if (tallest > Mo2Density.Row + Slack)
@@ -82,13 +111,26 @@ internal static class Mo2DensityCheck
             $"{Mo2Density.Row}px line — " + string.Join(", ", measured));
 
         // The panel the navigation went to, which is the one holding the page being
-        // measured.
-        static Avalonia.Visual Panel(Mo2LiveWorkspace live, Window window)
+        // measured. Null when it cannot be identified, so the caller can say so
+        // rather than measure whatever else the window is showing.
+        static Mo2DeferredPanel? Panel(Mo2LiveWorkspace live, Window window)
         {
             var panels = live.WorkspaceController.ActiveWorkspace.Panels;
             var chosen = panels.FirstOrDefault(x => x.IsSelected) ?? panels.FirstOrDefault();
             return window.GetVisualDescendants().OfType<Mo2DeferredPanel>()
-                .FirstOrDefault(x => ReferenceEquals(x.ViewModel, chosen)) ?? (Avalonia.Visual)window;
+                .FirstOrDefault(x => ReferenceEquals(x.ViewModel, chosen));
+        }
+
+        // The view built for the page the panel is showing now, found by the page's
+        // own view model. Null while the panel is between pages, which is a reason
+        // to look again rather than to measure what is left over from before.
+        static Avalonia.Visual? Page(Mo2LiveWorkspace live, Mo2DeferredPanel panel)
+        {
+            var panels = live.WorkspaceController.ActiveWorkspace.Panels;
+            var chosen = panels.FirstOrDefault(x => x.IsSelected) ?? panels.FirstOrDefault();
+            if (chosen?.SelectedTab.Contents.ViewModel is not { } page) return null;
+            return panel.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(x => ReferenceEquals(x.DataContext, page));
         }
 
         static async Task Navigate(NexusMods.App.UI.LeftMenu.Items.ILeftMenuItemViewModel? item)

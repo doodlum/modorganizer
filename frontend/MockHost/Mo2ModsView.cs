@@ -124,6 +124,14 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     public static readonly ComponentKey FlagsKey = ComponentKey.From("MO2.Flags");
     internal bool IsCollapsed(string name) => _collapsed.Contains(name);
     internal void ToggleSeparator(string name) { if (!_collapsed.Add(name)) _collapsed.Remove(name); RefreshFilter(); }
+    // MO2's Collapse all and Expand all, which act on every separator at once rather
+    // than on the one whose chevron was pressed.
+    internal void SetAllSeparators(bool collapsed)
+    {
+        _collapsed.Clear();
+        if (collapsed) foreach (var mod in _profile.Mods.Where(x => x.IsSeparator)) _collapsed.Add(mod.Name);
+        RefreshFilter();
+    }
     internal void RenameSeparator(string oldName, string newName) { if (_collapsed.Remove(oldName)) _collapsed.Add(newName); }
     internal int SeparatorCount(Mo2LiveMod separator) => _profile.Mods.OrderBy(m => m.Priority).SkipWhile(m => m.Id != separator.Id).Skip(1).TakeWhile(m => !m.IsSeparator && !m.IsOverwrite).Count();
     public void SetColumnFilters(string name, string version, string category, int endorsed = 0) {

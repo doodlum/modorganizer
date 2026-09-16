@@ -10,7 +10,7 @@ namespace Mo2.Frontend;
 
 internal static class Mo2EntryMenu
 {
-    public static Border Create(string kind, string name, Func<MenuItem[]> createItems)
+    public static Border Create(string kind, string name, Func<object[]> createItems)
     {
         var menu = new ContextMenu();
         menu.Opening += (_, _) => {
@@ -46,7 +46,7 @@ internal static class Mo2EntryMenu
         Avalonia.Automation.AutomationProperties.SetName(grip, "Drag " + name + " to reorder");
         return grip;
     }
-    public static MenuFlyout Flyout(Func<MenuItem[]> createItems)
+    public static MenuFlyout Flyout(Func<object[]> createItems)
     {
         var menu = new MenuFlyout();
         menu.Opening += (_, _) => {

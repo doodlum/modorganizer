@@ -167,31 +167,54 @@ internal static class Mo2WidgetBehaviourCheck
             // The menu MO2 puts on a row, and one of its entries driven through to
             // MO2: Send to top moves the mod the length of the list, and the order it
             // was in is put back afterwards.
+            // An ordinary mod's row: MO2 gives its overwrite folder and the game's own
+            // data a menu of their own, so picking whichever row is drawn first reads
+            // one of those instead.
+            var ordinary = live.Profile.Mods.FirstOrDefault(x => x.IsRegular && x.CanManage);
             var menuRow = mods.GetVisualDescendants().OfType<Control>()
-                .FirstOrDefault(x => x.ContextFlyout is MenuFlyout && x.Name == "ModRedesignRow");
+                .FirstOrDefault(x => x.ContextFlyout is MenuFlyout && x.Name == "ModRedesignRow" &&
+                    (ordinary is null || x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == ordinary.DisplayName)));
             if (menuRow?.ContextFlyout is MenuFlyout rowMenu) {
                 rowMenu.ShowAt(menuRow); await Settle(); rowMenu.Hide();
-                var entries = rowMenu.Items.OfType<MenuItem>().Select(x => x.Header as string ?? "").ToArray();
-                foreach (var wanted in new[] { "Move earlier", "Send to top", "Send to bottom", "Open in Explorer", "Rename…", "Remove…", "Select Color..." })
+                // Every caption the menu holds, its submenus included: MO2 keeps its
+                // ordering actions on a Send to... of its own.
+                static string[] Captions(IEnumerable<object?> items) => items.OfType<MenuItem>()
+                    .SelectMany(item => new[] { item.Header as string ?? "" }.Concat(Captions(item.Items.OfType<object>())))
+                    .Where(x => x.Length > 0).ToArray();
+                var entries = Captions(rowMenu.Items.OfType<object>());
+                // MO2's own wording, from its mod menu (modlistcontextmenu.cpp).
+                foreach (var wanted in new[] { "All Mods", "Send to... ", "Lowest priority", "Highest priority",
+                                               "Open in Explorer", "Rename Mod...", "Remove Mod...", "Information..." })
                     if (!entries.Contains(wanted)) faults.Add($"a mod's menu has no {wanted}");
                 if (!faults.Any(x => x.Contains("a mod's menu"))) worked.Add($"a mod's menu offers MO2's {entries.Length} entries");
 
                 if (live.Profile.Mods.OrderBy(x => x.Priority).LastOrDefault(x => !x.IsSeparator && !x.IsOverwrite && x.CanManage) is { } last
-                    && entries.Contains("Send to top")) {
+                    && entries.Contains("Lowest priority")) {
                     var order = live.Profile.ModPriorityOrder.ToArray();
                     var was = live.Profile.FindMod(last.Id)!.Priority;
                     await adapter.Move(last.Id, 0, absolute: true);
                     await Until(() => live.Profile.FindMod(last.Id)!.Priority < was, seconds: 30);
-                    if (live.Profile.FindMod(last.Id)!.Priority >= was) faults.Add($"Send to top did not move {last.DisplayName}");
+                    if (live.Profile.FindMod(last.Id)!.Priority >= was) faults.Add($"Send to... Lowest priority did not move {last.DisplayName}");
                     else {
                         await adapter.Move(last.Id, was, absolute: true);
                         await Until(() => live.Profile.ModPriorityOrder.SequenceEqual(order), seconds: 30);
                         if (!live.Profile.ModPriorityOrder.SequenceEqual(order))
-                            faults.Add("the order after Send to top was not put back");
-                        else worked.Add($"Send to top moved {last.DisplayName} to the front of MO2's order and back");
+                            faults.Add("the order after Send to... Lowest priority was not put back");
+                        else worked.Add($"Send to... Lowest priority moved {last.DisplayName} to the front of MO2's order and back");
                     }
                 }
             } else faults.Add("a mod row carries no menu");
+
+            // MO2 offers its colour actions on an ordinary mod where the colour is
+            // shown — a right-click in the Notes column — so that is where they are.
+            var notesCell = menuRow?.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(x => x.Name == "ModNotesCell" && x.ContextFlyout is MenuFlyout);
+            if (notesCell?.ContextFlyout is MenuFlyout notesMenu) {
+                notesMenu.ShowAt(notesCell); await Settle(); notesMenu.Hide();
+                if (!notesMenu.Items.OfType<MenuItem>().Any(x => (x.Header as string) == "Select Color..."))
+                    faults.Add("a mod's Notes cell has no Select Color...");
+                else worked.Add("a mod's Notes cell carries MO2's Select Color...");
+            } else faults.Add("no mod's Notes cell carries a menu");
 
             // MO2 installs an archive dropped onto its mod list. The drop itself needs
             // a pointer and a file manager, so what is checked here is that the list
@@ -223,12 +246,26 @@ internal static class Mo2WidgetBehaviourCheck
                 var rows = () => plugins.GetVisualDescendants().OfType<TreeDataGrid>()
                     .Select(x => x.Rows?.Count ?? 0).DefaultIfEmpty(0).Max();
                 var before = rows();
-                filter.Text = "zzzzzz"; await Settle();
-                var narrowed = rows();
-                filter.Text = ""; await Settle();
-                if (narrowed >= before) faults.Add($"the plugin filter left {narrowed} of {before} rows");
-                else if (rows() != before) faults.Add("clearing the plugin filter did not put the list back");
-                else worked.Add($"the plugin filter narrowed {before} rows to {narrowed}");
+                // Text off a real plugin. Filtering with "zzzzzz" and checking only that
+                // the list got shorter is one-sided — a field that emptied the list
+                // whatever was typed passed it — and says nothing about matches being
+                // kept. This field feeds the page's own search box rather than a
+                // comparison of its own, so rather than predict a count it is held to
+                // both sides: the rows that do not carry the text go, and the plugin it
+                // was taken from stays.
+                var target = live.Profile.Order.Plugins.Select(x => x.DisplayName).FirstOrDefault(x => x.Length >= 5) ?? "";
+                var needle = target.Length >= 5 ? target[..5] : "";
+                if (needle.Length == 0) worked.Add("no plugin has a name long enough to filter on, so the plugin filter was not exercised");
+                else {
+                    filter.Text = needle; await Settle();
+                    var narrowed = rows();
+                    var kept = Shows(plugins, target);
+                    filter.Text = ""; await Settle();
+                    if (rows() != before) faults.Add("clearing the plugin filter did not put the list back");
+                    else if (narrowed >= before) faults.Add($"the plugin filter left {narrowed} of {before} rows for \"{needle}\"");
+                    else if (narrowed == 0 || !kept) faults.Add($"the plugin filter dropped {target}, which carries \"{needle}\"");
+                    else worked.Add($"the plugin filter narrowed {before} rows to {narrowed} for \"{needle}\" and kept {target}");
+                }
             } else faults.Add("Plugins has no filter field");
         } else faults.Add("Plugins never drew");
 
@@ -239,19 +276,57 @@ internal static class Mo2WidgetBehaviourCheck
             var rows = () => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()?.Rows?.Count ?? 0;
             var before = rows();
             if (Named<TextBox>(data, "DataQtFilter") is { } filter) {
-                filter.Text = "zzzzzz"; await Settle();
-                var narrowed = rows();
-                filter.Text = ""; await Settle();
-                if (narrowed >= before) faults.Add($"the Data filter left {narrowed} of {before} rows");
-                else if (rows() != before) faults.Add("clearing the Data filter did not put the tree back");
-                else worked.Add($"the Data filter narrowed {before} rows to {narrowed}");
+                // Text off a row the tree is showing, not "zzzzzz": a field that emptied
+                // the tree whatever was typed passed that. The page keeps a row whose
+                // name carries the text, so the rows already listed say how many should
+                // survive.
+                var listed = data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
+                    ?.Source?.Items.OfType<Mo2DataEntry>().Select(x => x.Name).ToArray() ?? [];
+                var target = listed.FirstOrDefault(x => x.Length >= 4) ?? "";
+                var needle = target.Length >= 4 ? target[..4] : "";
+                if (needle.Length == 0) worked.Add("no Data row has a name long enough to filter on, so the Data filter was not exercised");
+                else {
+                    var expected = listed.Count(x => x.Contains(needle, StringComparison.OrdinalIgnoreCase));
+                    filter.Text = needle; await Settle();
+                    var narrowed = rows();
+                    var kept = Shows(data, target);
+                    filter.Text = ""; await Settle();
+                    if (rows() != before) faults.Add("clearing the Data filter did not put the tree back");
+                    else if (narrowed != expected) faults.Add($"the Data filter left {narrowed} of {before} rows for \"{needle}\", where {expected} row(s) carry it");
+                    else if (!kept) faults.Add($"the Data filter dropped {target}, which carries \"{needle}\"");
+                    else worked.Add($"the Data filter kept the {expected} of {before} row(s) named for \"{needle}\", {target} among them");
+                }
             } else faults.Add("Data has no filter field");
             if (Named<CheckBox>(data, "DataFromArchives") is { } archives) {
+                // What the box is meant to take away, counted off the rows the tree is
+                // showing. Holding it to "did not add rows" passed while the box did
+                // nothing at all — the tree went from 52 rows to 52 and that was
+                // reported as the box working.
+                Mo2DataEntry[] Listed() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
+                    ?.Source?.Items.OfType<Mo2DataEntry>().ToArray() ?? [];
+                int Served() => Listed().Count(x => !x.Directory && x.Archive.Length > 0);
+                // MO2 lists a BSA's contents under the folders it puts them in, so the
+                // Data root has none to take away and the box cannot be exercised
+                // there. Descend until a folder has some.
+                var reached = "Data";
+                if (Served() == 0)
+                    foreach (var folder in Listed().Where(x => x.Directory).Select(x => x.Name).Take(8).ToArray()) {
+                        await data.ShowFolder(folder); await Settle();
+                        if (Served() > 0) { reached = "Data/" + folder; break; }
+                        await data.ShowFolder(""); await Settle();
+                    }
+                var here = rows();
+                var served = Served();
                 archives.IsChecked = false; await Settle();
                 var without = rows();
                 archives.IsChecked = true; await Settle();
-                if (without > before) faults.Add("unticking Archives added rows to the Data tree");
-                else worked.Add($"the Archives box took the tree from {before} rows to {without}");
+                if (rows() != here) faults.Add($"reticking Archives did not put {reached} back");
+                else if (served == 0)
+                    worked.Add($"the Archives box found no archive-served file under Data to take away, so it was not exercised");
+                else if (without != here - served)
+                    faults.Add($"unticking Archives left {without} of {here} rows in {reached}, with {served} served out of an archive");
+                else worked.Add($"the Archives box took the {served} archive-served row(s) out of {here} in {reached} and put them back");
+                await data.ShowFolder(""); await Settle();
             } else faults.Add("Data has no Archives box");
         } else faults.Add("Data never drew");
 
@@ -269,7 +344,11 @@ internal static class Mo2WidgetBehaviourCheck
             // management off offers none. That the frontend draws them disabled is
             // MO2's answer, not a fault of its own.
             if (Box() is not { } box)
-                worked.Add($"MO2 lets none of its {archivesView.GetVisualDescendants().OfType<CheckBox>().Count(x => x.Name == "ArchiveManagedBox")} archives be ticked, and neither does the list");
+                // Agreeing with MO2 on nothing is agreement, not a tick that was
+                // driven. Said plainly, so this does not read like the round trip
+                // below: on an instance with archive management off, every archive is
+                // drawn disabled and the tick itself goes untested.
+                worked.Add($"MO2 lets none of its {archivesView.GetVisualDescendants().OfType<CheckBox>().Count(x => x.Name == "ArchiveManagedBox")} archives be ticked, so the list draws none tickable either and no tick was exercised");
             else
             {
                 var archive = ((TextBlock?)((StackPanel?)box.Parent)?.Children.OfType<TextBlock>().FirstOrDefault())?.Text ?? "an archive";
@@ -298,20 +377,38 @@ internal static class Mo2WidgetBehaviourCheck
                 .Select(x => x.Rows?.Count ?? 0).DefaultIfEmpty(0).Max();
             var before = rows();
             if (Named<TextBox>(downloads, "DownloadsQtFilter") is { } filter) {
-                filter.Text = "zzzzzz"; await Settle();
-                var narrowed = rows();
-                filter.Text = ""; await Settle();
-                if (narrowed >= before) faults.Add($"the downloads filter left {narrowed} of {before} rows");
-                else if (rows() != before) faults.Add("clearing the downloads filter did not put the list back");
-                else worked.Add($"the downloads filter narrowed {before} rows to {narrowed}");
+                // Typed with text off a real download rather than "zzzzzz". Filtering to
+                // nothing only shows the list reacts: a field that emptied the list
+                // whatever was typed passed it. The provider keeps a download whose name
+                // contains the text, so MO2's own list says how many should survive.
+                var target = live.Profile.Downloads.Select(x => x.Name).FirstOrDefault(x => x.Length >= 4) ?? "";
+                var needle = target.Length >= 4 ? target[..4] : "";
+                if (needle.Length == 0) worked.Add("no download has a name long enough to filter on, so the downloads filter was not exercised");
+                else {
+                    var expected = live.Profile.Downloads.Count(x => x.Name.Contains(needle, StringComparison.OrdinalIgnoreCase));
+                    filter.Text = needle; await Settle();
+                    var narrowed = rows();
+                    var kept = Shows(downloads, target);
+                    filter.Text = ""; await Settle();
+                    if (rows() != before) faults.Add("clearing the downloads filter did not put the list back");
+                    else if (narrowed != expected) faults.Add($"the downloads filter left {narrowed} of {before} rows for \"{needle}\", where {expected} download(s) carry it");
+                    else if (!kept) faults.Add($"the downloads filter dropped {target}, which carries \"{needle}\"");
+                    else worked.Add($"the downloads filter kept the {expected} of {before} download(s) named for \"{needle}\", {target} among them");
+                }
             } else faults.Add("Downloads has no filter field");
             if (Named<CheckBox>(downloads, "DownloadsHiddenFiles") is { } hidden) {
                 hidden.IsChecked = true; await Settle();
                 var shown = rows();
                 hidden.IsChecked = false; await Settle();
-                var expected = before + live.Profile.HiddenDownloads.Count;
+                var withheld = live.Profile.HiddenDownloads.Count;
+                var expected = before + withheld;
+                // With nothing hidden, ticking the box is required to change nothing,
+                // and this agrees with MO2 rather than showing the box works. Said
+                // plainly: the number is still checked against MO2, but a box that was
+                // not exercised does not get the same words as one that was.
                 if (shown != expected) faults.Add($"showing hidden downloads listed {shown}, not the {expected} MO2 holds");
-                else worked.Add($"the hidden-downloads box accounts for MO2's {live.Profile.HiddenDownloads.Count} hidden archive(s)");
+                else if (withheld == 0) worked.Add($"MO2 holds no hidden download, so the hidden-downloads box had none to bring back and was not exercised");
+                else worked.Add($"the hidden-downloads box brought back MO2's {withheld} hidden archive(s), listing {expected}");
             } else faults.Add("Downloads has no hidden-files box");
         } else faults.Add("Downloads never drew");
 
@@ -327,6 +424,14 @@ internal static class Mo2WidgetBehaviourCheck
 
         static TControl? Named<TControl>(Control page, string name) where TControl : Control =>
             page.GetVisualDescendants().OfType<TControl>().FirstOrDefault(x => x.Name == name);
+
+        // Whether the page is still drawing a row by that name. A filter has two
+        // halves — dropping what does not match and keeping what does — and only the
+        // first can be read off a row count.
+        static bool Shows(Control page, string text) =>
+            text.Length > 0 && page.GetVisualDescendants().OfType<TextBlock>()
+                .Any(x => x.IsEffectivelyVisible && x.Text is { } value &&
+                          value.Contains(text, StringComparison.OrdinalIgnoreCase));
 
         static string[] Names(Mo2ModsAdapter adapter) => adapter.VisibleOrder;
 

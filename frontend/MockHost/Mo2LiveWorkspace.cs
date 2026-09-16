@@ -124,6 +124,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         // on the desktop it is running on, which is what the interop here is for.
         Profile.OpenLocalFolder = folder =>
             DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder));
+        Profile.OpenLocalFile = file =>
+            DesktopInterop.OpenFile(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(file));
+        Profile.RevealLocalFile = file =>
+            DesktopInterop.OpenFileInDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(file));
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         Profile.ConfirmRemoval = mods => Mo2SeparatorDialog.ConfirmRemoval(windows, mods);

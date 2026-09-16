@@ -14,24 +14,80 @@ internal readonly record struct Mo2ProfileTarget(string Endpoint, string Profile
 // The trailing fields are MO2's own remaining download columns (downloadlist.cpp):
 // Filetime, Mod name, Version, Nexus ID and Source Game.
 internal sealed record Mo2Download(string Name, string Path, long Bytes, bool Partial, bool Installed, bool Paused, bool Failed = false,
-    string Filetime = "", string ModName = "", string Version = "", string ModId = "", string SourceGame = "")
+    string Filetime = "", string ModName = "", string Version = "", string ModId = "", string SourceGame = "",
+    // MO2 hides a download rather than deleting it, and offers Un-Hide on the hidden
+    // ones; its menu also swaps the two Nexus links for Query Info when it cannot
+    // name the file on Nexus.
+    bool Hidden = false, bool InfoIncomplete = false)
 {
-    public bool CanControl(string operation) => operation == "delete" ? !Partial || Paused || Failed : Partial && (operation switch {
-        "resume" => Paused || Failed,
-        "pause" or "cancel" => !Paused && !Failed,
-        _ => false
-    });
+    // A download MO2 considers finished — its STATE_READY and above, which is the
+    // state its own menu offers Install and the Nexus actions on.
+    public bool Ready => !Partial;
+    public bool CanControl(string operation) => operation switch {
+        "delete" => !Partial || Paused || Failed,
+        // The rest of MO2's own row menu, under the same conditions its menu uses
+        // (downloadlistview.cpp, onCustomContextMenu): the finished-download actions
+        // on a finished download, and Un-Hide only on one MO2 has hidden.
+        "install" or "openFile" or "openMetaFile" => Ready,
+        "queryInfo" => Ready && InfoIncomplete,
+        "visitOnNexus" or "visitUploaderProfile" => Ready && !InfoIncomplete,
+        "hide" => Ready && !Hidden,
+        "unhide" => Ready && Hidden,
+        // Reveal is offered in every one of MO2's three row states.
+        "reveal" => true,
+        _ => Partial && operation switch {
+            "resume" => Paused || Failed,
+            "pause" or "cancel" => !Paused && !Failed,
+            _ => false
+        }
+    };
 }
 internal sealed record Mo2ArchiveInstallResult(string ModName, string? ModDirectory);
+// One line of a menu MO2 built, as MO2 built it: what it says, whether it can be
+// taken, and what it opens onto.
+internal sealed record Mo2MenuEntry(string Text, bool Enabled, bool Separator, Mo2MenuEntry[] Items)
+{
+    internal static Mo2MenuEntry[] Read(JsonElement entries) => entries.EnumerateArray().Select(entry =>
+        new Mo2MenuEntry(entry.TryGetProperty("text", out var text) ? text.GetString() ?? "" : "",
+            entry.TryGetProperty("enabled", out var enabled) && enabled.GetBoolean(),
+            entry.TryGetProperty("separator", out var separator) && separator.GetBoolean(),
+            entry.TryGetProperty("items", out var items) ? Read(items) : [])).ToArray();
+    // Every caption in the menu and its submenus, which is what a frontend menu is
+    // compared against.
+    internal IEnumerable<string> Captions() => Separator ? []
+        : new[] { Text }.Concat(Items.SelectMany(item => item.Captions()));
+}
 // The columns are MO2's own, so this frontend can show the list MO2 shows rather
 // than a subset chosen here. An MO2 without one of them sends "" for it.
 internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, int State, int Priority, string PriorityText = "", string Conflicts = "", string Flags = "", bool IsOverwrite = false, int NexusId = 0, bool IsSeparator = false, string Version = "", string Category = "", string NewestVersion = "",
     string Content = "", string Author = "", string Uploader = "", string SourceGame = "", string InstallTime = "", string Notes = "",
     // The colour MO2 draws the row in — a separator's own colour, and the colour of
     // an ordinary mod's Notes cell. Empty when the user has not given the mod one.
-    string Color = "", string NotesColor = "")
+    string Color = "", string NotesColor = "",
+    // What MO2's own mod menu branches on: whether it was installed for another
+    // game, what it knows about endorsement and tracking, the version the user told
+    // it to stop offering, and whether the mod read and converted cleanly.
+    bool IsForeign = false, string Endorsed = "", string Tracked = "", string IgnoredVersion = "",
+    bool Validated = true, bool Converted = true, string Url = "")
 {
     public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0);
+    // A mod MO2 offers its ordinary actions on: not the overwrite folder, not a
+    // separator, and not a game's own data installed outside MO2.
+    public bool IsRegular => !IsOverwrite && !IsSeparator && !IsForeign;
+    // The flags MO2's own menu branches on, read from the text MO2 writes into the
+    // tooltips of its Flags and Conflicts columns (modlist.cpp, getFlagText and
+    // getConflictFlagText). Those two cells are how MO2 states these conditions; the
+    // flags themselves are C++ enums its extension API does not carry.
+    public bool HasHiddenFiles => Flags.Contains("Contains hidden files", StringComparison.Ordinal);
+    public bool NoValidData => Flags.Contains("No valid game data", StringComparison.Ordinal);
+    public bool ForAnotherGame => Flags.Contains("This mod is for a different", StringComparison.Ordinal);
+    // MO2 offers First conflict for a mod that overwrites, and Last conflict for one
+    // that is overwritten or redundant.
+    public bool Overwrites => Conflicts.Contains("Overwrites loose files", StringComparison.Ordinal) ||
+        Conflicts.Contains("Loose files Overwrites & Overwritten", StringComparison.Ordinal);
+    public bool Overwritten => Conflicts.Contains("Overwritten loose files", StringComparison.Ordinal) ||
+        Conflicts.Contains("Loose files Overwrites & Overwritten", StringComparison.Ordinal) ||
+        Conflicts.Contains("Redundant", StringComparison.Ordinal);
     // MO2 reports the newest version it knows about; an update is only claimed when
     // it actually differs from what is installed.
     public bool HasUpdate => NewestVersion.Length > 0 && Version.Length > 0 &&
@@ -59,6 +115,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool CanChangeOriginalUi => IsConnected && OriginalUiVisible.HasValue && ProfilePath.Length > 0 && !Installing && !SelectingProfile && !Launching && !ManagingMod;
     public string? LogsDirectory { get; private set; }
     public string? DownloadsDirectory { get; private set; }
+    // Where MO2 is reading this profile's saves from, reported with them.
+    public string? SavesDirectory { get; private set; }
     internal (Mo2ExternalArchiveCopy Copy, Mo2ArchiveInstallResult Installed, Mo2ProfileTarget Target)? VerifiedExternalImport { get; set; }
     public string NexusGame { get; private set; } = "";
     public string GameName => NexusGame switch { "newvegas" => "Fallout: New Vegas", "skyrimspecialedition" => "Skyrim Special Edition", _ => "MO2 profile" };
@@ -66,6 +124,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool Launching { get; private set; }
     public bool ManagingMod { get; private set; }
     public bool CanSortPlugins { get; private set; }
+    // Empty until MO2 has answered, which is why the download menu treats an unknown
+    // action as offerable: before the first snapshot nothing is known to be missing.
+    public IReadOnlySet<string> DownloadActions { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
     public string SortPluginsUnavailableReason { get; private set; } = "Connect to MO2 to sort plugins.";
     public IReadOnlyDictionary<string,string> ExecutableIcons { get; private set; } = new Dictionary<string,string>();
     public IReadOnlyList<Mo2Tool> Tools { get; private set; } = [];
@@ -109,6 +170,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
         CanSortPlugins = snapshot.TryGetProperty("canSortPlugins", out var canSort) && canSort.ValueKind == JsonValueKind.True;
+        // What this MO2 build has an action behind. An older MO2 carries fewer, and a
+        // menu entry with no action behind it is one that draws and does nothing.
+        DownloadActions = snapshot.TryGetProperty("downloadActions", out var actions) && actions.ValueKind == JsonValueKind.Array
+            ? actions.EnumerateArray().Select(x => x.GetString() ?? "").ToHashSet(StringComparer.Ordinal)
+            : DownloadActions;
         SortPluginsUnavailableReason = snapshot.TryGetProperty("sortPluginsUnavailableReason", out var sortReason)
             ? sortReason.GetString() ?? "Plugin sorting is unavailable in MO2." : "Plugin sorting is unavailable in MO2.";
         ExecutableIcons = snapshot.TryGetProperty("executableIcons", out var icons) ? icons.EnumerateObject().ToDictionary(x => x.Name,x => x.Value.GetString() ?? "") : new Dictionary<string,string>();
@@ -127,7 +193,9 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 x.TryGetProperty("modName", out var downloadMod) ? downloadMod.GetString() ?? "" : "",
                 x.TryGetProperty("version", out var downloadVersion) ? downloadVersion.GetString() ?? "" : "",
                 x.TryGetProperty("modId", out var downloadModId) ? downloadModId.GetString() ?? "" : "",
-                x.TryGetProperty("sourceGame", out var downloadGame) ? downloadGame.GetString() ?? "" : ""))).ToArray() : [];
+                x.TryGetProperty("sourceGame", out var downloadGame) ? downloadGame.GetString() ?? "" : "",
+                x.GetProperty("hidden").GetBoolean(),
+                x.TryGetProperty("infoIncomplete", out var incomplete) && incomplete.ValueKind == JsonValueKind.True))).ToArray() : [];
         Downloads = allDownloads.Where(x => !x.Hidden).Select(x => x.Download).ToArray();
         HiddenDownloads = allDownloads.Where(x => x.Hidden).Select(x => x.Download).ToArray();
         var profile = snapshot.GetProperty("profile");
@@ -153,7 +221,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 mod.TryGetProperty("newestVersion", out var newest) ? newest.GetString() ?? "" : "",
                 Text(mod, "content"), Text(mod, "author"), Text(mod, "uploader"),
                 Text(mod, "sourceGame"), Text(mod, "installTime"), Text(mod, "notes"),
-                Text(mod, "color"), Text(mod, "notesColor"));
+                Text(mod, "color"), Text(mod, "notesColor"),
+                mod.TryGetProperty("foreign", out var foreign) && foreign.GetBoolean(),
+                Text(mod, "endorsed"), Text(mod, "tracked"), Text(mod, "ignoredVersion"),
+                !mod.TryGetProperty("validated", out var validated) || validated.GetBoolean(),
+                !mod.TryGetProperty("converted", out var converted) || converted.GetBoolean(),
+                Text(mod, "url"));
         }).ToArray();
         _mods.Edit(cache => {
             var ids = mods.Select(x => x.Id).ToHashSet();
@@ -299,6 +372,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         try {
             if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to browse saves.");
             var result = await Client.SendAsync("readSaves", new() { ["profilePath"] = target.ProfilePath });
+            // MO2 names a save relative to the folder it is reading, so the folder is
+            // kept here for the frontend's own Open in Explorer.
+            SavesDirectory = result.TryGetProperty("directory", out var savesPath) && savesPath.GetString() is { Length: > 0 } saved
+                ? Mo2InstanceCatalog.LocalPath(saved) : null;
             return result.GetProperty("saves").EnumerateArray().Select(x => new Mo2Save(x.GetProperty("name").GetString()!, x.GetProperty("file").GetString()!)).ToArray();
         } finally { _commands.Release(); }
     }
@@ -408,16 +485,21 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
         try {
             if (!IsConnected || target != CurrentTarget) return "The profile changed. Select the file again.";
-            Status = (operation switch { "preview" => "Previewing ", "hide" => "Hiding ", "reveal" => "Revealing ", _ => "Unhiding " }) + entry.Name + " in MO2"; Changed?.Invoke();
-            var result = await Client.SendAsync("dataFileAction", new() { ["operation"] = operation == "reveal" && OperatingSystem.IsLinux() ? "revealPath" : operation, ["profilePath"] = target.ProfilePath, ["directory"] = directory, ["name"] = entry.Name, ["origins"] = entry.Origins }, timeout: TimeSpan.FromMinutes(30));
-            if (operation == "reveal" && OperatingSystem.IsLinux()) {
+            Status = (operation switch { "preview" => "Previewing ", "hide" => "Hiding ", "reveal" => "Revealing ", "open" => "Opening ", _ => "Unhiding " }) + entry.Name + " in MO2"; Changed?.Invoke();
+            // MO2's Open and Reveal in Explorer both end at a path, and both hand it to
+            // the handlers inside its Windows prefix. This desk opens the same file with
+            // the handlers it actually has, which is the difference already recorded for
+            // a download's Open File. Reveal wants the folder, Open wants the file.
+            var wantsPath = operation is "reveal" or "open" && OperatingSystem.IsLinux();
+            var result = await Client.SendAsync("dataFileAction", new() { ["operation"] = wantsPath ? "revealPath" : operation, ["profilePath"] = target.ProfilePath, ["directory"] = directory, ["name"] = entry.Name, ["origins"] = entry.Origins }, timeout: TimeSpan.FromMinutes(30));
+            if (wantsPath) {
                 var nativePath = result.GetProperty("path").GetString()!;
                 if (!nativePath.Replace('\\', '/').StartsWith("Z:/", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("This file is inside a Wine drive that cannot be opened by the Linux file manager.");
                 var path = Mo2InstanceCatalog.LocalPath(nativePath);
-                if (!File.Exists(path)) throw new FileNotFoundException("The source file moved; refresh Data before opening its location.");
+                if (!File.Exists(path)) throw new FileNotFoundException("The source file moved; refresh Data before opening it.");
                 var start = new System.Diagnostics.ProcessStartInfo("xdg-open") { UseShellExecute = false };
-                start.ArgumentList.Add(Path.GetDirectoryName(path)!);
+                start.ArgumentList.Add(operation == "open" ? path : Path.GetDirectoryName(path)!);
                 await Mo2DesktopLauncher.StartAsync(start);
             }
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
@@ -722,17 +804,42 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             if (!CheckDownloadTarget(target)) return;
-            if (Downloads.FirstOrDefault(file => file.Path == path)?.CanControl(operation) != true) {
+            // Hidden downloads are held apart from the listed ones, and Un-Hide is an
+            // action on exactly those, so both lists are searched for the archive.
+            if (Downloads.Concat(HiddenDownloads).FirstOrDefault(file => file.Path == path)?.CanControl(operation) != true) {
                 Status = "Download state changed; refresh before choosing another action.";
                 Changed?.Invoke(); return;
             }
-            if (operation == "delete") { ManagingMod = true; Status = "Confirm download deletion in MO2"; Changed?.Invoke(); }
+            // Delete asks MO2 for confirmation and Query Info goes to Nexus and can ask
+            // its own question, so both are waited on the way a dialog is waited on
+            // rather than under the ordinary reply timeout.
+            var waits = operation is "delete" or "queryInfo";
+            if (waits) { ManagingMod = true; Status = operation == "delete" ? "Confirm download deletion in MO2" : "Querying Nexus through MO2"; Changed?.Invoke(); }
             await Client.SendAsync("controlDownload", new() { ["profilePath"] = profile, ["path"] = path, ["operation"] = operation },
-                timeout: operation == "delete" ? TimeSpan.FromMinutes(30) : null);
+                timeout: waits ? TimeSpan.FromMinutes(30) : null);
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             Status = operation == "delete" ? "Download deletion dialog closed" : operation + " requested through MO2"; Changed?.Invoke();
         } catch (Exception error) { Report(error); }
-        finally { if (operation == "delete") { ManagingMod = false; Changed?.Invoke(); } _commands.Release(); }
+        finally { if (operation is "delete" or "queryInfo") { ManagingMod = false; Changed?.Invoke(); } _commands.Release(); }
+    }
+    // MO2's whole-list download actions — the six at the foot of its own download
+    // menu, which delete or hide every installed, uninstalled or listed archive, and
+    // the Un-Hide All it offers instead once something is hidden. Each one asks MO2
+    // for confirmation, so this waits the way a delete does and nothing here answers
+    // that dialog.
+    public async Task ControlDownloadList(string operation, Mo2ProfileTarget? requestedTarget = null)
+    {
+        var target = requestedTarget ?? CurrentTarget;
+        await _commands.WaitAsync();
+        try {
+            if (!CheckDownloadTarget(target)) return;
+            ManagingMod = true; Status = "Confirm in MO2"; Changed?.Invoke();
+            await Client.SendAsync("controlDownloadList", new() { ["profilePath"] = target.ProfilePath, ["operation"] = operation },
+                timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = operation + " closed in MO2"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
     public async Task DownloadNexus(string link, Mo2ProfileTarget? requestedTarget = null)
     {
@@ -759,6 +866,110 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     // workspace, which owns the interop; MO2's own Open in Explorer would open the
     // folder inside the Windows prefix instead.
     public Action<string>? OpenLocalFolder { get; set; }
+    // The same for a file: opened with the desktop's own handler, or shown in the
+    // folder that holds it. MO2's Open File and Reveal in Explorer hand the archive
+    // to the prefix's handlers, which are not the ones the person at this desk uses.
+    public Action<string>? OpenLocalFile { get; set; }
+    public Action<string>? RevealLocalFile { get; set; }
+
+    // MO2's Open File, Open Meta File and Reveal in Explorer for a download, against
+    // the archive MO2 reports rather than a path put together here. A file MO2 has
+    // since removed reports that rather than opening the folder it used to be in.
+    public void OpenDownload(Mo2Download file, string operation)
+    {
+        var path = Mo2InstanceCatalog.LocalPath(file.Path);
+        if (operation == "openMetaFile") path += ".meta";
+        if (path.Length == 0 || !File.Exists(path)) {
+            Status = "MO2 no longer has " + Path.GetFileName(path); Changed?.Invoke(); return;
+        }
+        if (operation == "reveal") RevealLocalFile?.Invoke(path); else OpenLocalFile?.Invoke(path);
+    }
+
+    // One entry of MO2's own mod context menu, found by the wording MO2 gives it and
+    // triggered where MO2 built it. Nothing about what these do is reimplemented
+    // here: MO2 decides whether the entry is there at all, does the work, and owns
+    // every dialog it opens on the way.
+    // `paths` is one entry, spelled every way MO2 spells it: MO2 renames several of
+    // its own by where the menu was opened and whether a filter is on, and the one it
+    // built is the one taken.
+    public async Task RunModMenu(string[] names, string[][] paths, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        var caption = paths[0][^1];
+        ManagingMod = true; Status = caption + " in MO2"; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            await Client.SendAsync("modMenuAction", new() { ["profilePath"] = target.ProfilePath,
+                ["names"] = names, ["path"] = paths }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = caption + " closed in MO2"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
+    // The same for MO2's plugin list, which carries a menu of its own.
+    public async Task RunPluginMenu(string[] names, string[][] paths, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        var caption = paths[0][^1];
+        ManagingMod = true; Status = caption + " in MO2"; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            await Client.SendAsync("pluginMenuAction", new() { ["profilePath"] = target.ProfilePath,
+                ["names"] = names, ["path"] = paths }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = caption + " closed in MO2"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
+    // What MO2's own menu holds for a selection, as MO2 builds it. Read rather than
+    // triggered, so the frontend's menu can be checked against the real one.
+    // One entry of the menu MO2 puts on one of its own file lists, triggered where MO2
+    // built it. MO2 owns the action, asks its own questions and does the work; nothing
+    // about what the entry does is reimplemented here.
+    public async Task RunFileMenu(string view, string[] names, string[][] paths, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        var caption = paths[0][^1];
+        ManagingMod = true; Status = caption + " in MO2"; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            await Client.SendAsync("fileMenuAction", new() { ["profilePath"] = target.ProfilePath,
+                ["view"] = view, ["names"] = names, ["path"] = paths }, timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = caption + " closed in MO2"; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
+    public async Task<Mo2MenuEntry[]> ReadListMenu(string action, string[] names, Mo2ProfileTarget target, string? view = null)
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to read its menus.");
+            Dictionary<string, object?> request = new() { ["profilePath"] = target.ProfilePath, ["names"] = names };
+            if (view is not null) request["view"] = view;
+            var result = await Client.SendAsync(action, request);
+            return Mo2MenuEntry.Read(result.GetProperty("entries"));
+        } finally { _commands.Release(); }
+    }
+
+    // The rows MO2 is showing in one of its own file lists, by the name each row
+    // draws. A menu can only be compared against MO2's for a row MO2 actually has,
+    // and these lists name their rows differently from the frontend's own pages.
+    public async Task<string[]> ReadFileRows(string view, Mo2ProfileTarget target)
+    {
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to read its lists.");
+            var result = await Client.SendAsync("readFileRows", new() { ["profilePath"] = target.ProfilePath, ["view"] = view });
+            return result.GetProperty("rows").EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
+        } finally { _commands.Release(); }
+    }
 
     // MO2's "Open in Explorer" for a mod. MO2 is asked where the mod is rather than
     // asked to open it, because the two are on different sides of the prefix.

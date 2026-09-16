@@ -35,6 +35,286 @@ statements and should be read with their dates and later corrections.
 
 ## Latest functional fixes
 
+Every list carries the menu MO2 puts on it. MO2's lists are worked from their
+right-click menus — the controls around a list are a handful of the same actions —
+and four pages had no menu at all: **Downloads, Data, Archives and Saves**. Most of
+what MO2 can do with a download could not be reached from this frontend, because
+almost all of it is on that menu.
+
+The mod and plugin menus are no longer a chosen subset either. A mod's menu is
+MO2's own, entry for entry: **All Mods** (install or create beside this row,
+collapse and expand, enable and disable everything, check for updates, auto-assign
+categories, refresh, export to csv), **Send to...** with MO2's five destinations
+including its two conflict ends, the update actions, **Enable/Disable selected**,
+Rename/Reinstall/Remove/Create Backup, the endorsement and tracking entries,
+**Visit on Nexus** and the uploader's profile, and **Information...**. A plugin's
+menu gains Enable all, Disable all, MO2's own **Send to...** and **Open Origin
+Info...**.
+
+They appear under the conditions MO2 applies, read from what MO2 reports about the
+mod — a mod it does not know on Nexus has no Nexus entries here either, Restore
+hidden files is there only for a mod that has them, and the two conflict
+destinations only for a mod that overwrites or is overwritten. An ordinary mod's
+colour actions moved to its **Notes cell**, which is the only place MO2 offers
+them; a separator keeps them on its row, as MO2 does.
+
+Nothing about what those actions do is reimplemented. A new bridge call opens MO2's
+own context menu for the same row, off screen, finds the action by the wording MO2
+gave it and triggers it where MO2 built it — so MO2 asks its own questions, owns
+its own dialogs, and does the work. The same call can instead **report** that menu,
+which is how the check below compares the two.
+
+`MO2_VERIFY_ROW_MENUS` asks MO2 to build its own menu for a row of each of its six
+lists and compares it with the frontend's **both ways round** — an entry the frontend
+offers that MO2 does not is as much a difference as one it lacks — so this cannot
+drift as MO2 changes. It reports MO2's own 33-entry mod menu, 9-entry plugin menu,
+13 entries on a download, 7 on a Data file, 1 on an archive and 3 on a save, each
+matched against the row MO2 was asked about.
+
+What it turned up on the way: the All Mods submenu is empty until MO2 is told it is
+about to be shown, the origin entries on a plugin's menu were drawn greyed out where
+MO2 leaves them off entirely, and a table's menu built nothing at all unless a
+pointer was over one of its rows.
+
+Two differences are deliberate and are not defects. MO2's Open File, Open Meta File,
+Reveal in Explorer and Open in Explorer hand a path to the file handlers inside its
+Windows prefix; the frontend opens the same file with the handlers this desk
+actually has. And a mod's categories are assigned in MO2's own category editor,
+which the mod pane's Edit... opens, rather than from the two category submenus.
+
+### What the checks were saying that was not true
+
+The checks above are the evidence for everything on this page, so a run of them
+was audited as a thing in its own right. Four of them were reporting results they
+had not established. Each was found by running the suite live against the FNV host
+and reading the numbers against what MO2 actually holds, not by reading the code.
+
+**The density check was measuring two pages at once and passing.** Scoped to the
+panel rather than to the page in it, and with the panel keeping the view it showed
+before, every page came out as its own rows plus the page before it: 24 rows for
+the eleven-plugin list after My Mods' thirteen, 32 for the twenty-one archives
+after that, 23 for the two saves. Every one of those numbers is wrong and every one
+of them passed, because the assertion is row *height* and both lists draw the same
+22px row. It now measures the view built for the page the panel is showing, found
+by that page's own view model. The counts read 13, 11, 21, 21, 2, 19 and 6 —
+matching MO2 — and did so identically across four consecutive runs. Two earlier
+attempts at this were verified and rejected: scoping to the panel with a
+whole-window fallback, and requiring the row count to hold still. Both produced
+correct numbers on one run and wrong ones on the next.
+
+**A run could abort part-way through and still print passes.** The screenshot
+path's gate waited on `ModsPage`/`PluginsPage`, which resolve to whatever page is
+in an open tab, so any check that navigates — `MO2_VERIFY_QT_WIDGETS` walks all
+five tabs by design — left it waiting for a page no longer open. It threw on the
+dispatcher and took the process down, discarding every check queued behind it
+while the ones before it had already printed `PASS`. The gate now reads MO2's own
+tables when a page is not open, and reports rather than throws.
+
+**Fixing that revealed the checks had only been finishing by accident.** The ten
+seconds that gate spent timing out was what let the navigating checks finish before
+`Shutdown`. With the gate no longer stalling, the app shut down mid-check and the
+widget check printed *nothing at all* — a clean exit, no failures, and nothing
+looked at. Checks started from the window opening now say so before it opens, and
+the screenshot path waits for them.
+
+**The Data tab's "from archives" box was never exercised.** Held only to "did not
+add rows", it passed on a tree that went from 52 rows to 52. It is now held to the
+number of rows actually served out of an archive, and descends into the folders
+MO2 lists a BSA's contents under, since the Data root has none. On this instance
+it reports honestly that it found none to take away — MO2 lets none of this
+profile's 21 archives be ticked, so there is nothing for the box to remove. **This
+widget is drawn and unexercised, and is not claimed as tested.**
+
+**The screenshots were of windows the app never showed.** The gate passed on a
+list's first row, so `audit-final.png` recorded a Plugins panel holding five of
+eleven plugins. It now waits for the counts to stop moving, and the same capture
+holds all eleven.
+
+**The three list filters were passing on a result they could not distinguish from
+a broken filter.** Each was typed with `zzzzzz` and checked only for the row count
+going down, so "the Data filter narrowed 52 rows to 0" was a pass — and a filter
+that threw away every row, matches included, produces exactly that line. They are
+now typed with text taken off a row that is actually listed, and held to both
+halves of what a filter does. Where the matching is the page's own, the surviving
+count is predicted and compared: the Data filter keeps 3 of 52 rows for `Conf`,
+the downloads filter 2 of 6 for `1_MC`, each checked against the rows MO2 holds.
+Where it is the native search box's, the count is not predicted but the row the
+text was taken from must still be drawn: 11 plugins to 1 for `Fallo`, with
+`FalloutNV.esm` still there.
+
+That was confirmed by breaking the product on purpose. With the Data filter made
+to drop every row, the new assertion fails — `left 0 of 52 rows for "Conf", where
+3 row(s) carry it` — while the old one passes it and prints the same words it
+printed for the working filter. A second control, the filter made to do nothing at
+all, is caught by both. The checks are falsifiable, and were confirmed so against
+the live host rather than argued from the code.
+
+**Preset fit was measuring whichever pages the panel happened to be holding.** MO2's
+layout puts five tabs in the right-hand panel and the panel keeps the view built for
+each, so walking the tabs measured all of them together. Nothing showed this until
+the number of widgets examined was printed, and then it moved between runs of the
+same build: Archives 24 one run and 3 the next, Plugins 15 and 26. Every one of
+those runs passed — a page measured with three of its widgets present has no clipped
+ones either. It now measures the view built for the selected tab's own page, and
+waits for the page to stop changing shape first, since Data rebuilds its widgets
+whenever it renders. Four consecutive runs report the same 43, 26, 22, 24, 3, 15.
+Those counts are *higher* than the unstable ones, because what it used to measure
+were pages only part-way built.
+
+**It was only looking at one edge, and at half the things on the page.** The test
+was `box.Right` and `box.Left` — nothing vertical — and MO2's layout is the narrow
+one, where what a panel does to the row of widgets under a list is push it off the
+bottom. The comment said it covered "the captions beside them" while the code listed
+only controls that can be clicked, so MO2's `Profile`, `Active:` and `Filter` labels
+were never measured. Both are fixed; captions inside a table stay out, because
+trimming to an ellipsis is a cell fitting its column. Confirmed by pushing the mod
+pane's filter bar 260px down: `ModsDisplayCategoriesButton sits at 770–794 of the
+panel's 673`, along with the label beside it. The old check passed that — a whole row
+of MO2's widgets off the bottom of the panel, reported as fitting.
+
+**"Readable ink" was a restatement, not a measurement.** The separator colour check
+compared the drawn foreground against the same `Mo2Density.Ink` the view calls, which
+a rule that picked an unreadable colour satisfies just as well. The contrast is now
+computed in the check, independently, and held to WCAG AA: `#b91c1c` carries its name
+at 6.5:1 and `#e8d44d` at 14.0:1. Two colours are used rather than one, either side
+of the luminance line, so a bar painted the same constant every time and an ink that
+never follows the colour are both caught. With `Ink` forced to always return white,
+the new assertions fail — `drawn at 1.5:1, under the 4.5:1 it must read at`, and
+`both colours drew their name in the same White` — where the old one passes, because
+breaking the rule breaks both sides of its own comparison.
+
+**The bridge can now read MO2's menu for all six lists.** `readFileMenu` reaches
+MO2's `downloadView`, `dataTree`, `bsaList` and `savegameList` through the same
+selection and off-screen menu capture the mod and plugin menus already used —
+`_list_menu` was generic, and only the row selection was not. Read live, MO2 offers
+16 entries on a download, 5 on a Data row, `Extract...` on an archive and three on a
+save. Two things had to be right for that to work, and neither was guessable from
+the code: the four models are `DownloadList`, `FileTreeModel` and QTreeWidget's own
+`QTreeModel` twice, and **MO2 fills `bsaList` and `savegameList` only when their tab
+is shown** — both answered with nothing at all until the bridge brings their tab to
+the front first, and puts back the tab that was there. An empty list has no menu, so
+those two would have compared against nothing and agreed.
+
+Each list is held to the model MO2 is expected to be using. Passing the model's own
+name back through the check that validates it would have agreed with any list at
+all, including one this was never written for.
+
+**Comparing Downloads against MO2 found a menu entry with nothing behind it.** The
+frontend offered a download **Visit the uploader's profile**. The hosted MO2 has no
+such action: `ModOrganizer.exe` is 2.5.2 and carries **no occurrence** of
+`issueVisitUploaderProfile` or of the wording, so the entry was drawn over a slot
+that does not exist and could never have done anything. It came from
+`src/downloadlistview.cpp`, where MO2 adds it beside `Visit on Nexus` in the same
+branch — but that is the MO2 this repo's source builds, not the one running.
+
+The fix is not to delete the entry, which would be wrong against a newer MO2, but to
+stop guessing: the snapshot now carries **`downloadActions`**, the subset of MO2's
+row slots this build actually has, read off the download view's own metaobject. The
+hosted MO2 answers with eight — cancel, delete, hide, pause, queryInfo, resume,
+unhide, visitOnNexus — and the menu offers what MO2 says it has. Downloads now
+matches MO2's own menu entry for entry. An action unknown before MO2 has answered is
+treated as offerable, so a menu built before the first snapshot is not empty.
+
+**The Data menu was seven entries short of MO2's, and now matches it.** Four were
+added, and each is MO2's own rather than a reimplementation:
+
+- **Refresh** — the page already had the action and only the button to reach it by.
+- **Open** — MO2 ends at a path and hands it to the handlers inside its prefix; this
+  opens the same file with the handlers this desk has, which is the difference
+  already recorded for a download's Open File. It reuses the `revealPath` the bridge
+  already answered Reveal in Explorer with, opening the file where Reveal opens the
+  folder.
+- **Add as Executable** — triggered where MO2 built it, through `fileMenuAction`. MO2
+  keeps the executables, and the Tools page lists what MO2 then holds.
+
+Three are deliberately not carried, and the check names each with its reason rather
+than dropping the comparison:
+
+- **Expand All** and **Collapse All** have nothing to act on. MO2's tree expands in
+  place; this page walks into a folder and shows one at a time.
+- **Open with VFS** runs a Windows program inside the prefix from a file list.
+- **Save Tree to Text File...** writes MO2's own tree rather than the folder this
+  page is showing, so its output would not describe what is on screen.
+
+Everything else still compares both ways, so an entry that stopped being offered, or
+one MO2 gained, is still a difference. Downloads and Data now match MO2's own menus
+entry for entry — 13 and 7.
+
+Data has to be asked about a file. MO2 gives a folder `Expand All` and `Collapse
+All` where a file carries the entries above, so a comparison that landed on a
+folder — which the first one did, on `Config` — compares two different menus and
+reports nonsense.
+
+**The recorded entries and the running MO2 are not the same ground truth, which is
+how the first difference turned up.** `src/downloadlistview.cpp` adds `Visit on
+Nexus` and `Visit the uploader's profile` in the same branch, so a list written from
+this repo's MO2 source carries both. The hosted build is older and offers only the
+first. Entries taken from the source describe the MO2 that source builds; the check
+now asks **the MO2 that is actually running**, which is the one the frontend has to
+match.
+
+**Archives and Saves are compared against MO2 too, and that is now all six.** They
+were the last two held to entries written down in the check, which cannot notice MO2
+gaining an entry nor this frontend offering one MO2 does not. Neither list names a
+row the way its own first column reads: MO2's `bsaList` is a tree of mods with their
+archives beneath, so an archive is a *child* row under the mod that supplies it; and
+MO2 labels a save with a composite caption — character, slot and place — which **both
+of this profile's saves carry, identically**, so a save cannot be named by its caption
+at all. The file is in the list's second column, which is what the Saves page names a
+row by and what MO2's own save actions already match on.
+
+The bridge now walks into the archive tree and names a save by its file, opens the
+branch a row sits in and scrolls to it — the menu is opened at the rectangle the view
+draws that row at, and a row with no rectangle opens the list's menu on nothing.
+`readFileRows` answers with those same names, so the frontend and MO2 are talking
+about the same row.
+
+**The check settles the row first and opens both menus on that one row.** It used to
+read whichever row each side happened to land on: the frontend's menu from the first
+row its table could select, MO2's from the first of the frontend's rows MO2 also
+holds. Those are not necessarily the same row, and a menu belongs to the row it was
+built for — MO2 offers a folder different entries from a file. It now picks the row
+both sides hold, then asks each side for that row's menu, and reports nothing rather
+than comparing a menu it could not build for the right row.
+
+**Turning the comparison on found an entry MO2 does not have.** The Archives row menu
+offered **Browse...** beside Extract, on the written-down grounds that MO2 opens an
+archive when its row is double-clicked. MO2 does not: `bsaList` has no activation
+handler at all — `mainwindow.h` declares `on_bsaList_customContextMenuRequested` and
+`on_bsaList_itemChanged` and nothing else — so the entry rested on a behaviour MO2
+does not have. Looking inside an archive is MO2's Data preview, which this page's own
+Browse action reaches; the entry is off the menu and the action is unchanged. MO2's
+archive menu is one entry, and so is this one.
+
+The comparison is falsifiable in both directions on those two pages, confirmed against
+the live host rather than argued from the code. The extra entry above is the one
+direction, caught on the first run that compared Archives at all. For the other,
+`Fix enabled mods...` was taken off the Saves menu on purpose: the check fails with
+`Saves (mo2-integration-test.fos)'s menu is missing MO2's Fix enabled mods...`, and
+passes again with it back.
+
+It now reports all six against MO2 itself: the 33-entry mod menu, the 9-entry plugin
+menu, 13 on a download, 7 on a Data file, 1 on an archive and 3 on a save.
+
+### Widgets that are drawn but not exercised
+
+This instance cannot exercise three of them, and none is claimed as tested. They
+now say so in their own words rather than borrowing the wording of a widget that
+was driven:
+
+- **Data's "from archives" box** — MO2 lets none of this profile's 21 archives be
+  ticked, so nothing in the Data tree is served out of one and the box has nothing
+  to take away. The check descends into the folders MO2 lists a BSA's contents
+  under before saying so.
+- **An archive's tick** — with archive management off, MO2 offers none tickable,
+  and the frontend drawing them all disabled is MO2's answer rather than a fault.
+  The round trip through MO2 runs whenever one *is* tickable.
+- **The hidden-downloads box** — MO2 holds no hidden download, so there is none to
+  bring back. The count is still checked against MO2's.
+
+Exercising these needs an instance with archive management on and a hidden
+download, which is a change to MO2's own state and has not been made here.
+
 MO2's widgets do what MO2 does with them. Finding them and drawing them whole is
 not the same as carrying their behaviour, so `MO2_VERIFY_WIDGET_BEHAVIOUR` works
 every one the way a user does — types in the filters, ticks the categories, picks
@@ -2060,6 +2340,16 @@ MO2_SCREENSHOT=frontend/artifacts/audit-final.png frontend/run-live.sh <bridge>
 
 `MO2_VERIFY_TAB_DRAG` runs last because it navigates to Home and splits panels;
 `MO2_VERIFY_STARTUP` refuses to run alongside any of them.
+
+`MO2_VERIFY_ROW_MENUS` needs `MO2_SCREENSHOT` set, like the other checks in that
+group, and asks MO2 to open its own menus, so run it with the live host connected
+and not alongside `MO2_VERIFY_QT_WIDGETS`, which navigates the same panel.
+
+`MO2_VERIFY_ENTRY_MENUS` and `MO2_VERIFY_SHARED_LISTS` both require a temporary
+`MO2_FRONTEND_LAYOUT`, and under the single narrow panel a fresh layout gives them
+they report the responsive columns as missing and find no attached mod row. That is
+the layout, not the pages: both fail identically before and after the row-menu work.
+Run them against a layout that holds the two lists side by side.
 
 ### First missing MO2 functionality found and added
 

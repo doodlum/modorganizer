@@ -118,6 +118,37 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         _search.TextChanged += (_,_) => { if (ViewModel is { } model) model.SearchText = _search.Text ?? ""; Render(); };
         _conflicts.IsCheckedChanged += (_,_) => { if (ViewModel is { } model) model.ConflictsOnly = _conflicts.IsChecked == true; Render(); };
         _table.DoubleTapped += async (_,_) => await OpenFolder();
+        // MO2's own Data menu (filetree.cpp, FileTree::onContextMenu), cut to what MO2
+        // will do for a file this frontend can name: open it, preview it through MO2's
+        // own preview extensions, show the mod it came from, and hide or unhide it.
+        // MO2's Add as Executable and Execute run a Windows program inside the prefix
+        // and are not offered here; Save Tree to Text File writes from its own tree.
+        Mo2RowMenu.Attach<Mo2DataEntry>(_table, entry => [
+            entry is { Directory: true }
+                ? Mo2EntryMenu.Action("Open", async () => await OpenFolder(), DataReady)
+                : Mo2EntryMenu.Action("Preview", async () => await RunAction("preview"), DataReady),
+            // MO2 offers Open on a file as well as Preview, and hands it to the handlers
+            // inside its prefix; this opens the same file with the handlers this desk
+            // has, as a download's Open File already does.
+            entry is { Directory: false } ? Mo2EntryMenu.Action("Open", async () => await RunAction("open"), CanTouchFile(entry)) : null,
+            // MO2's own, triggered where MO2 built it: it adds the file to the
+            // executables this instance keeps, which the Tools page then lists.
+            entry is { Directory: false } ? Mo2EntryMenu.Action("Add as Executable",
+                async () => await AddAsExecutable(entry), CanTouchFile(entry)) : null,
+            new Separator(),
+            Mo2EntryMenu.Action("Reveal in Explorer", async () => await RunAction("reveal"), CanTouchFile(entry)),
+            Mo2EntryMenu.Action("Open Mod Info", async () => await OpenModInfo(entry),
+                DataReady && OriginMod(entry) is not null),
+            new Separator(),
+            entry is { Name: { } name } && name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase)
+                ? Mo2EntryMenu.Action("Un-Hide", async () => await RunAction("unhide"), CanTouchFile(entry))
+                : Mo2EntryMenu.Action("Hide", async () => await RunAction("hide"), CanTouchFile(entry)),
+            new Separator(),
+            // MO2 puts Refresh on this menu as well as above the tree. The page already
+            // had the action and only the button to reach it by, which is a difference
+            // in what the menu offers rather than in what the page can do.
+            Mo2EntryMenu.Action("Refresh", async () => { _actionError = null; await Refresh(); }, DataReady),
+        ]);
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true; ++_activation;
@@ -140,6 +171,15 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
             await Navigate((_directory.Length == 0 ? "" : _directory + "/") + row.Name);
         else await RunAction("preview");
     }
+    // MO2's own Add as Executable, on the row MO2 has of that name. MO2 keeps the
+    // executables, so it is asked to add one rather than told what to write.
+    private async Task AddAsExecutable(Mo2DataEntry? entry)
+    {
+        if (!_active || _reading || ViewModel is not { } model || _target is not { } target || entry is not { Directory: false }) return;
+        await model.Profile.RunFileMenu("data", [entry.Name], [["Add as Executable"]], target);
+        await Refresh();
+    }
+
     private async Task RunAction(string operation)
     {
         if (!_active || _reading || ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2DataEntry { Directory: false } file) return;
@@ -153,6 +193,11 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
             Render();
         }
     }
+    // Reaching a folder without a pointer. MO2 lists a BSA's contents under the
+    // folders it puts them in, so the Data root has no archive-served file at all
+    // and the "from archives" box has nothing to take away there — a check that
+    // only ever looked at the root could not exercise it.
+    internal Task ShowFolder(string path) => Navigate(path);
     private async Task Navigate(string path)
     {
         if (!_active || _reading) return;
@@ -190,6 +235,26 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
             }
         }
     }
+    // What the header actions are enabled by, and what the row menu asks in turn.
+    private bool DataReady => _active && !_reading && ViewModel?.Profile.IsConnected == true &&
+        _target == ViewModel.Profile.CurrentTarget && ViewModel?.Profile.CanChangeOriginalUi == true;
+    // A file MO2 can act on individually: one it lays down itself, rather than one it
+    // reads out of an archive.
+    private bool CanTouchFile(Mo2DataEntry? entry) => DataReady && entry is { Directory: false, Archive.Length: 0 };
+
+    // The mod a file came from, as MO2 reports its origins. "data" is the game's own
+    // folder, which is not a mod MO2 has a page for.
+    private Mo2LiveMod? OriginMod(Mo2DataEntry? entry) =>
+        entry?.Origins.Select(origin => ViewModel?.Profile.Mods.FirstOrDefault(mod =>
+            mod.Name.Equals(origin, StringComparison.OrdinalIgnoreCase) ||
+            mod.DisplayName.Equals(origin, StringComparison.OrdinalIgnoreCase))).OfType<Mo2LiveMod>().FirstOrDefault();
+
+    private async Task OpenModInfo(Mo2DataEntry? entry)
+    {
+        if (ViewModel is not { } model || OriginMod(entry) is not { } mod) return;
+        await model.Profile.ShowModDetails(mod.Id);
+    }
+
     private void UpdateActions()
     {
         var ready = _active && !_reading && ViewModel?.Profile.IsConnected == true && _target == ViewModel.Profile.CurrentTarget;

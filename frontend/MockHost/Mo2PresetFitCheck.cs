@@ -77,28 +77,82 @@ internal static class Mo2PresetFitCheck
                     // Every widget the page draws: MO2's buttons, boxes, fields and the
                     // captions beside them. A control cut off by the panel's edge, or
                     // given less room than it asked for, is one the user cannot read.
+                    // The page in the tab that was selected, not everything the panel is
+                    // holding. This panel carries five tabs and keeps the view built for
+                    // each, so measuring the panel measured all of them at once: the
+                    // count of widgets examined moved between runs — Archives 24 one run
+                    // and 3 the next, Plugins 15 and 26 — and every one of those runs
+                    // passed, because a page measured with three of its widgets present
+                    // has no clipped ones either. Bounds stay the panel's: leaving the
+                    // panel is the fault being looked for.
+                    var page = tab.Contents.ViewModel;
+                    Control? host = null;
+                    await Until(() => (host = view!.GetVisualDescendants().OfType<Control>()
+                        .FirstOrDefault(x => ReferenceEquals(x.DataContext, page))) is not null,
+                        $"{title} never drew its own page inside the panel");
+                    static bool Widget(Control x) => x is Button or CheckBox or RadioButton or ComboBox or TextBox;
+                    static bool Caption(Control x) => x is TextBlock && !x.GetVisualAncestors().OfType<TreeDataGrid>().Any();
+                    // Data rebuilds its widgets whenever it renders, so the page can be
+                    // part-way through putting them back when it is measured: the count
+                    // examined came out 22 on two runs and 15 on a third. Wait for the
+                    // page to stop changing shape before reading it.
+                    var holding = 0;
+                    var seen = -1;
+                    for (var attempt = 0; attempt < 40 && holding < 3; attempt++) {
+                        await Task.Delay(100);
+                        window.UpdateLayout();
+                        var drawn = host!.GetVisualDescendants().OfType<Control>()
+                            .Count(x => x.IsEffectivelyVisible && (Widget(x) || Caption(x)));
+                        holding = drawn == seen ? holding + 1 : 0;
+                        seen = drawn;
+                    }
+
                     var bounds = new Rect(view!.Bounds.Size);
                     var clipped = new List<string>();
                     // The page's own widgets, not the panel's tab strip: the strip
                     // scrolls its tabs and squeezes its own close buttons by design,
                     // which is chrome every panel shares rather than anything a page
                     // draws.
-                    foreach (var control in view.GetVisualDescendants().OfType<Control>()
-                                 .Where(x => x.IsEffectivelyVisible && x is Button or CheckBox or RadioButton or ComboBox or TextBox)
+                    //
+                    // The captions count too. This said it covered "the captions beside
+                    // them" and then listed only the things that can be clicked, so
+                    // MO2's Profile, Active: and Filter labels — the words that say what
+                    // the widget beside them is for — were never measured at all.
+                    // A caption inside a table is left out: those are trimmed to an
+                    // ellipsis by design, which is a cell fitting its column rather than
+                    // a control leaving its panel.
+                    var examined = 0;
+                    foreach (var control in host!.GetVisualDescendants().OfType<Control>()
+                                 .Where(x => x.IsEffectivelyVisible && (Widget(x) || Caption(x)))
                                  .Where(x => x.GetVisualAncestors().OfType<Control>().All(a => a.Name is not ("TabHeaderBorder" or "TabHeaderScrollViewer")))) {
                         var at = control.TranslatePoint(default, view);
                         if (at is null || control.Bounds.Width <= 0) continue;
+                        examined++;
                         var box = new Rect(at.Value, control.Bounds.Size);
                         if (box.Right > bounds.Right + Slack || box.Left < bounds.Left - Slack)
                             clipped.Add($"{Describe(control)} runs to {box.Right:F0} of {bounds.Right:F0}");
+                        // And off the bottom, which nothing here was looking at. MO2's
+                        // layout is the narrow one, and what a narrow panel does to the
+                        // row of widgets under a list is push it out of the panel — the
+                        // side a width-only check cannot see. Anything inside a
+                        // ScrollViewer is exempt: being below the fold is what scrolling
+                        // is for.
+                        else if (!control.GetVisualAncestors().OfType<ScrollViewer>().Any() &&
+                                 (box.Bottom > bounds.Bottom + Slack || box.Top < bounds.Top - Slack))
+                            clipped.Add($"{Describe(control)} sits at {box.Top:F0}–{box.Bottom:F0} of the panel's {bounds.Bottom:F0}");
                         // What a control asked for includes the margin around it,
                         // which its bounds do not: comparing the two directly reported
                         // every widget with a margin as squeezed by exactly its margin.
-                        else if (control.DesiredSize.Width - control.Margin.Left - control.Margin.Right - control.Bounds.Width > Slack)
+                        // Captions are left out of this one: a trimmed label asks for its
+                        // whole text and is meant to get less.
+                        else if (Widget(control) && control.DesiredSize.Width - control.Margin.Left - control.Margin.Right - control.Bounds.Width > Slack)
                             clipped.Add($"{Describe(control)} is {control.Bounds.Width:F0}px where it asked for " +
                                 $"{control.DesiredSize.Width - control.Margin.Left - control.Margin.Right:F0}" +
                                 $" (in {string.Join(" < ", control.GetVisualAncestors().OfType<Control>().Take(3).Select(a => $"{a.GetType().Name}#{a.Name} {a.Bounds.Width:F0}"))})");
                     }
+                    // A page that drew nothing cannot have drawn anything badly, and
+                    // reported "every widget is drawn whole" for a panel that was empty.
+                    if (examined == 0) clipped.Add("no widget or caption was drawn to measure");
                     // And the column every list is read by. A table of fixed columns
                     // in a half-width panel spends its width on the ones beside the
                     // name and leaves the name itself at its icon: Data drew five
@@ -106,7 +160,7 @@ internal static class Mo2PresetFitCheck
                     // Only a table that has its rows: one still being given its source
                     // has the columns it was born with, which is a placeholder column
                     // 30px wide rather than anything the page drew.
-                    foreach (var table in view.GetVisualDescendants().OfType<TreeDataGrid>()
+                    foreach (var table in host!.GetVisualDescendants().OfType<TreeDataGrid>()
                                  .Where(x => x.Bounds.Width > 0 && x.Rows?.Count > 0)) {
                         var first = table.GetVisualDescendants().OfType<TreeDataGridColumnHeader>()
                             .OrderBy(x => x.TranslatePoint(default, table)?.X ?? 0).FirstOrDefault();
@@ -114,7 +168,7 @@ internal static class Mo2PresetFitCheck
                             clipped.Add($"its name column is {first.Bounds.Width:F0}px of the table's {table.Bounds.Width:F0}");
                     }
                     if (clipped.Count > 0) faults.Add($"{title}: {string.Join("; ", clipped.Take(4))}");
-                    else described.Add(title);
+                    else described.Add($"{title} ({examined})");
                 }
             }
         } finally {

@@ -43,22 +43,56 @@ internal static class Mo2PluginRow
         var target = profile.CurrentTarget;
         Task Run(Func<Task> action) => target == profile.CurrentTarget && profile.CanChangeOriginalUi ? action() : Task.CompletedTask;
         async Task Change(bool active) => await Run(() => profile.SetPluginsActive([plugin.DisplayName], active));
-        var actionSets = new List<MenuItem[]>();
-        MenuItem[] Actions() {
+        var actionSets = new List<object[]>();
+        // MO2's own plugin menu (src/pluginlistcontextmenu.cpp), in its order and under
+        // its wording. Enabling, moving and locking have routes of their own that the
+        // list's drag and the checks for it already use; the rest go through MO2's own
+        // menu action, so MO2 asks its own questions before acting on every plugin.
+        object[] Actions() {
             var ready = target == profile.CurrentTarget && profile.CanChangeOriginalUi;
             if (target == profile.CurrentTarget && profile.Order.FindPlugin(plugin.Key) is { } latest) plugin = latest;
-            MenuItem[] items = [
-            Mo2EntryMenu.Action("Enable", () => Change(true), ready && plugin.CanToggle),
-            Mo2EntryMenu.Action("Disable", () => Change(false), ready && plugin.CanToggle),
-            Mo2EntryMenu.Action("Move earlier", () => Run(() => profile.Order.MoveItemDelta(default, plugin.Key, -1)), ready && plugin.CanMove),
-            Mo2EntryMenu.Action("Move later", () => Run(() => profile.Order.MoveItemDelta(default, plugin.Key, 1)), ready && plugin.CanMove),
+            // MO2 offers the two origin entries only for a plugin that came from a mod
+            // it manages — "this is to avoid showing the option on game files like
+            // skyrim.esm" — and the information window only for a mod it installed
+            // rather than one the game supplies (pluginlistcontextmenu.cpp).
+            var originMod = plugin.ModName.Length > 0 ? profile.Mods.FirstOrDefault(x => x.Name == plugin.ModName) : null;
+            var origin = originMod is { IsForeign: false };
+            MenuItem Mo2(string caption, bool enabled = true) {
+                var item = Mo2EntryMenu.Action(caption,
+                    () => Run(() => profile.RunPluginMenu([plugin.DisplayName], [[caption]], target)), ready && enabled);
+                item.Tag = enabled;
+                return item;
+            }
+            // MO2's Send to..., which is how a plugin is moved the length of the order
+            // without dragging it there. All three are MO2's own, since it is MO2 that
+            // knows where a plugin's masters let it land.
+            var send = new MenuItem { Header = "Send to... " };
+            foreach (var caption in new[] { "Top", "Bottom", "Priority..." })
+                send.Items.Add(Mo2EntryMenu.Action(caption,
+                    () => Run(() => profile.RunPluginMenu([plugin.DisplayName], [["Send to... ", caption]], target)),
+                    ready && plugin.CanMove));
+            object?[] built = [
+            // MO2's own two, which act on everything selected rather than this row.
+            Mo2EntryMenu.Action("Enable selected", () => Change(true), ready && plugin.CanToggle),
+            Mo2EntryMenu.Action("Disable selected", () => Change(false), ready && plugin.CanToggle),
+            new Separator(),
+            Mo2("Enable all"), Mo2("Disable all"),
+            new Separator(),
+            send,
+            new Separator(),
+            // MO2 has no one-step move on this menu — a plugin is dragged, or sent
+            // somewhere above — so neither is offered here.
             Mo2EntryMenu.Action(plugin.IsLocked ? "Unlock load order" : "Lock load order",
                 () => Run(() => profile.SetPluginLocked(plugin.DisplayName, !plugin.IsLocked, target)), ready && plugin.IsActive && (plugin.IsLocked || plugin.CanMove)),
-            // MO2 offers the folder of the mod a plugin came from, which is how a
-            // plugin's own files are reached from its list.
-            Mo2EntryMenu.Action("Open origin in Explorer", () => Run(() => profile.OpenModFolder(plugin.ModName)),
-                ready && plugin.ModName.Length > 0 && profile.Mods.Any(x => x.Name == plugin.ModName))
+            new Separator(),
+            // MO2 offers the folder of the mod a plugin came from, and that mod's own
+            // window. Neither is on the menu at all for a plugin the game itself
+            // supplies, which is MO2's own rule rather than a greyed-out entry.
+            origin ? Mo2EntryMenu.Action("Open Origin in Explorer", () => Run(() => profile.OpenModFolder(plugin.ModName)), ready) : null,
+            origin ? Mo2EntryMenu.Action("Open Origin Info...",
+                () => Run(() => originMod is { } mod ? profile.ShowModDetails(mod.Id) : Task.CompletedTask), ready) : null,
             ];
+            var items = Mo2RowMenu.Tidy(built).ToArray();
             actionSets.Add(items); return items;
         }
         var row = Columns(); row.Name = "PluginRedesignRow";
@@ -107,11 +141,23 @@ internal static class Mo2PluginRow
             ToolTip.SetTip(name, plugin.DisplayName + "\nMod: " + plugin.ModName + "\n" + plugin.Diagnostics);
             toggle.IsChecked = plugin.IsActive;
             toggle.IsEnabled = ready && plugin.CanToggle;
-            foreach (var items in actionSets) {
-                items[0].IsEnabled = items[1].IsEnabled = ready && plugin.CanToggle;
-                items[2].IsEnabled = items[3].IsEnabled = ready && plugin.CanMove;
-                items[4].Header = plugin.IsLocked ? "Unlock load order" : "Lock load order";
-                items[4].IsEnabled = ready && plugin.IsActive && (plugin.IsLocked || plugin.CanMove);
+            // The menu was built for the plugin as it then was. What changes while it
+            // exists is whether MO2 will take anything at all, and whether this plugin
+            // can still be switched, moved or locked.
+            foreach (var entries in actionSets) {
+                var items = entries.OfType<MenuItem>().ToArray();
+                foreach (var item in items)
+                    item.IsEnabled = ready && (item.Header as string) switch {
+                        "Enable selected" or "Disable selected" => plugin.CanToggle,
+                        "Move earlier" or "Move later" => plugin.CanMove,
+                        "Unlock load order" or "Lock load order" => plugin.IsActive && (plugin.IsLocked || plugin.CanMove),
+                        // The rest are MO2's own, under the condition they were built
+                        // with — which is on the item, since the menu outlives the row
+                        // state it was built from.
+                        _ => item.Tag is not false,
+                    };
+                if (items.FirstOrDefault(item => (item.Header as string) is "Unlock load order" or "Lock load order") is { } lockItem)
+                    lockItem.Header = plugin.IsLocked ? "Unlock load order" : "Lock load order";
             }
         }
         row.AttachedToVisualTree += (_,_) => { profile.Changed += Refresh; Refresh(); };

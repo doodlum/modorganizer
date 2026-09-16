@@ -97,16 +97,16 @@ def save_directory(profile, game, supports_local, read_ini, make_dir):
     return game.savesDirectory()
 
 
-def preview_save_details(organizer, window, filename):
+def current_saves_directory(organizer):
+    """The folder MO2's own Saves tab is reading, by MO2's own rules.
+
+    The saves a profile lists are named relative to it, so the frontend is told
+    where they are and shows one on this desktop rather than asking MO2 to open a
+    folder inside its Windows prefix.
+    """
     import ctypes
     import mobase
-    from PyQt6.QtCore import QDir, Qt
-    from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QScrollArea, QVBoxLayout
-    if not window.isEnabled(): raise ValueError('Close MO2’s current dialog first')
-    if not isinstance(filename, str) or sum(row['file'] == filename for row in read_saves(window)['saves']) != 1:
-        raise ValueError('Save no longer exists; refresh Saves before continuing')
-    feature = organizer.gameFeatures().gameFeature(mobase.SaveGameInfo)
-    if feature is None: raise ValueError('This game extension does not provide save details')
+    from PyQt6.QtCore import QDir
     def read_ini(path):
         reader = ctypes.windll.kernel32.GetPrivateProfileStringW
         reader.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_wchar_p]
@@ -114,8 +114,20 @@ def preview_save_details(organizer, window, filename):
         value = ctypes.create_unicode_buffer(260)
         reader('General', 'SLocalSavePath', '', value, len(value), path)
         return value.value
-    directory = save_directory(organizer.profile(), organizer.managedGame(),
+    return save_directory(organizer.profile(), organizer.managedGame(),
         organizer.gameFeatures().gameFeature(mobase.LocalSavegames) is not None, read_ini, QDir)
+
+
+def preview_save_details(organizer, window, filename):
+    import mobase
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QScrollArea, QVBoxLayout
+    if not window.isEnabled(): raise ValueError('Close MO2’s current dialog first')
+    if not isinstance(filename, str) or sum(row['file'] == filename for row in read_saves(window)['saves']) != 1:
+        raise ValueError('Save no longer exists; refresh Saves before continuing')
+    feature = organizer.gameFeatures().gameFeature(mobase.SaveGameInfo)
+    if feature is None: raise ValueError('This game extension does not provide save details')
+    directory = current_saves_directory(organizer)
     matches = [save for save in organizer.managedGame().listSaves(directory)
                if directory.relativeFilePath(save.getFilepath()) == filename]
     if len(matches) != 1: raise ValueError('Save changed; refresh Saves before viewing details')

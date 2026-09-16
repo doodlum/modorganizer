@@ -433,13 +433,16 @@ public partial class MockApp : Application
                         try { await Mo2LoginButtonCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL login button: " + error.Message); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MODS_SELECTION") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MODS_SELECTION") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         // The check does its own waiting and reports what it saw, so no
                         // gate here: a gate only hides which part never arrived.
                         try { await Mo2ModSelectionCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL mods selection group: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(4));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_COLUMN_TOGGLE") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2ColumnToggleCheck.Run(); }
@@ -455,26 +458,38 @@ public partial class MockApp : Application
                         try { await Mo2PanelChromeCheck.Run(); }
                         catch (Exception error) { Console.WriteLine("FAIL panel chrome: " + error.Message); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_STYLE") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_STYLE") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2RowStyleCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_ROW_STYLE_SCREENSHOTS")); }
                         catch (Exception error) { Console.WriteLine("FAIL row style: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_WIDGETS") == "1")
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_WIDGETS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2QtWidgetCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL MO2 widgets: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LISTS") == "1")
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SHARED_LISTS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2SharedListCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL shared list pages: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SELECTION_PARITY") == "1")
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SELECTION_PARITY") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2SelectionParityCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL selection parity: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_FOLDER_PAGES") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2FolderPagesCheck.Run(live, liveWindow); }
@@ -503,10 +518,47 @@ public partial class MockApp : Application
                     }, TimeSpan.FromSeconds(8));
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
-                        if (endpoint.Length > 0) await WaitFor(() => live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0 &&
-                            (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is not null ||
-                             Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1" ||
-                             (live.ModsPage?.Adapter.SourceCount.Value > 0 && live.PluginsPage?.Adapter.SourceCount.Value > 0)), "Live MO2 profile or required tables did not connect");
+                        // Checks hooked outside this block drive the same tables and are
+                        // started by the same window opening, so they are still running
+                        // when this timer fires. Wait for the ones that said they would
+                        // run, so this path gates, screenshots and shuts down after them
+                        // rather than through them.
+                        await Mo2CheckTurn.Settled(TimeSpan.FromMinutes(5));
+                        // Wait for MO2's tables, not for which page happens to be on
+                        // screen. ModsPage and PluginsPage resolve to whatever page is in
+                        // an open tab, so a check that navigates the panel — which
+                        // MO2_VERIFY_QT_WIDGETS does by design, walking all five tabs —
+                        // leaves one of them null and this gate waiting for a page that is
+                        // no longer open. It then threw on the dispatcher and aborted the
+                        // process part-way through the audit, discarding every check queued
+                        // behind it while still having printed PASS for the ones before.
+                        // An open page must still be populated; a page that is not open is
+                        // judged by the profile rows it would have been built from.
+                        if (endpoint.Length > 0) try {
+                            // Not merely non-empty, but done filling. A list still being
+                            // populated satisfies "more than nothing" on its first row, and
+                            // the screenshot this gate exists to protect caught a Plugins
+                            // panel showing five of eleven — evidence of a window that the
+                            // window never actually looked like. Counts that have stopped
+                            // moving are the readable signal; the totals themselves cannot
+                            // be predicted here, since separators and Overwrite put the mod
+                            // table's own count legitimately apart from the profile's.
+                            var steady = 0;
+                            (int Mods, int Plugins) last = (-1, -1);
+                            await WaitFor(() => {
+                                if (!live.Profile.IsConnected || live.Profile.ProfilePath.Length == 0) return false;
+                                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAUNCH") is not null ||
+                                    Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_CONTEXT") == "1") return true;
+                                var now = (live.ModsPage is { } modsPage ? modsPage.Adapter.SourceCount.Value : live.Profile.Mods.Count,
+                                           live.PluginsPage is { } pluginsPage ? pluginsPage.Adapter.SourceCount.Value : live.Profile.Order.Plugins.Count);
+                                if (now.Item1 == 0 || now.Item2 == 0) { steady = 0; last = now; return false; }
+                                steady = now == last ? steady + 1 : 0;
+                                last = now;
+                                return steady >= 4;
+                            }, "Live MO2 profile or required tables did not settle", 30);
+                        } catch (Exception error) {
+                            Console.WriteLine("FAIL live gate: " + error.Message);
+                        }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_DIALOG_QUEUE") == "1") await Mo2DialogQueueCheck.Run();
                                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_STARTUP") == "1") {
                             try { await Mo2StartupCheck.Run(live, liveWindow); }
@@ -533,6 +585,10 @@ public partial class MockApp : Application
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_WIDGET_BEHAVIOUR") == "1") {
                             try { await Mo2WidgetBehaviourCheck.Run(live, liveWindow); }
                             catch (Exception error) { Console.WriteLine("FAIL MO2 widget behaviour: " + error.Message); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_MENUS") == "1") {
+                            try { await Mo2RowMenuCheck.Run(live, liveWindow); }
+                            catch (Exception error) { Console.WriteLine("FAIL MO2 row menus: " + error.Message); }
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_PRESET_FIT") == "1") {
                             try { await Mo2PresetFitCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_PRESET_FIT_DIRECTORY")); }

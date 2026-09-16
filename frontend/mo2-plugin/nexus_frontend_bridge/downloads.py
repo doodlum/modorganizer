@@ -104,7 +104,14 @@ class Downloads:
                            'modName': values.get('modname', ''),
                            'version': values.get('version', ''),
                            'modId': values.get('modid', ''),
-                           'sourceGame': values.get('gamename', '')})
+                           'sourceGame': values.get('gamename', ''),
+                           # What MO2's own menu asks before it offers Query Info in
+                           # place of the two Nexus links (DownloadManager::
+                           # isInfoIncomplete): a Nexus download missing either
+                           # identifier. Anything from another repository is complete
+                           # as far as MO2 is concerned, because it cannot re-query it.
+                           'infoIncomplete': values.get('repository', 'Nexus') == 'Nexus' and (
+                               values.get('modid', '0') in ('', '0') or values.get('fileid', '0') in ('', '0'))})
         return result
 
     def _failed_paths(self):
@@ -135,12 +142,34 @@ class Downloads:
             failed.update((path, path + '.unfinished', path + '.part'))
         return failed
 
-    def control(self, filename, action):
-        from PyQt6.QtCore import QAbstractProxyModel, QMetaObject, Q_ARG, Qt
+    # Everything MO2's own download list offers on one row, under the name its menu
+    # gives the entry (downloadlistview.cpp, DownloadListView::onCustomContextMenu).
+    # MO2 owns each one: the slot is its own, and the manager decides whether the
+    # row is in a state to accept it.
+    ROW_SLOTS = {
+        'pause': 'issuePause', 'resume': 'issueResume', 'cancel': 'issueCancel',
+        # Query Info is MO2's own issueQueryInfoMd5, which is the one its menu calls:
+        # a download whose metadata is incomplete has no file id to ask about, so MO2
+        # identifies it by hash instead. Install is not here — the frontend already
+        # installs a download through MO2's installMod, which is the same installer.
+        'delete': 'issueDelete', 'queryInfo': 'issueQueryInfoMd5', 'visitOnNexus': 'issueVisitOnNexus',
+        # Open File, Open Meta File and Reveal in Explorer are not here either: MO2
+        # hands those to the prefix's file handlers, and the frontend's own desktop
+        # opens the same archive with the handlers this desk actually has.
+        'visitUploaderProfile': 'issueVisitUploaderProfile',
+        'hide': 'issueRemoveFromView', 'unhide': 'issueRestoreToView',
+    }
+    # And what its menu offers over the whole list, with no row to act on.
+    LIST_SLOTS = {
+        'deleteInstalled': 'issueDeleteCompleted', 'deleteUninstalled': 'issueDeleteUninstalled',
+        'deleteAll': 'issueDeleteAll', 'hideInstalled': 'issueRemoveFromViewCompleted',
+        'hideUninstalled': 'issueRemoveFromViewUninstalled', 'hideAll': 'issueRemoveFromViewAll',
+        'unhideAll': 'issueRestoreToViewAll',
+    }
+
+    def _download_view(self):
+        from PyQt6.QtCore import QAbstractProxyModel
         from PyQt6.QtWidgets import QTreeView
-        slots = {'pause': 'issuePause', 'resume': 'issueResume', 'cancel': 'issueCancel', 'delete': 'issueDelete'}
-        if action not in slots or not isinstance(filename, str):
-            raise ValueError('Choose a supported download action and archive')
         if self.window is None:
             raise ValueError('MO2 download controls are not ready')
         view = self.window.findChild(QTreeView, 'downloadView')
@@ -151,6 +180,43 @@ class Downloads:
             model = model.sourceModel()
         if model is None or model.metaObject().className() != 'DownloadList':
             raise ValueError('This MO2 version has an unsupported download model')
+        return view, model
+
+    def control_list(self, action):
+        """One of MO2's whole-list download actions, with no row to resolve.
+
+        MO2 confirms each of these itself; nothing here answers its dialog.
+        """
+        from PyQt6.QtCore import QMetaObject, Qt
+        if action not in self.LIST_SLOTS:
+            raise ValueError('Choose a supported download list action')
+        view, _ = self._download_view()
+        QMetaObject.invokeMethod(view, self.LIST_SLOTS[action], Qt.ConnectionType.DirectConnection)
+        return {'requested': action}
+
+    def available_actions(self):
+        """Which of MO2's own download-row actions this build actually carries.
+
+        These are invoked by slot name, and a name this MO2 does not have simply does
+        nothing. MO2 2.5.2 has no issueVisitUploaderProfile — the action arrived later
+        — so the frontend offered "Visit the uploader's profile" against a slot that
+        was not there: an entry drawn on the menu that could never do anything. What
+        MO2 is asked to do is now limited to what MO2 has.
+        """
+        try:
+            view, _ = self._download_view()
+        except ValueError:
+            return []
+        meta = view.metaObject()
+        names = {bytes(meta.method(index).name()).decode() for index in range(meta.methodCount())}
+        return sorted(action for action, slot in self.ROW_SLOTS.items() if slot in names)
+
+    def control(self, filename, action):
+        from PyQt6.QtCore import QMetaObject, Q_ARG, Qt
+        slots = self.ROW_SLOTS
+        if action not in slots or not isinstance(filename, str):
+            raise ValueError('Choose a supported download action and archive')
+        view, model = self._download_view()
         requested = str(Path(filename)).casefold()
         manager = self.organizer.downloadManager()
         for row in range(model.rowCount()):

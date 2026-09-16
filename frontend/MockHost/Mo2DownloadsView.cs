@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.LogicalTree;
+using Avalonia.VisualTree;
 using Avalonia.Styling;
 using NexusMods.App.UI.Controls;
 using Avalonia.Platform.Storage;
@@ -29,6 +30,68 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         var target = profile.CurrentTarget;
         if (await choose() is { } path) await profile.InstallArchive(path, target);
     }
+    // What MO2 puts on a download's right-click menu, in MO2's own order and under
+    // MO2's own wording. The three row shapes are MO2's three download states: a
+    // finished archive, one still transferring, and one that is paused or has failed.
+    // Every entry is disabled rather than hidden when MO2 is not in a state to take
+    // it, so the menu does not change shape while it is open.
+    internal object?[] DownloadMenu(NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>? row)
+    {
+        if (ViewModel is not { } model) return [];
+        var profile = model.Profile;
+        var file = row is null ? null : model.Provider.Find(row.Key);
+        var target = profile.CurrentTarget;
+        var ready = profile.CanUseDownloads;
+        MenuItem Row(string title, string operation) => Mo2EntryMenu.Action(title,
+            () => profile.ControlDownload(file!.Path, operation, target), ready && file?.CanControl(operation) == true);
+        // Opened on this desktop rather than through MO2: MO2 hands these to the
+        // handlers inside its Windows prefix.
+        MenuItem Local(string title, string operation) => Mo2EntryMenu.Action(title,
+            () => { profile.OpenDownload(file!, operation); return Task.CompletedTask; }, file is not null);
+        MenuItem List(string title, string operation) => Mo2EntryMenu.Action(title,
+            () => profile.ControlDownloadList(operation, target), ready);
+        // Whether MO2 carries the action behind an entry. Unknown means offerable: the
+        // set is empty until MO2 has answered, and a menu built before the first
+        // snapshot should not be missing everything.
+        bool Has(string operation) => profile.DownloadActions.Count == 0 || profile.DownloadActions.Contains(operation);
+        var hidden = file?.Hidden == true;
+        object?[] items = [
+            // A finished download: install it, find out what it is, open it, then the
+            // two that take it out of the list.
+            file is { Ready: true } ? Mo2EntryMenu.Action("Install",
+                async () => await profile.InstallArchive(file.Path, target), ready) : null,
+            file is { Ready: true, InfoIncomplete: true } ? Row("Query Info", "queryInfo") : null,
+            file is { Ready: true, InfoIncomplete: false } && Has("visitOnNexus") ? Row("Visit on Nexus", "visitOnNexus") : null,
+            // MO2 adds this beside Visit on Nexus, but only from the build that has the
+            // action: 2.5.2 has no issueVisitUploaderProfile at all, and this entry was
+            // being drawn over a slot that does not exist there. Offered when MO2 says
+            // it has it, which is how this stays right for both builds.
+            file is { Ready: true, InfoIncomplete: false } && Has("visitUploaderProfile") ? Row("Visit the uploader's profile", "visitUploaderProfile") : null,
+            file is { Ready: true } ? Local("Open File", "openFile") : null,
+            file is { Ready: true } ? Local("Open Meta File", "openMetaFile") : null,
+            file is null ? null : Local("Reveal in Explorer", "reveal"),
+            file is { Ready: true } ? new Separator() : null,
+            // MO2 offers Delete on a finished archive and on a stopped one, and the
+            // transfer controls on the two unfinished states.
+            file is not null && file.CanControl("delete") ? Row("Delete...", "delete") : null,
+            file is { Ready: true } ? Row(hidden ? "Un-Hide" : "Hide", hidden ? "unhide" : "hide") : null,
+            file is { Ready: false } && file.CanControl("cancel") ? Row("Cancel", "cancel") : null,
+            file is { Ready: false } && file.CanControl("pause") ? Row("Pause", "pause") : null,
+            file is { Ready: false } && file.CanControl("resume") ? Row("Resume", "resume") : null,
+            new Separator(),
+            // And what MO2 offers over the whole folder, which it shows whether or not
+            // the press landed on a row.
+            List("Delete Installed Downloads...", "deleteInstalled"),
+            List("Delete Uninstalled Downloads...", "deleteUninstalled"),
+            List("Delete All Downloads...", "deleteAll"),
+            new Separator(),
+            hidden ? List("Un-Hide All...", "unhideAll") : List("Hide Installed...", "hideInstalled"),
+            hidden ? null : List("Hide Uninstalled...", "hideUninstalled"),
+            hidden ? null : List("Hide All...", "hideAll"),
+        ];
+        return items;
+    }
+
     public Mo2DownloadsView()
     {
         var native = new NexusMods.App.UI.Pages.Downloads.DownloadsPageView();
@@ -145,6 +208,16 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             if (ViewModel is not { } model || linkTarget is not { } target) return;
             nexusFlyout.Hide();
             await model.Profile.DownloadNexus(link.Text ?? "", target);
+        };
+        // MO2's own download menu (downloadlistview.cpp, onCustomContextMenu), which is
+        // where its download list is actually worked from: the header line carries the
+        // few actions that apply to a selection, and everything else — installing,
+        // asking Nexus what a file is, opening it, hiding it, and the six that act on
+        // the whole folder — is here, under MO2's own captions and conditions.
+        native.AttachedToVisualTree += (_, _) => {
+            if (native.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault() is not { ContextMenu: null } table) return;
+            Mo2RowMenu.Attach<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>(
+                table, row => DownloadMenu(row), allowEmpty: true);
         };
         this.WhenActivated(disposables => {
             if (ViewModel is not { } model) return;
