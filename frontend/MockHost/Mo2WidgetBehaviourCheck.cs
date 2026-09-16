@@ -98,6 +98,59 @@ internal static class Mo2WidgetBehaviourCheck
                 } else faults.Add("the Filters group has no Clear");
             }
 
+            // MO2's filtersAnd and filtersOr, which decide whether a mod has to carry
+            // every ticked category or only one of them. Two categories are ticked and
+            // the list read back against MO2's own category text both ways round: a
+            // radio pair that narrowed nothing, or that narrowed the same way whichever
+            // was chosen, is the fault here — and a one-sided "And shows fewer" passes
+            // for a pair that simply empties the list.
+            static string[] Owned(Mo2LiveMod mod) =>
+                mod.Category.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var andRadio = Named<RadioButton>(mods, "ModsFiltersAnd");
+            var orRadio = Named<RadioButton>(mods, "ModsFiltersOr");
+            var regular = live.Profile.Mods.Where(x => x.IsRegular).ToArray();
+            // Two categories that no single mod's ticks can answer alike: at least one
+            // mod carries one of them without the other, so And and Or must differ.
+            var owners = categories.Select(x => (string)x.Tag!)
+                .Select(name => (Name: name, Mods: regular.Where(mod => Owned(mod).Contains(name, StringComparer.OrdinalIgnoreCase))
+                    .Select(mod => mod.Id).ToHashSet())).Where(x => x.Mods.Count > 0).ToArray();
+            var pair = owners.SelectMany(first => owners.Where(second => second.Name != first.Name)
+                .Select(second => (First: first, Second: second)))
+                .FirstOrDefault(x => !x.First.Mods.SetEquals(x.Second.Mods));
+            if (andRadio is null || orRadio is null) faults.Add("the Filters group has no And/Or pair");
+            else if (pair.First.Mods is null)
+                worked.Add($"MO2's mods carry no two categories that And and Or would answer differently, so the pair was not exercised");
+            else {
+                foreach (var box in categories)
+                    box.IsChecked = (string)box.Tag! == pair.First.Name || (string)box.Tag! == pair.Second.Name;
+                await Settle();
+                orRadio.IsChecked = true; await Settle();
+                var either = adapter.VisibleOrder.ToHashSet();
+                andRadio.IsChecked = true; await Settle();
+                var both = adapter.VisibleOrder.ToHashSet();
+                var wantedEither = pair.First.Mods.Union(pair.Second.Mods).Select(x => x.ToString()).ToHashSet();
+                var wantedBoth = pair.First.Mods.Intersect(pair.Second.Mods).Select(x => x.ToString()).ToHashSet();
+                // Only the mods are judged: separators and Overwrite are in the list on
+                // their own terms, which these two radios do not decide.
+                var shownRegular = regular.Select(x => x.Id.ToString()).ToHashSet();
+                var underEither = either.Intersect(shownRegular).ToHashSet();
+                var underBoth = both.Intersect(shownRegular).ToHashSet();
+                if (!underEither.SetEquals(wantedEither))
+                    faults.Add($"Or listed {underEither.Count} mod(s) where {wantedEither.Count} carry {pair.First.Name} or {pair.Second.Name}");
+                else if (!underBoth.SetEquals(wantedBoth))
+                    faults.Add($"And listed {underBoth.Count} mod(s) where {wantedBoth.Count} carry both {pair.First.Name} and {pair.Second.Name}");
+                else worked.Add($"Or listed the {wantedEither.Count} mod(s) carrying {pair.First.Name} or {pair.Second.Name} and And the {wantedBoth.Count} carrying both");
+                // MO2's own default is And, and the ticks come off.
+                if (Named<Button>(mods, "ModsFiltersClear") is { } clear) {
+                    clear.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Settle();
+                }
+                foreach (var box in categories) box.IsChecked = false;
+                andRadio.IsChecked = true;
+                await Settle();
+                if (adapter.VisibleRowCount != all) faults.Add("the list was left narrowed after the And/Or pair was tried");
+            }
+
             // The count MO2 keeps beside the list.
             if (Named<TextBlock>(mods, "ActiveModsCounter") is { } counter) {
                 var active = live.Profile.Mods.Count(x => !x.IsSeparator && !x.IsOverwrite && (x.State & 6) != 0);
@@ -234,6 +287,21 @@ internal static class Mo2WidgetBehaviourCheck
                     faults.Add($"the profile box shows {profiles.SelectedItem}, not the open {live.Profile.CollectionName.Value}");
                 else worked.Add($"the profile box lists all {names.Length} profiles with the open one chosen");
             } else faults.Add("My Mods has no profile box");
+
+            // MO2's saveModsButton, driven through to the file MO2 writes. Its slot
+            // flushes the mod list and copies it beside itself under the time it was
+            // taken, so the backup appearing in MO2's own profile folder is the
+            // evidence — and the one this check made is taken away again afterwards.
+            await Backup(mods, "SaveModsButton", "the mod list", ["modlist.txt"]);
+            // Its restoreModsButton opens MO2's picker, which is modal and waits for
+            // whoever opened it, so it is not pressed here. What is checked is that the
+            // frontend's own is live exactly when MO2 will take it — the same route as
+            // Save, which was driven above.
+            if (Named<Button>(mods, "RestoreModsButton") is { } restoreMods) {
+                if (restoreMods.IsEnabled != live.Profile.CanChangeOriginalUi)
+                    faults.Add($"Restore is {(restoreMods.IsEnabled ? "live" : "greyed out")} where MO2 {(live.Profile.CanChangeOriginalUi ? "will" : "will not")} take it");
+                else worked.Add($"the mod list's Restore is {(restoreMods.IsEnabled ? "live" : "greyed out")}, as MO2 is — its picker is modal and was not opened");
+            } else faults.Add("My Mods has no Restore");
         }
 
         // --- Plugins ---
@@ -267,6 +335,41 @@ internal static class Mo2WidgetBehaviourCheck
                     else worked.Add($"the plugin filter narrowed {before} rows to {narrowed} for \"{needle}\" and kept {target}");
                 }
             } else faults.Add("Plugins has no filter field");
+
+            // The count MO2 keeps beside its three plugin buttons.
+            if (Named<TextBlock>(plugins, "ActivePluginsCounter") is { } counter) {
+                var active = live.Profile.Order.Plugins.Count(x => x.IsActive);
+                if (counter.Text != active.ToString()) faults.Add($"the active plugin count reads {counter.Text}, not MO2's {active}");
+                else worked.Add($"the active plugin count reads MO2's own {active}");
+            } else faults.Add("Plugins has no active count");
+
+            // MO2's saveButton takes three files at once — the plugin list, the order
+            // and the locked order — so all three have to appear for the press to have
+            // reached it.
+            await Backup(plugins, "SavePluginsButton", "the plugin order", ["plugins.txt", "loadorder.txt", "lockedorder.txt"]);
+            if (Named<Button>(plugins, "RestorePluginsButton") is { } restorePlugins) {
+                if (restorePlugins.IsEnabled != live.Profile.CanChangeOriginalUi)
+                    faults.Add($"the plugin order's Restore is {(restorePlugins.IsEnabled ? "live" : "greyed out")} where MO2 {(live.Profile.CanChangeOriginalUi ? "will" : "will not")} take it");
+                else worked.Add($"the plugin order's Restore is {(restorePlugins.IsEnabled ? "live" : "greyed out")}, as MO2 is — its picker is modal and was not opened");
+            } else faults.Add("Plugins has no Restore");
+
+            // MO2 decides whether its own sortButton can be pressed — the managed game
+            // may have no sorting at all, and its whole pane is dead while a dialog is
+            // up — and says why on the button it greys out. This one stood drawn live
+            // whatever MO2 answered, and pressing it then went nowhere at all. The
+            // sort itself is MO2's LOOT run over the real load order and is not
+            // started here; what is checked is that the button agrees with MO2 about
+            // whether it can be, and carries MO2's reason when it cannot.
+            if (Named<Button>(plugins, "SortPluginsButton") is { } sort) {
+                var allowed = live.Profile.CanChangeOriginalUi && live.Profile.CanSortPlugins;
+                var tip = ToolTip.GetTip(sort) as string ?? "";
+                if (sort.IsEnabled != allowed)
+                    faults.Add($"Sort is {(sort.IsEnabled ? "live" : "greyed out")} where MO2 {(allowed ? "will" : "will not")} sort");
+                else if (!live.Profile.CanSortPlugins && tip != live.Profile.SortPluginsUnavailableReason)
+                    faults.Add($"Sort is greyed out reading \"{tip}\", not MO2's \"{live.Profile.SortPluginsUnavailableReason}\"");
+                else if (allowed) worked.Add("Sort is live, as MO2's own is — MO2's LOOT run over the real load order was not started");
+                else worked.Add($"Sort is greyed out with MO2's own reason: \"{live.Profile.SortPluginsUnavailableReason}\"");
+            } else faults.Add("Plugins has no Sort");
         } else faults.Add("Plugins never drew");
 
         // --- Data ---
@@ -328,6 +431,60 @@ internal static class Mo2WidgetBehaviourCheck
                 else worked.Add($"the Archives box took the {served} archive-served row(s) out of {here} in {reached} and put them back");
                 await data.ShowFolder(""); await Settle();
             } else faults.Add("Data has no Archives box");
+
+            // MO2's other two boxes over the same tree, each counted off the rows the
+            // tree is already showing rather than held to "it changed something".
+            Mo2DataEntry[] Rows() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
+                ?.Source?.Items.OfType<Mo2DataEntry>().ToArray() ?? [];
+            if (Named<CheckBox>(data, "DataConflictsOnly") is { } conflicts) {
+                var here = Rows();
+                // MO2 keeps every folder — it is how the rest is reached — and the files
+                // more than one mod provides.
+                var expected = here.Count(x => x.Directory || x.Origins.Distinct().Count() > 1);
+                conflicts.IsChecked = true; await Settle();
+                var narrowed = Rows().Length;
+                conflicts.IsChecked = false; await Settle();
+                if (Rows().Length != here.Length) faults.Add("unticking Conflicts only did not put the tree back");
+                else if (narrowed != expected)
+                    faults.Add($"Conflicts only left {narrowed} of {here.Length} rows, where {expected} are folders or served by more than one mod");
+                else if (expected == here.Length)
+                    worked.Add($"no file under Data is served by one mod alone, so Conflicts only had nothing to take away and was not exercised");
+                else worked.Add($"Conflicts only kept the {expected} conflicting or folder row(s) of {here.Length} and put the rest back");
+            } else faults.Add("Data has no Conflicts only box");
+            if (Named<CheckBox>(data, "DataHiddenFiles") is { } hiddenFiles) {
+                var here = Rows();
+                static bool Hidden(Mo2DataEntry row) => !row.Directory && row.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase);
+                if (here.Any(Hidden)) faults.Add("Data lists a hidden file before its box is ticked");
+                hiddenFiles.IsChecked = true; await Settle();
+                var shown = Rows();
+                hiddenFiles.IsChecked = false; await Settle();
+                var brought = shown.Count(Hidden);
+                if (Rows().Length != here.Length) faults.Add("unticking hidden files did not put the tree back");
+                else if (shown.Length != here.Length + brought)
+                    faults.Add($"ticking hidden files listed {shown.Length} rows against {here.Length} plus the {brought} hidden one(s) it brought back");
+                else if (brought == 0)
+                    worked.Add("MO2 hides no file under Data, so the hidden-files box had none to bring back and was not exercised");
+                else worked.Add($"the hidden-files box brought back {brought} hidden file(s), listing {shown.Length}, and took them away again");
+            } else faults.Add("Data has no hidden-files box");
+            // MO2's own Refresh over the same tree: it reads the folder again through
+            // MO2 rather than redrawing what is already held, so the rows have to go
+            // and come back rather than merely still be there.
+            if (Named<Button>(data, "DataRefreshButton") is { } refresh) {
+                var here = Rows().Select(x => x.Name).ToArray();
+                // The tree the page is drawing now. The page builds a new one out of
+                // whatever MO2 answers with, so a Refresh that did nothing at all
+                // leaves this one in place — where counting the rows again passes,
+                // since they never left.
+                object? Table() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()?.Source;
+                var was = Table();
+                refresh.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Until(() => !ReferenceEquals(Table(), was) && Rows().Length > 0, seconds: 60);
+                var after = Rows().Select(x => x.Name).ToArray();
+                if (ReferenceEquals(Table(), was)) faults.Add("Refresh did not read Data again");
+                else if (!after.SequenceEqual(here))
+                    faults.Add($"Refresh left Data showing {after.Length} row(s) against the {here.Length} MO2 had listed");
+                else worked.Add($"Refresh read Data again through MO2 and listed the same {here.Length} row(s)");
+            } else faults.Add("Data has no Refresh");
         } else faults.Add("Data never drew");
 
         // --- Archives ---
@@ -410,6 +567,21 @@ internal static class Mo2WidgetBehaviourCheck
                 else if (withheld == 0) worked.Add($"MO2 holds no hidden download, so the hidden-downloads box had none to bring back and was not exercised");
                 else worked.Add($"the hidden-downloads box brought back MO2's {withheld} hidden archive(s), listing {expected}");
             } else faults.Add("Downloads has no hidden-files box");
+            // MO2's own Refresh reads its downloads folder again. This one used to
+            // recompute which of the page's controls were live and stop there, which
+            // looks identical from the outside — so what is read back is that MO2 was
+            // asked, and that the list MO2 answered with is the one on screen.
+            if (Named<Button>(downloads, "DownloadsRefreshButton") is { } refresh) {
+                var reads = live.Profile.DownloadRefreshes;
+                var here = rows();
+                refresh.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Until(() => live.Profile.DownloadRefreshes > reads, seconds: 120);
+                await Settle();
+                if (live.Profile.DownloadRefreshes == reads) faults.Add("Refresh did not ask MO2 to read its downloads again");
+                else if (rows() != live.Profile.Downloads.Count)
+                    faults.Add($"after Refresh the list shows {rows()} of MO2's {live.Profile.Downloads.Count} download(s)");
+                else worked.Add($"Refresh had MO2 read its downloads folder again and listed the {here} it came back with");
+            } else faults.Add("Downloads has no Refresh");
         } else faults.Add("Downloads never drew");
 
         await Navigate(restore);
@@ -434,6 +606,45 @@ internal static class Mo2WidgetBehaviourCheck
                           value.Contains(text, StringComparison.OrdinalIgnoreCase));
 
         static string[] Names(Mo2ModsAdapter adapter) => adapter.VisibleOrder;
+
+        // MO2's own Save beside a list: its slot flushes the list and copies each of
+        // the files behind it beside itself, named for the second it was taken
+        // (MainWindow::createBackup). Pressing the button and watching those copies
+        // appear in MO2's profile folder is the whole of the evidence — nothing the
+        // frontend holds changes — and the copies this check caused are taken away
+        // again, so MO2 is left with the backups it had.
+        async Task Backup(Control page, string button, string what, string[] files)
+        {
+            if (Named<Button>(page, button) is not { } save) { faults.Add($"{what} has no Save"); return; }
+            var folder = live.Profile.ProfilePath.Length == 0 ? "" : Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath);
+            if (folder.Length == 0 || !Directory.Exists(folder)) { faults.Add($"MO2's profile folder for {what} was not found"); return; }
+            string[] Backups() => files.SelectMany(name => Directory.GetFiles(folder, name + ".*")).ToArray();
+            var before = Backups().ToHashSet();
+            if (!save.IsEnabled) {
+                if (live.Profile.CanChangeOriginalUi) faults.Add($"Save for {what} is greyed out where MO2 will take it");
+                else worked.Add($"Save for {what} is greyed out, as MO2's pane is");
+                return;
+            }
+            save.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await Until(() => Backups().Except(before).Count() >= files.Length, seconds: 60);
+            var made = Backups().Except(before).ToArray();
+            if (made.Length < files.Length) {
+                faults.Add($"Save for {what} left {made.Length} of the {files.Length} backup(s) MO2 takes");
+                foreach (var path in made) TryDelete(path);
+                return;
+            }
+            var missing = files.Where(name => !made.Any(path => Path.GetFileName(path).StartsWith(name + ".", StringComparison.OrdinalIgnoreCase))).ToArray();
+            foreach (var path in made) TryDelete(path);
+            if (missing.Length > 0) faults.Add($"Save for {what} took no backup of {string.Join(", ", missing)}");
+            else worked.Add($"Save for {what} had MO2 back up {string.Join(", ", files)}, and the {made.Length} file(s) this check caused were removed");
+        }
+
+        void TryDelete(string path)
+        {
+            try { File.Delete(path); }
+            catch (IOException error) { faults.Add($"the backup this check caused was left behind: {Path.GetFileName(path)} ({error.Message})"); }
+            catch (UnauthorizedAccessException error) { faults.Add($"the backup this check caused was left behind: {Path.GetFileName(path)} ({error.Message})"); }
+        }
 
         async Task Settle()
         {

@@ -152,8 +152,15 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             Spacing = 6, Margin = new Thickness(24,0,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
         // The list's own refresh is a local of the activation block, so the button is
         // pointed at whatever that block last set rather than at the page.
+        // MO2's btnRefreshDownloads reads its downloads folder again; this one only
+        // recomputed which of the page's own controls were live, so a download added
+        // or removed outside MO2 stayed off the list. It goes through MO2 first now,
+        // then brings the page's own controls up to what came back.
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
-            () => _qtRefresh?.Invoke()));
+            async () => {
+                if (ViewModel is { } model) await model.Profile.RefreshDownloads();
+                _qtRefresh?.Invoke();
+            }));
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadataTip,
             "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); }));
         Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);

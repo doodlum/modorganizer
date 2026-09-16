@@ -2378,3 +2378,95 @@ actions now either has a route from the frontend or is MO2's own window chrome
 (toolbar/menu/status-bar toggles and Exit), which the frontend does not have.
 
 MO2 owns each dialog and everything it writes; nothing is reimplemented here.
+
+## Every widget MO2 puts beside a list, worked rather than found
+
+The widget check reported all five of MO2's tabs carrying their furniture, and the
+behaviour check drove some of it. Between them, **eleven controls were drawn and
+never touched**: Plugins' Sort, Restore, Save and its active count, the mod pane's
+Restore, Save and its And/Or pair, Data's Conflicts only, Show hidden files and
+Refresh, and Downloads' Refresh. Each is now worked the way a user works it and
+read back against what MO2 holds, and two of them turned out to be doing nothing.
+
+**Plugins' Sort, Restore and Save stood drawn live whatever MO2 said.** MO2 greys
+its own sortButton out when the managed game has no sorting, and greys the whole
+pane out while one of its dialogs is up; the action behind each of these three
+returns without a word when MO2 cannot take it, so pressing one went nowhere and
+said nothing. The mod pane's pair of backup buttons already followed MO2 this way
+and the toolbar's own Sort already carried MO2's reason — only the three on MO2's
+espTab row did not. They now take the same state, and Sort shows MO2's own reason
+when it is off. On this FNV host that reason is MO2's:
+
+> LOOT sorting is disabled by the Fallout NV Support Plugin. Its default follows
+> the FNV modding community recommendation. To opt in, open MO2 Settings > Plugins
+> > Fallout NV Support Plugin and enable enable_loot_sorting.
+
+**Downloads' Refresh refreshed nothing.** MO2's btnRefreshDownloads runs
+`DownloadsTab::refresh`, which is `downloadManager()->refreshList()` — the folder is
+read again and the `.meta` beside each archive with it. This one recomputed which
+of the page's own controls were live and stopped there, which looks identical from
+the outside, so a download added or removed outside MO2 never appeared. A new
+`refreshDownloads` bridge action presses MO2's own button, waking its lazy download
+tab first as the Query Metadata route already does, and the page then applies the
+snapshot that comes back.
+
+What the two Save buttons do is checked against the files MO2 writes rather than
+against anything the frontend holds: MO2's slot flushes the list and copies each
+file beside itself under the second it was taken, so the check presses the button,
+waits for `modlist.txt.<stamp>` (and for plugins, all three of `plugins.txt`,
+`loadorder.txt`, `lockedorder.txt`) to appear in MO2's own profile folder, and then
+removes the copies it caused. All 24 profile files hash identically before and
+after every run in this session.
+
+Restore is not pressed. MO2's picker is modal and waits for whoever opened it, so
+what is checked is that the button is live exactly when MO2 will take it — over the
+same `orderBackup` route the Save beside it was driven through. Sort is not pressed
+either: it is MO2's LOOT run over the real load order. Both say so in the check's
+own output rather than being reported as exercised.
+
+Four controls had nothing to exercise them with on this host and say so by name
+rather than passing quietly: the And/Or pair (no two of MO2's categories here would
+answer differently), Data's hidden files (MO2 hides none), its archive-served rows
+under the Data root, and the hidden-downloads box.
+
+### Two checks were reporting a design the app no longer has
+
+`MO2_VERIFY_PANEL_CHROME` and `MO2_VERIFY_COLUMN_TOGGLE` both failed, and had been
+failing since the tab toolbars were removed — neither failure is a defect in the
+app. Panel chrome demanded every page draw actions on its header line; the header
+actions group is deliberately empty, because MO2 carries no toolbar on a tab.
+Column toggle looked its button up on the Archives page; MO2 offers a column
+chooser on one list only — the downloads header's right-click menu — and its
+bsaTab, dataTab and savesTab have none.
+
+Both now assert what the app actually does, including the negative: a page that
+starts drawing a toolbar, or Archives drawing a chooser MO2 has not got, fails.
+Panel chrome failing on its first panel had been taking the other six down with it,
+so seven panels' padding, compaction and separators were going unchecked as well.
+Verified as pre-existing by building the unchanged sources and reproducing both
+failures before the fix.
+
+**Found and not yet done:** MO2's downloads header carries a column chooser and
+this frontend's Downloads has none at all. That is the next gap on this list.
+
+### Running these two
+
+Both navigate the selected panel, so run each on its own:
+
+```
+MO2_VERIFY_WIDGET_BEHAVIOUR=1 MO2_SCREENSHOT=frontend/artifacts/widget-behaviour-full.png \
+frontend/run-live.sh <bridge>
+MO2_VERIFY_QT_WIDGETS=1 MO2_SCREENSHOT=frontend/artifacts/qt-widgets-full.png \
+frontend/run-live.sh <bridge>
+```
+
+Evidence: [widget-behaviour-full.log](artifacts/widget-behaviour-full.log),
+[qt-widgets-full.log](artifacts/qt-widgets-full.log). The audit group now passes
+nine for nine including `MO2_VERIFY_SEPARATOR_COLOR` and `MO2_VERIFY_DENSITY`, and
+`MO2_VERIFY_ROW_MENUS` and `MO2_VERIFY_TAB_DRAG` pass after the bridge change.
+
+`refreshDownloads` is a plugin-side action, so MO2 must be restarted after copying
+`frontend/mo2-plugin/nexus_frontend_bridge` over the host's `plugins/` copy. MO2
+2.5.2 hung after its window closed on this host and had to be terminated; it had
+already removed its bridge endpoint and written its state, and the profile files
+were unchanged across the restart.

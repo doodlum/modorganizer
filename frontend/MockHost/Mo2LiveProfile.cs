@@ -1018,6 +1018,27 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
 
+    // MO2's own Refresh over its download list, which reads the downloads folder
+    // again rather than redrawing what is already held. The page's button used to
+    // do neither: it recomputed which of its own controls were live and nothing
+    // else, so a download added or removed outside MO2 never appeared. Counted so
+    // a check can tell the read happened.
+    internal int DownloadRefreshes { get; private set; }
+    public async Task RefreshDownloads()
+    {
+        if (!CanStartHostAction) return;
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected) return;
+            Status = "Asking MO2 to read its downloads again"; Changed?.Invoke();
+            await Client.SendAsync("refreshDownloads", new() { ["profilePath"] = CurrentTarget.ProfilePath },
+                timeout: TimeSpan.FromMinutes(2));
+            DownloadRefreshes++;
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { _commands.Release(); }
+    }
+
     // MO2's Query Metadata, which asks Nexus for what its downloads are missing and
     // writes the answers into the .meta files beside them. MO2's own button is
     // pressed, so its offline-mode guard and login prompt are the ones that apply.

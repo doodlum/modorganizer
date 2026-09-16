@@ -74,11 +74,23 @@ internal static class Mo2PanelChromeCheck
                 }
                 await Reaches(700, "did not use the shared padding");
 
-                // The panel's actions belong on the title's line, not in a row of
-                // their own, and the header compacts when there is no room for it.
-                var actions = panel.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
-                if (actions is null || actions.Children.Count == 0)
-                    throw new Exception(name + " has no actions on its header line");
+                // The group the title line keeps for actions. MO2 carries no toolbar on
+                // a tab — what a row can have done to it is on its right-click menu,
+                // and what a list can be filtered by is a field in the tab itself — so
+                // this group is empty, and a page that drew buttons here would be
+                // drawing furniture MO2 has not got. It stays in the tree because
+                // Mo2PanelChrome still takes each page's actions and detaching them is
+                // what stops the page drawing them a second time in a row of its own.
+                //
+                // This used to demand the group hold something, which was written when
+                // the toolbar was still drawn. It failed on the first panel it reached
+                // from that day on, and took the rest of the panels with it — the check
+                // was reporting the design it was written against, not the one the app
+                // has, which is the one thing a check must not do.
+                var actions = panel.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions")
+                    ?? throw new Exception(name + " has no actions group on its header line");
+                if (actions.Children.Count > 0)
+                    throw new Exception($"{name} draws {actions.Children.Count} action(s) on its header line, where MO2 puts no toolbar on a tab");
                 if (!stack.Children.OfType<Panel>().Any(x => x.Name == "PanelHeaderRow"))
                     throw new Exception(name + " actions are not in the header row");
                 // Only icon actions belong on the header line. Search boxes and

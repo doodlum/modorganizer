@@ -239,6 +239,10 @@ class Bridge:
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')
             return self.downloads.query_metadata()
+        if action == 'refreshDownloads':
+            if self.downloads is None:
+                raise ValueError('Host downloads integration is unavailable')
+            return self.downloads.refresh()
         if action == 'controlDownload':
             if self.downloads is None:
                 raise ValueError('Host downloads integration is unavailable')

@@ -18,8 +18,21 @@ internal static class Mo2ColumnToggleCheck
         host.Content = panel;
         for (var attempt = 0; attempt < 40; attempt++) { await Task.Delay(60); window.UpdateLayout(); }
         try {
-            var action = panel.GetVisualDescendants().OfType<Button>().FirstOrDefault(x => x.Name == "ColumnToggleButton")
-                ?? throw new Exception("No column toggle in the header actions");
+            // MO2 offers a column chooser on one list only — the downloads header's
+            // right-click menu (DownloadListView::onHeaderCustomContextMenu). Its
+            // bsaTab, dataTab and savesTab have none, so neither do those pages here:
+            // Mo2PanelChrome takes the action each of them hands it and draws nothing,
+            // because MO2 puts no toolbar on a tab.
+            //
+            // This check used to look the button up on the Archives page and failed
+            // from the day that became true, which stopped it exercising any of the
+            // toggle's own behaviour below. The control itself is still checked —
+            // it is what a page draws if it offers one at all — and the page is held
+            // to not drawing what MO2 does not.
+            if (panel.GetVisualDescendants().OfType<Button>().Any(x => x.Name == "ColumnToggleButton"))
+                throw new Exception("Archives draws a column chooser, where MO2's bsaTab has none");
+            var action = new Mo2ColumnToggle("column-check-control", () => { }).Action;
+            if (action.Name != "ColumnToggleButton") throw new Exception("The column chooser is not built under its own name");
             if (action.Flyout is null) throw new Exception("Column toggle has no menu");
 
             // The toggle is exercised directly: it owns the hidden set, and the panel
@@ -71,7 +84,8 @@ internal static class Mo2ColumnToggleCheck
             if (restored.Count != 3) throw new Exception("Reset did not restore every column");
             if (toggle.Hidden.Count != 0) throw new Exception("Reset left hidden columns behind");
 
-            Console.WriteLine("PASS column toggle: header action present, hiding survives a source rebuild and a reload, " +
+            Console.WriteLine("PASS column toggle: Archives draws no chooser, as MO2's bsaTab has none, the control carries its menu, " +
+                "hiding survives a source rebuild and a reload, " +
                 "the last visible column is protected, and reset restores all three columns");
         } finally {
             window.Close();

@@ -1844,3 +1844,54 @@ without new evidence. Template realization diagnosis still identifies shared
 button attachment/styling as expensive; reducing hidden icon creation alone did
 not reliably reduce the complete cold input stall. The preceding goal turn was
 progress through timings distinguishing construction from attachment.
+
+## 2026-09-16 — Every MO2 tab widget driven; two dead controls found
+
+Previous turn was progress: MO2's own row menus compared both ways round on all six
+lists. This turn audited the widgets around those lists rather than the rows in
+them. Baseline on the live FNV host: `MO2_VERIFY_QT_WIDGETS` and
+`MO2_VERIFY_WIDGET_BEHAVIOUR` both passed before any change, so the gap was
+coverage, not failure — eleven controls were drawn and never worked.
+
+Two were doing nothing. Plugins' Sort/Restore/Save on MO2's espTab row were always
+enabled regardless of what MO2 reported, and the actions behind them return
+silently when MO2 cannot take them; they now follow `CanChangeOriginalUi` and
+`CanSortPlugins` as the mod pane's equivalents and the toolbar's own Sort already
+did, and Sort carries MO2's own unavailability reason. Downloads' Refresh only
+recomputed the page's own control states where MO2's runs
+`downloadManager()->refreshList()`; a new `refreshDownloads` bridge action presses
+MO2's btnRefreshDownloads, waking its lazy download tab first, and the page applies
+the returned snapshot.
+
+The behaviour check gained: the active plugin count against MO2's own; both Save
+buttons driven through to the backup files MO2 writes in its profile folder, with
+the copies this check caused removed afterwards; both Restore buttons held to MO2's
+enablement, their modal pickers deliberately not opened; Sort held to MO2's answer
+without starting its LOOT run; the mod pane's And/Or category pair against MO2's own
+category text both ways round; Data's Conflicts only counted against the rows that
+are folders or served by more than one mod; Data's hidden files both directions;
+Data's Refresh required to rebuild its tree, not merely leave rows in place; and
+Downloads' Refresh required to reach MO2 and come back with MO2's own list.
+
+Four controls had nothing on this host to exercise them and are reported by name as
+not exercised rather than passing quietly: And/Or, Data hidden files, archive-served
+Data rows and hidden downloads.
+
+`MO2_VERIFY_PANEL_CHROME` and `MO2_VERIFY_COLUMN_TOGGLE` were failing and are not
+app defects: both assert a tab toolbar that was deliberately removed, and MO2
+offers a column chooser on its downloads header alone. Confirmed pre-existing by
+rebuilding the unchanged sources and reproducing both. Both now assert the current
+arrangement including its negative. Panel chrome had been failing on its first
+panel and taking the other six with it.
+
+Runs on the live FNV host after an MO2 restart for the plugin change: widget
+behaviour PASS (33 statements), Qt widgets PASS, row menus PASS (33/9/13/7/1/3
+entries), tab drag PASS, and the audit group PASS nine for nine including separator
+colour and density. All 24 profile files hash identically to before the session and
+no `modlist.txt.*` backup was left behind. Saved workspace layout is as it was
+found. MO2 2.5.2 hung after closing its window and was terminated after it had
+removed its bridge endpoint; its profile files were unchanged across the restart.
+
+Open and unchanged by this turn: cold first-display latency, the combined
+end-to-end workflow, and a column chooser on Downloads, which MO2 has and this
+frontend does not.

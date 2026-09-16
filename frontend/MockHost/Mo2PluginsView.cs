@@ -153,6 +153,15 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "backup", live.CurrentTarget); });
         var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);
+        // MO2 greys its own three out — sortButton when the managed game has no
+        // sorting or LOOT is already running, and the whole pane while one of its
+        // dialogs is up — and shows why on the one it disables. These stood drawn
+        // live whatever MO2 said, and pressing one then went nowhere: the action
+        // behind each returns without a word when MO2 cannot take it. The mod
+        // pane's pair of backup buttons already follow MO2 this way.
+        ToolTip.SetShowOnDisabled(qtSort, true);
+        ToolTip.SetShowOnDisabled(qtRestore, true);
+        ToolTip.SetShowOnDisabled(qtSave, true);
         // The same band as the row of widgets above the mod list, and the same gap
         // under it: 25px tall with 8 below here against 24 and 6 there put this
         // table's headings 3px below the ones beside them.
@@ -226,6 +235,9 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 var connected = profile.ProfilePath.Length > 0;
                 sort.IsEnabled = profile.CanChangeOriginalUi && profile.CanSortPlugins;
                 ToolTip.SetTip(sort, profile.CanSortPlugins ? "Sort plugins using MO2’s original LOOT workflow" : profile.SortPluginsUnavailableReason);
+                qtSort.IsEnabled = sort.IsEnabled;
+                ToolTip.SetTip(qtSort, profile.CanSortPlugins ? Mo2QtWidgets.SortTip : profile.SortPluginsUnavailableReason);
+                qtRestore.IsEnabled = qtSave.IsEnabled = profile.CanChangeOriginalUi;
                 editor.IsVisible = connected;
                 chooseProfile.IsVisible = !connected;
                 UpdateSelection();

@@ -239,6 +239,41 @@ class Downloads:
             return {'requested': action}
         raise ValueError('MO2 no longer manages this download; refresh the list')
 
+    def refresh(self):
+        """Press MO2's own Refresh over its download list.
+
+        MO2's btnRefreshDownloads runs DownloadsTab::refresh, which is
+        downloadManager()->refreshList(): the downloads folder is read again and
+        the .meta beside each archive with it. Nothing else here asks MO2 to do
+        that — the snapshot reports what its download manager already holds — so
+        a download added, removed or re-tagged outside MO2 is only noticed once
+        MO2 looks again.
+        """
+        from PyQt6.QtWidgets import QPushButton, QTabWidget, QWidget
+        if self.window is None:
+            raise ValueError('MO2 download controls are not ready')
+        if not self.window.isEnabled():
+            raise ValueError('MO2 is busy')
+        button = self.window.findChild(QPushButton, 'btnRefreshDownloads')
+        if button is None:
+            raise ValueError('This MO2 version does not expose its download refresh')
+        # The same lazy tab the query button waits on: MO2 leaves the downloads
+        # page, and everything on it, disabled until it has been shown once.
+        tabs = self.window.findChild(QTabWidget, 'tabWidget')
+        page = self.window.findChild(QWidget, 'downloadTab')
+        if not button.isEnabled() and tabs is not None and page is not None and tabs.indexOf(page) >= 0:
+            from PyQt6.QtCore import QSignalBlocker
+            previous = tabs.currentIndex()
+            try:
+                tabs.setCurrentWidget(page)
+            finally:
+                with QSignalBlocker(tabs):
+                    tabs.setCurrentIndex(previous)
+        if not button.isEnabled():
+            raise ValueError('MO2 cannot refresh its downloads right now')
+        button.click()
+        return {'refreshed': True}
+
     def query_metadata(self):
         """Ask MO2 to fill in what its downloads are missing.
 
