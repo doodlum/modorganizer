@@ -2735,3 +2735,43 @@ once its window was gone; the profile files were unchanged across the restart.
 The mod pane's eighteen, espTab's four, dataTab's five, downloadTab's four, and the
 run row's three — the executables box with MO2's `<Edit...>`, Run, and the shortcut
 menu. bsaTab and savesTab are the list alone in MO2 and here.
+
+## Reachability under MO2's own layout, with a negative control
+
+Every reachability result so far was read in whatever layout happened to be saved.
+The layout this frontend exists to reproduce is MO2's own preset — the mod list on
+the left, its five tabs on the right — and **in that layout every panel is shared**,
+which is the exact condition that had been hiding every page's action row. Nothing
+had checked it there: `MO2_VERIFY_REACHABLE_ACTIONS` builds its pages on their own,
+where a page is always the whole panel.
+
+`MO2_VERIFY_PRESET_FIT` already applies the preset and walks all six tabs, so the
+assertion went there. It now reports, per tab, how many actions the page handed over
+as well as how many widgets were examined — so a run where it found nothing to judge
+reads as nothing rather than as agreement:
+
+```
+PASS MO2 preset fit: … My Mods (47, 2 handed), Plugins (30, 2 handed),
+Data (29, 7 handed), Archives (29, 5 handed), Saves (9, 6 handed),
+Downloads (21, 1 handed) is drawn whole inside its panel
+```
+
+**Negative control.** The fix from the previous turn was reverted, the host rebuilt,
+and the same check run again:
+
+```
+FAIL MO2 preset fit: My Mods: it cannot reach ColumnsButton, Toolbar |
+Plugins: it cannot reach ColumnsButton, PluginsToolbar |
+Data: it cannot reach Button, SearchToggleButton, Button, RevealDataFile, Button,
+  ColumnToggleButton, Button |
+Archives: it cannot reach SearchToggleButton, BrowseArchive, ExtractArchive,
+  ColumnToggleButton, RefreshArchives |
+Saves: it cannot reach SearchToggleButton, Button, Button, Button,
+  ColumnToggleButton, Button |
+Downloads: it cannot reach Toolbar
+```
+
+All twenty-three, on all six tabs. The source was then restored byte for byte from
+the copy taken before the revert, rebuilt, and the check passes again. An assertion
+that has never been seen to fail is not evidence that the thing it asserts is true,
+and this one had only ever been seen to pass.

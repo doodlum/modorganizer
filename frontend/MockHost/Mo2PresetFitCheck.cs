@@ -109,6 +109,23 @@ internal static class Mo2PresetFitCheck
 
                     var bounds = new Rect(view!.Bounds.Size);
                     var clipped = new List<string>();
+                    // Reachability, in the layout MO2 itself uses. Every panel here
+                    // shares the workspace — the right one carries five tabs — which is
+                    // the exact condition that had been hiding every page's action row,
+                    // and nothing checked it under this layout: the reachability check
+                    // builds its pages alone, where a page is always the whole panel.
+                    // A control that is not there at all cannot be found to be clipped,
+                    // so "drawn whole" below has nothing to say about it.
+                    var reachable = 0;
+                    foreach (var handed in host!.GetVisualDescendants().OfType<Control>().Prepend(host)
+                                 .Where(x => Mo2PanelChrome.Handed.TryGetValue(x, out _)).ToArray()) {
+                        Mo2PanelChrome.Handed.TryGetValue(handed, out var given);
+                        reachable += given?.Length ?? 0;
+                        var lost = (given ?? []).Where(action => !handed.GetVisualDescendants().OfType<Control>()
+                            .Any(x => ReferenceEquals(x, action) && x.IsEffectivelyVisible && x.Bounds.Width > 0))
+                            .Select(x => x.Name ?? x.GetType().Name).ToArray();
+                        if (lost.Length > 0) clipped.Add($"it cannot reach {string.Join(", ", lost)}");
+                    }
                     // The page's own widgets, not the panel's tab strip: the strip
                     // scrolls its tabs and squeezes its own close buttons by design,
                     // which is chrome every panel shares rather than anything a page
@@ -168,7 +185,10 @@ internal static class Mo2PresetFitCheck
                             clipped.Add($"its name column is {first.Bounds.Width:F0}px of the table's {table.Bounds.Width:F0}");
                     }
                     if (clipped.Count > 0) faults.Add($"{title}: {string.Join("; ", clipped.Take(4))}");
-                    else described.Add($"{title} ({examined})");
+                    // The count of actions this page handed over is reported beside the
+                    // widgets examined, so a run where the reachability assertion found
+                    // nothing to judge reads as nothing rather than as agreement.
+                    else described.Add($"{title} ({examined}, {reachable} handed)");
                 }
             }
         } finally {
