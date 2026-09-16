@@ -79,11 +79,14 @@ internal static class Mo2FolderPagesCheck
                 if (page.GetVisualDescendants().OfType<Button>().All(x => x.Name is not ("ColumnToggleButton" or "ColumnsButton")))
                     faults.Add($"{name} offers no way to hide a column");
 
-                // Actions are icons on the header line. Overwrite drew five labelled
-                // buttons in a row of its own in the body.
-                var group = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
+                // Actions are icons in the page's own row under the separator, which is
+                // where MO2 puts a tab's own controls. Nothing goes on the title's
+                // line, because MO2 puts nothing there — this used to look for them
+                // up there and, once the toolbars went, found every page empty.
+                // Overwrite drew five labelled buttons in a row of its own in the body.
+                var group = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelActionRow");
                 var actions = group?.Children.OfType<Button>().Where(x => x.IsVisible).ToArray() ?? [];
-                if (actions.Length == 0) faults.Add($"{name} puts no actions on its header line");
+                if (actions.Length == 0) faults.Add($"{name} puts no actions in its own row");
                 foreach (var action in actions) {
                     if (action.Content is not UnifiedIcon)
                         faults.Add($"{name} has a header action that is not an icon: {action.Content}");

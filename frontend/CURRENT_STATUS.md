@@ -2542,3 +2542,88 @@ row — have not been compared against the frontend's launch panel. The plugin l
 own filter field is the frontend's own; MO2's `espFilterEdit` is a
 `MOBase::LineEditClear`, which has a clear affordance this has not been compared
 against.
+
+## Every page's own actions had been gone, and nothing said so
+
+`MO2_VERIFY_REACHABLE_ACTIONS` is new, and the first thing it did was fail on all
+seven pages it covers:
+
+```
+FAIL reachable actions: Tools cannot reach ManageToolsButton, RefreshToolsButton;
+Archives cannot reach BrowseArchive, ExtractArchive, RefreshArchives;
+Data cannot reach Button, Button, RevealDataFile, Button, Button;
+Saves cannot reach Button, Button, Button, Button;
+Overwrite cannot reach OpenOverwriteFiles, Overwrite_create, Overwrite_move,
+  Overwrite_sync, Overwrite_clear, RefreshOverwrite;
+Logs cannot reach Button;
+External Files cannot reach ImportExternalFiles, CleanupExternalFiles,
+  RestoreExternalFiles, RevealExternalFiles, RefreshExternalFiles
+```
+
+Twenty-six actions. Every page hands its actions to `Mo2PanelChrome`, which
+detaches each one from the row the page had built for it — and the group it hands
+them to has never drawn anything, because MO2 carries no toolbar on a tab. So
+**Overwrite's create, move, sync and clear**, External Files' import, cleanup and
+restore, Tools' add-or-edit-programs, Archives' Browse and Extract, Data's parent
+folder and every one of those pages' Refreshes existed, were wired, and could not
+be reached from the window at all.
+
+Nothing about the pages said so. Each control was still constructed, still had its
+handler, still reported the right size and the right enabled state — it simply was
+not in the tree. This is the same class of fault as the two dead buttons found
+earlier, one level up: the check that would have caught it was itself asserting
+against the header line and had been failing, uninvestigated, since the toolbars
+went.
+
+They are drawn now in **the page's own row under the separator**, which is where
+MO2 puts a tab's own controls — dataTab's refresh and its three boxes,
+downloadTab's two buttons. The title's line stays empty, because MO2 puts nothing
+there, so `MO2_VERIFY_PANEL_CHROME` still holds.
+
+### The check
+
+`Mo2PanelChrome` records what each page handed it. The check builds each page, lays
+it out, and requires every handed action to be in that page's tree, effectively
+visible, with a size. Its list of deliberate exceptions is **empty and meant to
+stay that way**: a page that builds an action and wires it has said the action is
+worth having, and the only honest answers are to draw it or to stop building it.
+
+```
+MO2_VERIFY_REACHABLE_ACTIONS=1 MO2_SCREENSHOT=… frontend/run-live.sh <bridge>
+```
+
+### Two checks were asserting around the hole
+
+`MO2_VERIFY_FOLDER_PAGES` wanted the actions on the header line and had been
+failing on every page since the toolbars went. It looks in the page's own row now
+and reports 7, 7 and 8 icon actions on External Files, Data and Overwrite.
+
+`MO2_VERIFY_COLUMN_TOGGLE` is corrected a second time, and the correction last time
+was wrong. It first wanted the chooser on the header line; the previous turn
+changed it to require Archives **not** to draw one, reasoning from MO2's bsaTab
+having none — but Archives was not drawing it because it could not draw any of its
+actions, which was a bug, not a decision. MO2's own chooser is on its downloads
+header, which is where this frontend's is; the chooser on the folder pages is the
+frontend's own, for columns MO2's tabs do not carry, and it belongs in the action
+row with the rest. The check now requires it there and drawn.
+
+**Recording this plainly because it is the more important finding:** a check that
+has been failing is not evidence of anything, and two of them here were quietly
+covering a real hole. A failing check has to be investigated on the turn it starts
+failing, not reasoned about later from its output.
+
+### Still out of that check's reach
+
+Mods and Plugins hand over their column choosers and their own toolbars — the
+search magnifier, Sort with LOOT, the overflow menu — and those are still not
+drawn, because both pages' header stacks are not shown in the panel layout (their
+tab strip carries the title instead). Neither page is in the check's list yet.
+MO2's own mod-pane and espTab furniture is reproduced separately as their Qt bars
+and is verified, so nothing MO2 has is missing there; what is unreachable is the
+frontend's own. That is the next thing to settle.
+
+Also still open: MO2's `<Edit...>` entry, which is the first row of its
+`executablesListBox` and opens its Edit Executables dialog before restoring the
+previous selection. The frontend reaches that dialog from Tools instead. And
+`linkButton`'s menu — Toolbar and Menu, Desktop, Start Menu, each showing add or
+remove by whether the shortcut exists — has no counterpart beside the launch panel.

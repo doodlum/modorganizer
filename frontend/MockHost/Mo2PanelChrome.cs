@@ -69,8 +69,10 @@ internal static class Mo2PanelChrome
         if (header.Parent is Panel owner) owner.Children.Remove(header);
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
+        Handed.AddOrUpdate(view, actions);
         stack.Children.Add(HeaderLine(header, actions));
         stack.Children.Add(Separator());
+        if (ActionRow(actions) is { } pageActions) stack.Children.Add(pageActions);
         Grid.SetRow(stack, row); Grid.SetColumn(stack, column); Grid.SetColumnSpan(stack, span);
         DockPanel.SetDock(stack, dock);
         // A DockPanel gives its last child the remaining space, so the header has to
@@ -103,8 +105,10 @@ internal static class Mo2PanelChrome
         if (header.Parent is Panel owner) owner.Children.Remove(header);
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
+        Handed.AddOrUpdate(view, actions);
         stack.Children.Add(HeaderLine(header, actions));
         stack.Children.Add(Separator());
+        if (ActionRow(actions) is { } pageActions) stack.Children.Add(pageActions);
         DockPanel.SetDock(stack, Dock.Top);
         layout.Children.Insert(0, stack);
         layout.Transitions ??= new Transitions { new ThicknessTransition {
@@ -192,14 +196,41 @@ internal static class Mo2PanelChrome
     // tab itself. Pages still hand their actions here so reinstating the toolbar is a
     // one-line change, but none of them are drawn — the header area stays, the toolbar
     // does not.
+    // What each page handed over, so a check can ask whether any of it still reaches
+    // the screen. Handing an action here detaches it from the page's own row, and
+    // nothing draws it afterwards — a page whose only route to an action was this one
+    // has lost it, and nothing about the page says so.
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, Control[]> Handed = new();
+
+    // The row a page's own actions sit in, under the separator and above its list —
+    // which is where MO2 puts a tab's own controls: dataTab's refresh and its three
+    // boxes, downloadTab's two buttons. Nothing goes on the title's line, because MO2
+    // puts nothing there.
+    //
+    // They had nowhere at all until now. Handing them over detached each one from the
+    // row the page had built for it, and the header group they were handed to has
+    // never drawn anything — so Overwrite's create/move/sync/clear, External Files'
+    // import/cleanup/restore, Tools' add-or-edit and every one of those pages'
+    // Refreshes existed, were wired, and could not be reached. MO2_VERIFY_REACHABLE_ACTIONS
+    // is what found it and is what keeps it found.
+    private static Control? ActionRow(Control[] actions)
+    {
+        var drawn = actions.Where(x => x is not null).ToArray();
+        if (drawn.Length == 0) return null;
+        var row = new WrapPanel { Name = "PanelActionRow", Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var action in drawn) {
+            if (action.Parent is Panel owner) owner.Children.Remove(action);
+            action.Margin = new Thickness(0, 0, 6, 0);
+            row.Children.Add(action);
+        }
+        return row;
+    }
+
     private static Control HeaderLine(PageHeader header, Control[] actions)
     {
         var group = new WrapPanel { Name = "PanelHeaderActions", Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
-        foreach (var action in actions)
-            // Detached from the page's own toolbar row all the same, so the row it came
-            // from collapses rather than drawing it a second time lower down.
-            if (action.Parent is Panel owner) owner.Children.Remove(action);
         // Pinned left, because the floor below makes the header wider than the slot it
         // is given once only the pictogram is left, and Avalonia centres a control that
         // does not fit — which drew the pictogram 29px off the left of the panel,

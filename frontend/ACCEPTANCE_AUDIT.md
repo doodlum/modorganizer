@@ -1937,3 +1937,41 @@ group PASS eleven for eleven including row padding, header fit, density and
 separator colour. All 24 profile files hash identically to the start of the
 session, no backup files left behind, and the saved workspace layout is unchanged.
 Cold first-display latency and the combined end-to-end workflow remain open.
+
+## 2026-09-16 — Twenty-six unreachable page actions
+
+Previous turn was progress: the Downloads column chooser and MO2's filter borders.
+This turn started on MO2's run row and found something larger on the way.
+
+New `MO2_VERIFY_REACHABLE_ACTIONS` builds each of the seven non-list pages and asks
+whether the actions it handed `Mo2PanelChrome` are still in its tree. All seven
+failed. Twenty-six actions — including Overwrite's create/move/sync/clear, External
+Files' import/cleanup/restore, Tools' add-or-edit-programs, Archives' Browse and
+Extract, Data's parent folder, and six Refreshes — were constructed, wired, and
+detached from the page by the act of handing them over, with nothing drawing them
+afterwards. They are now drawn in the page's own row under the separator, where MO2
+puts a tab's own controls; the title line stays empty as MO2 has it.
+
+`MO2_VERIFY_FOLDER_PAGES` had been failing since the toolbars were removed because
+it looked for those actions on the header line; it looks in the page's row now.
+`MO2_VERIFY_COLUMN_TOGGLE` was corrected wrongly on the previous turn: it was made
+to require Archives not to draw a chooser, on the reasoning that MO2's bsaTab has
+none, when the real reason it drew none was this bug. It now requires the chooser
+in the action row and drawn. Both corrections are recorded because the general
+lesson matters more than either: a failing check is not evidence, and two of these
+were covering a real hole while being reasoned about from their output.
+
+Live on the FNV host after the fix: reachable actions PASS (Tools 3, Archives 5,
+Data 7, Saves 6, Overwrite 8, Logs 3, External Files 7), folder pages PASS, column
+toggle PASS, and the rest of the audit group PASS — twelve for twelve including
+panel chrome, row padding, header fit, density, separator colour and page audit.
+Widget behaviour PASS, Qt widgets PASS, row menus PASS. All 24 profile files hash
+identically to the start of the session.
+
+Not done this turn and still open: Mods and Plugins hand over their own column
+choosers and toolbars, which are still undrawn because those pages' header stacks
+are not shown in the panel layout — MO2's own furniture on both pages is reproduced
+separately as their Qt bars and is verified, so what is unreachable there is the
+frontend's own. MO2's `<Edit...>` first entry in `executablesListBox` and its
+`linkButton` shortcut menu have counterparts nowhere or elsewhere and have not been
+reproduced.

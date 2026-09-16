@@ -448,6 +448,16 @@ public partial class MockApp : Application
                         try { await Mo2ColumnToggleCheck.Run(); }
                         catch (Exception error) { Console.WriteLine("FAIL column toggle: " + error.Message); }
                     };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_REACHABLE_ACTIONS") == "1") {
+                    // Builds seven pages and waits for each to lay out, which takes
+                    // longer than the screenshot path waits before shutting down.
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ReachableActionsCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL reachable actions: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_PHYSICALITY") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2PhysicalityCheck.Run(); }
