@@ -297,11 +297,20 @@ public partial class MockApp : Application
                         try { await Mo2ToggleLifecycleCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL toggle lifecycle: " + error); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_REUSE") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAGE_REUSE") == "1") {
+                    // Deferred bodies are built from a dispatcher post, and this ran the
+                    // moment the window opened — while the workspace was still building
+                    // its first rows, which is seconds of saturated dispatcher. The post
+                    // it was waiting five seconds for could not run in them, so it
+                    // reported that a deferred page never loaded when nothing had asked
+                    // it to yet. Taking a turn puts it after the app has settled.
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
-                        try { await Mo2PageReuseCheck.Run(liveWindow); }
+                        try { using var turn = await Mo2CheckTurn.Take(); await Mo2PageReuseCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL page reuse lifecycle: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_LAYOUT_PRESET") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2LayoutPresetCheck.Run(live, liveWindow); }
@@ -345,11 +354,19 @@ public partial class MockApp : Application
                         try { await Mo2SortedRootsUiCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL sorted roots UI: " + error); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEPARATOR_INTERACTIONS") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEPARATOR_INTERACTIONS") == "1") {
+                    // This one makes a separator in MO2 and takes it away again, so the
+                    // run has to last until it has. Ungated, the screenshot path shut
+                    // the app down through it and left the fixture behind — and the
+                    // next run then refused to start, correctly, because a fixture it
+                    // did not make was sitting there.
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2SeparatorInteractionCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL separator interactions: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_ORDER_PROVIDER") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2OrderProviderCheck.Run(); }

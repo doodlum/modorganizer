@@ -2816,3 +2816,56 @@ Executables — are reached but deliberately not opened.
 
 Still open and unchanged by this work: cold first-display latency, and the combined
 end-to-end login/download/install/gameplay run.
+
+## A full sweep of the checks, and a correction to how they were being verified
+
+Running the widget/page/layout checks that had not been exercised this session
+turned up nine failures. **None of the nine was a defect in the app.** Three were
+checks looking for something the app deliberately no longer has, three were
+missing a precondition, two were looking in the wrong place after a control
+changed shape, and one was run against a host that had died. Each is recorded
+below with what it actually was, because "the check failed" and "the app is wrong"
+are different claims and this sweep produced only the first.
+
+| Check | Why it failed | What was done |
+| --- | --- | --- |
+| `SHARED_LISTS` | Read a column's heading only if it was a word, so the four MO2 draws as a glyph read as missing | Reads the name off whichever heading a column has; both lists confirm MO2's 13 and 8 |
+| `ENTRY_MENUS` | Wanted a five-item `ContextMenu` on the row, replaced by MO2's own menu on a `ContextFlyout` | Checks what still matters — nothing built before opening, same objects on reopen |
+| `TOPBAR` | Required all six native Nexus actions dead; two are deliberately live since the account work | Four held to disabled, two held to their own conditions |
+| `CONTROLS` | Looked for a plugin button by an old caption and pressed a `MoveModEarlierButton` that no longer exists, MO2 having no such button either | Uses the name, and the move the frontend actually offers |
+| `PAGE_REUSE` | Read the body off `Content`, which became the surface when the loading overlay went in; also ran while the dispatcher was still building first rows | Reads the view's own body and its loaded model, and takes a settled turn |
+| `ICON_ALIASES` | Needs the original icon style file, which the alias work replaced | Recovered from upstream's own git history; passes all 160 rules |
+| `SORTED_ROOTS_UI`, `PLUGIN_ROW` | Need an isolated layout and the Plugins page open | Run against a paired layout built for it |
+| `SEPARATOR_INTERACTIONS` | Ungated, so the screenshot path shut the app down mid-check and left its fixture in MO2 | Takes a turn now, so the run lasts until it has cleaned up |
+| `FILTERED_ROWS` | MO2 had died during the run | Re-run against a live host |
+
+### The correction
+
+The profile-restoration evidence quoted in the turns above — "all 24 profile files
+hash identically" — **was not comparing hashes.** The command behind it was
+
+```
+find . -type f -printf '%P ' -exec sha256sum {} \; | awk '{print $1, $2}'
+```
+
+and every profile path here contains a space, so `$1` and `$2` took two halves of
+the *filename* and the digest never entered the comparison at all. It compared file
+names to file names and could not have failed. Use this instead, which is what the
+saved baseline `artifacts/fnv-profile-baseline.sha256` was taken with:
+
+```
+find . -type f -print0 | sort -z | xargs -0 sha256sum
+```
+
+Checked properly, one thing had in fact been left changed: **`The Mod Configuration
+Menu.esp` was disabled**, by one of the runs that was killed by a timeout part-way
+through its restore. `plugins.txt` held ten plugins where the window had shown
+eleven all session. It was put back with MO2 stopped — MO2 writes that file from
+its own state, so editing it offline is the supported way — and MO2 restarted:
+the plugin is enabled again, the count reads 11, and the window matches the
+screenshots taken earlier in the session. A stray `__Separator interaction check`
+separator left by the same class of interruption was removed the same way.
+
+The lesson is the one this audit keeps finding one layer out: a check that cannot
+fail is not evidence, and that applies to the commands used to verify the checks
+just as much as to the checks themselves.

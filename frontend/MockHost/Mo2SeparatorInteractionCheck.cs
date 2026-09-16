@@ -44,7 +44,17 @@ internal static class Mo2SeparatorInteractionCheck
         async Task<TextBlock> Title(string name) {
             var rail = view.GetVisualDescendants().OfType<ScrollBar>().Single(b => b.Name == "ModsRailScrollBar");
             rail.Value = rail.Maximum;
-            await Wait(() => view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Name == "SeparatorTitle" && Equals(t.Tag, name)));
+            // Says which separator rows were on screen when it gave up. "Timed out"
+            // on its own cannot tell a row that is missing from a row that is drawn
+            // under a name this check did not expect, and those want different fixes.
+            try { await Wait(() => view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Name == "SeparatorTitle" && Equals(t.Tag, name))); }
+            catch (TimeoutException) {
+                var drawn = view.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Name == "SeparatorTitle")
+                    .Select(t => t.Tag?.ToString() ?? "(untagged)").ToArray();
+                throw new TimeoutException($"No separator row for \"{name}\"; the list is drawing " +
+                    (drawn.Length == 0 ? "no separator rows at all" : string.Join(", ", drawn)) +
+                    $", out of MO2's {profile.Mods.Count(m => m.IsSeparator)} separator(s)");
+            }
             return view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "SeparatorTitle" && Equals(t.Tag, name));
         }
         void DoubleTap(TextBlock title) {

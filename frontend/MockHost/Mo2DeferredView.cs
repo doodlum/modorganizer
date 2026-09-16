@@ -23,6 +23,17 @@ internal sealed class Mo2DeferredView<T> : ReactiveUserControl<T> where T : clas
     private long _version;
     private T? _loadedModel;
     private Control? _body;
+    // The body this view is holding, which is what the reuse rules are about: it is
+    // handed from a detached view to a fresh one for the same page model, and never
+    // taken from one that is still on screen. Content is the surface this view draws
+    // — the body and the loading overlay together — so reading the body off that was
+    // reading the wrong thing.
+    internal Control? LoadedBody => _body;
+    // And which model that body was built for. A view whose model has just been
+    // replaced is still holding the previous body until its own turn on the
+    // dispatcher comes round, so "is there a body" and "is there a body for this
+    // model" are different questions, and only the second one means loaded.
+    internal object? LoadedModel => _loadedModel;
     private readonly ContentControl _content = new() {
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
         VerticalContentAlignment = VerticalAlignment.Stretch
