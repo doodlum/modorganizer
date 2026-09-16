@@ -1821,9 +1821,21 @@ public partial class MockApp : Application
         var model = (Mo2TopBar)view.ViewModel!;
         if (typeof(TopBarDesignViewModel).IsAssignableFrom(model.GetType()) || model.Username is not null || model.Avatar is not null || model.IsLoggedIn)
             throw new InvalidOperationException("Live top bar still contains a demo identity");
-        foreach (var command in new[] { model.ShowWelcomeMessageCommand, model.LogoutCommand, model.OpenNexusModsProfileCommand,
-            model.OpenNexusModsPremiumCommand, model.OpenNexusModsAccountSettingsCommand, model.OpenForumsCommand })
+        // The native top bar's Nexus actions that this frontend has nothing behind:
+        // they stay dead rather than being drawn live and doing nothing, which is the
+        // same rule the MO2 widgets are held to.
+        foreach (var command in new[] { model.ShowWelcomeMessageCommand, model.OpenNexusModsProfileCommand,
+            model.OpenNexusModsPremiumCommand, model.OpenForumsCommand })
             if (((System.Windows.Input.ICommand)command).CanExecute(System.Reactive.Unit.Default)) throw new InvalidOperationException("Unmapped top-bar action remains enabled");
+        // The two that do have something behind them go through MO2: its Nexus
+        // settings, and signing out of the account MO2 holds. Logout follows whether
+        // anyone is signed in; account settings is always reachable, as MO2's is.
+        // These were in the list above, written before the account work, so this
+        // check had been failing on its own frontend's features ever since.
+        if (!((System.Windows.Input.ICommand)model.OpenNexusModsAccountSettingsCommand).CanExecute(System.Reactive.Unit.Default))
+            throw new InvalidOperationException("MO2's Nexus settings are unreachable from the top bar");
+        if (((System.Windows.Input.ICommand)model.LogoutCommand).CanExecute(System.Reactive.Unit.Default) != model.IsLoggedIn)
+            throw new InvalidOperationException($"Sign out is {(model.IsLoggedIn ? "disabled while signed in" : "enabled while signed out")}");
         if (((System.Windows.Input.ICommand)model.ViewChangelogCommand).CanExecute(NavigationInformation.From(NavigationInput.Default)))
             throw new InvalidOperationException("Unmapped changelog remains enabled");
         var menu = view.FindControl<MenuItem>("ViewAppLogsMenuItem")!;
@@ -2487,14 +2499,21 @@ public partial class MockApp : Application
         }
         try {
             live.PluginsPage!.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
-            window.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "Disable selected"))
+            // By name rather than by caption: this button reads "Disable" beside the
+            // selection count now, as the mod list's does, and matching on the old
+            // wording made this check fail on a button that was right there.
+            window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins")
                 .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
             await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive, "Plugin disable button failed");
             if ((live.Profile.Mods.Single(x => x.Id == mod.Id).State & 2) == 0) throw new InvalidOperationException("Plugin disable also disabled its mod");
             await AssertHost(false, mod.Priority);
             live.ModsPage!.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
-            window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "MoveModEarlierButton")
-                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            // There is no earlier/later pair to press any more, and MO2 has none
+            // either: it moves a mod by dragging it or from its own Send to... menu,
+            // which is what this frontend offers and what this drives. The check
+            // still exists for what follows — that MO2's own snapshot agrees with
+            // the move — rather than for which control started it.
+            await ((Mo2ModsAdapter)live.ModsPage.Adapter).Move(mod.Id, -1);
             await WaitFor(() => live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority - 1, "Mod priority button failed: " + live.Profile.Status);
             await AssertHost(false, mod.Priority - 1);
         } finally {
@@ -2504,7 +2523,7 @@ public partial class MockApp : Application
         }
         await AssertHost(plugin.IsActive, mod.Priority);
         if (!live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).SequenceEqual(originalMods)) throw new InvalidOperationException("Original mod order was not restored");
-        Console.WriteLine("PASS: plugin disable and mod priority toolbar buttons update MO2; plugin activation independent of mod activation; original state restored");
+        Console.WriteLine("PASS: the plugin list's Disable and a mod priority move update MO2; plugin activation independent of mod activation; original state restored");
     }
 
     private static async Task VerifyLive(Mo2LiveWorkspace live, string endpoint)
