@@ -61,28 +61,21 @@ internal static class Mo2AlertLifecycleCheck
         Mo2PluginsView? body = null;
         await Wait(() => (body = window.GetVisualDescendants().OfType<Mo2PluginsView>().FirstOrDefault(view => view.IsEffectivelyVisible)) is not null);
         var editor = body!.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.Sorting.LoadOrderView>().Single();
+        // The original app explains its load order in a banner above the list, with
+        // a help button in the rail that reopens it, and this check used to drive
+        // that pair through a dismiss/show lifecycle across a retained panel. MO2's
+        // espTab has neither — it is Sort, Restore, Save, a count and the list — so
+        // both are undrawn now and the lifecycle is not a thing this page has.
+        //
+        // What is checked is that they stay undrawn. The controls are still in the
+        // original view's markup, so this asks whether either is on screen rather
+        // than whether it exists.
         var alert = editor.FindControl<Alert>("LoadOrderAlert")!;
         var help = editor.FindControl<StandardButton>("InfoAlertButton")!;
-        await Wait(() => alert.IsLoaded && alert.AlertSettings is not null && help.Command is not null);
-        var settings = alert.AlertSettings!;
-        var dismissed = settings.IsDismissed;
-        var host = body!.GetVisualAncestors().OfType<ContentControl>().First(control => ReferenceEquals(control.Content, body));
-        async Task ShowUsingHelpCommand() {
-            if (help.Command?.CanExecute(help.CommandParameter) != true) throw new Exception("Plugins help command unavailable");
-            help.Command.Execute(help.CommandParameter);
-            await Wait(() => !settings.IsDismissed && alert.IsVisible);
-        }
-        try {
-            settings.DismissAlert(); await ShowUsingHelpCommand();
-            settings.DismissAlert(); host.Content = null; await Wait(() => !alert.IsLoaded);
-            host.Content = body; await Wait(() => alert.IsLoaded && help.Command is not null);
-            if (!ReferenceEquals(settings, alert.AlertSettings)) throw new Exception("Native help settings were replaced during test");
-            await ShowUsingHelpCommand();
-        } finally {
-            if (!ReferenceEquals(host.Content, body)) host.Content = body;
-            if (dismissed) settings.DismissAlert(); else settings.ShowAlert();
-        }
-        Console.WriteLine("PASS Plugins help: original command opens help before and after retained panel reload; preference restored");
+        await Wait(() => alert.IsLoaded);
+        if (alert.IsEffectivelyVisible || help.IsEffectivelyVisible)
+            throw new Exception($"Plugins draws the original app's help: banner={alert.IsEffectivelyVisible}, button={help.IsEffectivelyVisible}");
+        Console.WriteLine("PASS Plugins help: neither the original app's load-order banner nor the help button beside the list is drawn, as MO2's plugin tab carries neither");
     }
 
 }

@@ -87,8 +87,11 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         // The filter stays in its own row under the separator and the header line
         // carries a magnifier, matching Mods and Plugins. A search box on the header
         // line is what made this page's header the widest and the first to run out.
+        // MO2's bsaTab is a note above a list and nothing else: no Refresh, no
+        // Browse, no Extract. Those three were this frontend's own, and the archive
+        // row's menu is MO2's, so what it offers is what this page offers.
         Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search archives"),
-            _browse, _extract, _columns.Action, refresh);
+            _columns.Action);
         ToolTip.SetTip(_status, "Loading follows the game’s archive and plugin rules.");
         LayoutUpdated += (_,_) => {
             var showModColumn = Bounds.Width >= 520;

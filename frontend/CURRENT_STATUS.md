@@ -3368,3 +3368,60 @@ this host: `MO2_VERIFY_PLUGIN_MULTI` needs two enabled MCM example plugins and t
 mod is disabled here, and `MO2_VERIFY_INSTALL_ARCHIVE` needs an archive path passed
 in. They are changed but unverified, and that is not the same as changed and
 working.
+
+## Every button on MO2's pages, checked against MO2 — the other direction
+
+`MO2_VERIFY_QT_WIDGETS` asks whether everything MO2 draws is here. Nothing asked
+the reverse, and a page drifts by growing buttons as easily as by losing them.
+`MO2_VERIFY_EXTRA_BUTTONS` walks MO2's six tabs and requires every button drawn on
+one to be either the counterpart of a widget in `src/mainwindow.ui` — which
+`Mo2QtWidgetCheck.Answers` already records, so the two checks read the same map
+from opposite ends — or named in the check with what MO2 does instead.
+
+It found **nine**, and all nine came off:
+
+| Page | Button | Why it went |
+| --- | --- | --- |
+| My Mods | help | MO2 explains its lists nowhere on the tab |
+| Plugins | the original app's load-order banner and the help button that reopens it | MO2's espTab is Sort, Restore, Save, a count and the list |
+| Data | a second Refresh | MO2's `dataTabRefresh` is already drawn in the row of MO2's own widgets |
+| Data | Open, Reveal in Explorer, Hide | all three are on the menu MO2 builds for a Data row |
+| Archives | Browse, Extract, Refresh | MO2's bsaTab is a note above a list — no buttons at all |
+| Saves | Details, Fix mods, Delete, Refresh | MO2's savesTab is its list alone; the three actions are on its row menu |
+| Downloads | Nexus link… | MO2 has no widget for it either, and a download still arrives through the nxm handler MO2 registers itself for |
+
+That last one had been moved into MO2's own widget row an hour earlier to keep it
+reachable. Held to this rule it goes too, which is the rule doing its job rather
+than being argued with.
+
+### What is kept, and named
+
+Eight buttons are recorded in the check as this frontend's own, each for something
+MO2 does from somewhere other than a widget on the tab:
+
+* the column choosers — MO2 opens the same chooser by right-clicking a list header;
+* the search toggles — they show the filter row MO2 draws permanently under its list;
+* the clear inside each filter field — MO2's `LineEditClear` carries it inside the box;
+* Data's parent-folder button — this page navigates folders where MO2's tree expands
+  in place, so without it there is no way back up.
+
+Adding a line there is how this check is silenced, which is why each line says what
+MO2 does instead rather than that the button is wanted.
+
+**Negative control.** Data's Reveal was put back and the check named it —
+`data draws 1 button(s) MO2 has no widget for: RevealDataFile` — and with the
+removal restored byte for byte it passes again.
+
+### Checks that were watching the removed buttons
+
+* `MO2_VERIFY_ARCHIVES` asserted Browse and Extract tracked the selection. Its
+  subject is the selection, which it still asserts; it now fails if either button
+  comes back.
+* `MO2_VERIFY_ALERT_LIFECYCLE` drove the load-order banner through a dismiss/show
+  lifecycle across a retained panel. That lifecycle is not something this page has
+  any more, so it asserts that neither the banner nor its button is drawn.
+* `MO2_VERIFY_CONTROLS` failed once more on its restore — ten seconds was not
+  enough on a host the check before it had just worked hard, and it left the plugin
+  disabled again. The one wait that has to land now gets thirty.
+
+Nineteen checks run live; all nineteen pass.

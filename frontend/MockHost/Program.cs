@@ -509,6 +509,14 @@ public partial class MockApp : Application
                         finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
                 }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTRA_BUTTONS") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2ExtraButtonsCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL MO2 page buttons: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    }, TimeSpan.FromSeconds(2));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_ACTIONS") == "1") {
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
@@ -2598,8 +2606,12 @@ public partial class MockApp : Application
             // Waited for here, inside the finally: a run that is failing is exactly
             // the run whose restore has to have landed before the process ends, and
             // this used to be checked afterwards where a failure skipped it.
+            // Thirty seconds, not the ten a wait gets by default: this is the one
+            // that has to land, and a run ending with MO2 changed is worse than a
+            // run that failed. It timed out at ten on a host that had just been
+            // worked hard by the check before it, and left the plugin disabled.
             await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive == plugin.IsActive &&
-                live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority, "MO2 did not take the restore");
+                live.Profile.Mods.Single(x => x.Id == mod.Id).Priority == mod.Priority, "MO2 did not take the restore", 30);
         }
         await AssertHost(plugin.IsActive, mod.Priority);
         if (!live.Profile.Mods.OrderBy(x => x.Priority).Select(x => x.Name).SequenceEqual(originalMods)) throw new InvalidOperationException("Original mod order was not restored");

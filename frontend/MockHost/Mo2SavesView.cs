@@ -56,8 +56,12 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         Content = root;
         _columns = new Mo2ColumnToggle("saves", Render);
         // Search in the row beneath, magnifier on the header line, as Mods does.
+        // MO2's savesTab is its list and nothing else — no buttons at all — and the
+        // three actions it does offer are on the menu it builds for a save row:
+        // details, fixing the mods a save wants, and deleting it. They were drawn
+        // here as well; the row menu is where MO2 has them.
         Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search saves"),
-            _details, _repair, _delete, _columns.Action, refresh);
+            _columns.Action);
         _table.Classes.Add("MainListsStyling");
         _search.TextChanged += (_,_) => Render();
         _table.DoubleTapped += async (_,_) => await RunAction("details");

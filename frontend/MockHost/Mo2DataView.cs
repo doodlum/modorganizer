@@ -79,6 +79,7 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         root.Children.Add(header);
         var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"), Margin = new Thickness(0,8) };
         _up = Mo2ModRow.IconButton("mdi-arrow-up", "Parent folder", async () => await Navigate(_directory.Contains('/') ? _directory[.._directory.LastIndexOf('/')] : ""));
+        _up.Name = "DataParentFolder";
         _open = Mo2ModRow.IconButton("mdi-folder-open-outline", "Open folder or preview file", async () => await OpenFolder());
         _reveal = Mo2ModRow.IconButton("mdi-folder-search-outline", "Open selected file’s source folder", async () => await RunAction("reveal"));
         _reveal.Name = "RevealDataFile";
@@ -113,8 +114,15 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         Content = root;
         _columns = new Mo2ColumnToggle("data", Render);
         // Search in the row beneath, magnifier on the header line, as Mods does.
+        // MO2's dataTab carries a Refresh, three tick boxes and a filter, and this
+        // page draws all of them in the row of MO2's own widgets above the tree. The
+        // rest of what used to be on this line is MO2's row menu — Open, Reveal in
+        // Explorer and Hide are all on it — or a second Refresh beside the one MO2
+        // has. What stays is the way back up a folder, which this page needs because
+        // it navigates where MO2's tree expands in place, and the two that stand in
+        // for something MO2 does from its list header.
         Mo2PanelChrome.Apply(this, root, header, _up, Mo2PanelChrome.SearchAction(toolbar, "Search this folder"),
-            _open, _reveal, _visibility, _columns.Action, refresh);
+            _columns.Action);
         _search.TextChanged += (_,_) => { if (ViewModel is { } model) model.SearchText = _search.Text ?? ""; Render(); };
         _conflicts.IsCheckedChanged += (_,_) => { if (ViewModel is { } model) model.ConflictsOnly = _conflicts.IsChecked == true; Render(); };
         _table.DoubleTapped += async (_,_) => await OpenFolder();

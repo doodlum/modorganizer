@@ -31,7 +31,7 @@ out="${MO2_VERIFY_OUTPUT:-$frontend_root/artifacts/verify}"
 mkdir -p "$out"
 
 # The checks that require an isolated paired layout, and refuse to run without one.
-PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER "
+PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER ALERT_LIFECYCLE "
 # The checks that do not register a turn, so the screenshot path would shut them
 # down mid-run. They are given no screenshot and are ended by the timeout instead.
 #
@@ -40,7 +40,7 @@ PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTE
 # live tables to settle on the page it happens to be on. That gate is right to
 # report an untrustworthy screenshot, but there is no screenshot worth having from
 # a check whose answer is a sentence.
-UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS PLUGIN_ROW SORTED_ROOTS_UI DEAD_CONTROLS FOLDER_PAGES "
+UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS PLUGIN_ROW SORTED_ROOTS_UI DEAD_CONTROLS FOLDER_PAGES EXTRA_BUTTONS "
 
 layout_source="$frontend_root/artifacts/verify-paired-layout.json"
 status=0

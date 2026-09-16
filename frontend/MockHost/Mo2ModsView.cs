@@ -309,16 +309,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 _ => Mo2TableRow.Heading(label),
             }, column);
         columns.LayoutUpdated += (_, _) => Mo2ModRow.Fit(columns, this.GetVisualAncestors().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().FirstOrDefault()?.Bounds.Width ?? Bounds.Width);
-        var help = new StandardButton { Name = "ModsHelpButton", ShowLabel = false, ShowIcon = StandardButton.ShowIconOptions.Left,
-            LeftIcon = IconValues.HelpOutline, Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None, Size = StandardButton.Sizes.Medium,
-            // Kept inside the heading band it shares. Left to its own height it made
-            // that row taller than the headings in it, which is what started this
-            // table's first row 3px below the one on Plugins.
-            Height = Mo2TableRow.ActionSize, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
-        ToolTip.SetTip(help, "Mod priority help");
-        help.Flyout = new Flyout { Content = new TextBlock { Text = "Drag mods to change their priority. Mods lower in the list win file conflicts. Select a mod to highlight its conflicts and linked plugins. Use separators to group mods; click the arrow to collapse a group, or double-click its name to rename it.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 280 } };
-        Grid.SetColumn(help, 1); list.Children.Add(help);
+        // MO2 draws no help button beside its mod list, and this one explained the
+        // list rather than doing anything to it: dragging to reorder, what a lower
+        // priority means, what a separator is. What it said is in this file and in
+        // the row menu's own wording, which is where MO2 leaves it.
         // The shared chrome gives this page the same separator and animated
         // compaction as the others. Its action row holds the column chooser alone
         // now that the toolbar beside it is gone.

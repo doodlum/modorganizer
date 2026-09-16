@@ -59,7 +59,17 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             Avalonia.Styling.Selectors.OfType<Avalonia.Controls.Primitives.TreeDataGridRowsPresenter>(x)) {
             Setters = { new Avalonia.Styling.Setter(Avalonia.Layout.Layoutable.MarginProperty, new Thickness(0)) },
         });
+        // The original app explains its load order in a dismissable banner above the
+        // list. MO2's espTab has nothing of the kind — it is Sort, Restore, Save, a
+        // count and the list — so the banner and the button that closes it are not
+        // drawn. Its height still comes out of the space the list is given, which is
+        // zero now.
         var alert = editor.FindControl<Control>("LoadOrderAlert")!;
+        alert.IsVisible = false;
+        // And the help button in the rail beside the list, which opens it. MO2's mod
+        // list had the same shape of button and it went for the same reason: MO2
+        // explains its lists nowhere on the tab.
+        editor.FindControl<Control>("InfoAlertButton")!.IsVisible = false;
         var tableControl = editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid")!;
         tableControl.ShowColumnHeaders = false;
         Mo2TableRow.InstallRowStyles(tableControl);

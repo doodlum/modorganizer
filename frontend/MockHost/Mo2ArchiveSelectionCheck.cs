@@ -30,9 +30,14 @@ internal static class Mo2ArchiveSelectionCheck
             void Expect(string? mod) {
                 if ((table.RowSelection?.SelectedItem as Mo2Archive)?.Mod != mod)
                     throw new Exception("Archives selected a different source mod or resurrected a cleared selection");
-                var actions = view.GetVisualDescendants().OfType<Button>().Where(b => b.Name is "BrowseArchive" or "ExtractArchive").ToArray();
-                if (actions.Length != 2 || actions.Any(b => b.IsEnabled != (mod is not null && shell.Profile.CanChangeOriginalUi)))
-                    throw new Exception("Archive actions do not match the visible selection");
+                // The two buttons that used to be checked here — Browse and Extract —
+                // are gone: MO2's bsaTab carries no buttons at all, and what it
+                // offers for an archive is on the menu it builds for the row. What
+                // this check is for is the selection itself, which is asserted
+                // above; a page that grows those buttons back fails
+                // MO2_VERIFY_EXTRA_BUTTONS rather than this.
+                if (view.GetVisualDescendants().OfType<Button>().Any(b => b.Name is "BrowseArchive" or "ExtractArchive"))
+                    throw new Exception("Archives has grown back the actions MO2 keeps on its row menu");
             }
             async Task Filter(string value, int count) {
                 search.Text = value; await Wait(() => table.Rows?.Count == count);

@@ -176,10 +176,10 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // recomputed which of the page's own controls were live, so a download added
         // or removed outside MO2 stayed off the list. It goes through MO2 first now,
         // then brings the page's own controls up to what came back.
-        // MO2's own two, and beside them the one action the page's toolbar carried
-        // that nothing else offers: pasting a Nexus file link to download through
-        // MO2. It sits here because Query Metadata beside it is the other action on
-        // this page that asks Nexus about a download.
+        // MO2's own two, and only those. The Nexus link action that came off this
+        // page's toolbar was put here for a while; MO2 has no widget for it either,
+        // and a download still arrives through MO2's own nxm handler, which is what
+        // MO2 registers itself for.
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
             async () => {
                 if (ViewModel is { } model) await model.Profile.RefreshDownloads();
@@ -187,7 +187,6 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             }));
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadataTip,
             "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); }));
-        nexus.Margin = new Thickness(0); qtBar.Children.Add(nexus);
         Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
         // And the row MO2 puts under that list: the box that shows the downloads it
         // has been told to hide, and the field that narrows the list.
