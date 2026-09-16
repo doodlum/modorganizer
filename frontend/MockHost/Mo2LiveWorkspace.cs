@@ -68,6 +68,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly Dictionary<(string Endpoint, string Path), WorkspaceId> _profileWorkspaces = new();
     private readonly Dictionary<WorkspaceId, Mo2LoadoutMenu> _profileMenus = new();
     public ScenarioHomeMenu HomeMenu { get; }
+    // MO2's run row. A collapsed sidebar moves it into that sidebar's tool flyout, so
+    // it is not in the window's tree until the flyout is opened; a check reads it
+    // here instead of guessing which of the two places it is in.
+    internal Mo2LaunchPanel? LaunchPanel { get; private set; }
     public Mo2LoadoutMenu ProfileMenu => _profileMenus[_profileWorkspace];
     public Mo2InstanceCatalog Catalog { get; }
     public IReadOnlyList<Mo2CatalogEntry> CatalogEntries { get; private set; } = [];
@@ -449,6 +453,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var profilesItem = new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = ProfileMenu.ProfilesItem };
         ((StackPanel)profileSidebar.FindControl<Control>("LibraryItem")!.Parent!).Children.Insert(0, profilesItem);
         var launchPanel = new Mo2LaunchPanel(Profile);
+        // Held so a check can read MO2's run row wherever it currently lives: a
+        // collapsed sidebar moves the whole panel into its tool flyout, so it is not
+        // in the window's tree until that flyout is open.
+        LaunchPanel = launchPanel;
         Grid.SetRow(launchPanel, 1);
         ((Grid)profileSidebar.Content!).Children.Add(launchPanel);
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };

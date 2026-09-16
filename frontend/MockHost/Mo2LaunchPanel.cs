@@ -50,8 +50,15 @@ internal sealed class Mo2LaunchButton : AViewModel<ILaunchButtonViewModel>, ILau
 // MO2's virtual file system requires no separate Apply action.
 internal sealed class Mo2LaunchPanel : Border
 {
+    // MO2's own first row of executablesListBox, under MO2's own wording
+    // (MainWindow::refreshExecutablesList). Choosing it opens MO2's Edit Executables
+    // dialog and puts the previous choice back, which is what
+    // on_executablesListBox_currentIndexChanged does. The frontend could reach that
+    // dialog from Tools and from nowhere else; MO2 puts it here, where the executable
+    // about to be run is chosen.
+    internal const string EditEntry = "<Edit...>";
     public Mo2LaunchButton Model { get; }
-    public ComboBox Executable { get; } = new() { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    public ComboBox Executable { get; } = new() { Name = "ExecutablesListBox", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
     public LaunchButtonView NativeButton { get; }
     public Mo2LaunchPanel(Mo2LiveProfile profile)
     {
@@ -104,13 +111,31 @@ internal sealed class Mo2LaunchPanel : Border
             row.Children.Add(new TextBlock { Text = name, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
             return row;
         });
-        Executable.SelectionChanged += (_, _) => { if (!updating) Model.SelectedExecutable = Executable.SelectedItem as string ?? ""; };
+        Executable.SelectionChanged += async (_, _) => {
+            if (updating) return;
+            if (Executable.SelectedItem as string == EditEntry) {
+                // Put the previous choice back before handing over, not after: MO2's
+                // dialog is modal and this call waits on it, and a combo left reading
+                // "<Edit...>" for as long as that dialog is open is not what MO2 shows.
+                var previous = Model.SelectedExecutable;
+                updating = true;
+                try { Executable.SelectedItem = previous; } finally { updating = false; }
+                if (!profile.CanChangeOriginalUi) return;
+                await profile.RunTool(new Mo2Tool([], "Executable settings", "", "", true), profile.CurrentTarget, true);
+                await profile.Refresh();
+                return;
+            }
+            Model.SelectedExecutable = Executable.SelectedItem as string ?? "";
+        };
         void Refresh()
         {
             RefreshPins();
             updating = true;
             try {
-                if (!(Executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(profile.Executables)) Executable.ItemsSource = profile.Executables;
+                // MO2's own order: <Edit...> first, then the executables it is not
+                // hiding.
+                var wanted = new[] { EditEntry }.Concat(profile.Executables).ToArray();
+                if (!(Executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(wanted)) Executable.ItemsSource = wanted;
                 Executable.SelectedItem = Model.SelectedExecutable;
                 Executable.IsEnabled = !Model.IsBusy;
                 NativeButton.IsEnabled = Model.CanLaunch;

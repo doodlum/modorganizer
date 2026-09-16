@@ -1975,3 +1975,42 @@ separately as their Qt bars and is verified, so what is unreachable there is the
 frontend's own. MO2's `<Edit...>` first entry in `executablesListBox` and its
 `linkButton` shortcut menu have counterparts nowhere or elsewhere and have not been
 reproduced.
+
+## 2026-09-16 — The action row was hidden in every shared panel
+
+Previous turn was progress: twenty-six unreachable page actions put back in a row of
+their own. That turn's check built each page on its own, and passed. Adding the two
+live list pages, read in the open window, failed immediately: My Mods and Plugins
+could reach neither their column chooser nor their toolbar.
+
+A new `MO2_REACHABLE_TRACE=1` prints the visual chain from a lost control to its
+page with each link's own visibility, and named the cause in one line:
+`PanelHeaderStack[vis=False]`. `Mo2ResponsiveHeaders` hides a page's entire header
+stack when its panel is not alone, because a shared panel is named by its tab
+strip. Correct for the title, pictogram, description and rule; wrong for the action
+row, which nothing else offers — and the default layout is two panels, so in the
+layout this frontend reproduces, no page had its actions. The row is now exempt from
+that hiding and the rest of the header still stands down.
+
+Recorded as a rule because it is the second time the same hole was found one layer
+further out: a check that builds a page beside the window is not checking the page
+the user has.
+
+MO2's `<Edit...>` is now the first row of the frontend's executables box, in MO2's
+wording and position, opening MO2's Edit Executables dialog and restoring the
+previous choice before handing over rather than after. That dialog was previously
+reachable from the Tools page alone. The check reads the row off
+`Mo2LiveWorkspace.LaunchPanel`, since a collapsed sidebar — this host's saved state
+— keeps the row in its tool flyout and out of the window's tree; it does not choose
+the entry, which would open a modal dialog and wedge the host, the same policy as
+Restore, Sort and the category editor.
+
+Live on the FNV host: reachable actions PASS including My Mods and Plugins in the
+open window, widget behaviour PASS, Qt widgets PASS, row menus PASS, and the audit
+group PASS thirteen for thirteen. All 24 profile files hash identically to the
+start of the session and the saved layout is unchanged.
+
+Open: `linkButton`'s shortcut menu (Toolbar and Menu, Desktop, Start Menu, each
+showing add or remove by whether the shortcut exists) has no counterpart; it needs
+a bridge action and an MO2 restart. Cold first-display latency and the combined
+end-to-end workflow remain open.

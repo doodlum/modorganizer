@@ -694,6 +694,32 @@ internal static class Mo2WidgetBehaviourCheck
             }
         } else faults.Add("Downloads never drew");
 
+        // --- MO2's run row ---
+        // MO2 puts three things under its lists: the executables box, Run beside it,
+        // and the shortcut menu. The box's first row is MO2's own <Edit...>, which
+        // opens its Edit Executables dialog and puts the previous choice back
+        // (MainWindow::refreshExecutablesList and on_executablesListBox_currentIndexChanged).
+        // The frontend reached that dialog from Tools and from nowhere else.
+        //
+        // The entry is read where it sits rather than chosen: choosing it hands over
+        // to a modal MO2 dialog that waits for whoever opened it, as Restore and the
+        // category editor do, so it is not driven here.
+        // Read off the panel itself, not off the window: a collapsed sidebar keeps the
+        // whole run row in its tool flyout, where nothing in the window's tree can
+        // find it, and the user's sidebar is collapsed on this host.
+        if (live.LaunchPanel?.Executable is { } executables) {
+            var listed = (executables.ItemsSource as IEnumerable<string> ?? []).ToArray();
+            var wanted = new[] { Mo2LaunchPanel.EditEntry }.Concat(live.Profile.Executables).ToArray();
+            if (listed.FirstOrDefault() != Mo2LaunchPanel.EditEntry)
+                faults.Add($"the executables box opens with {listed.FirstOrDefault() ?? "nothing"}, not MO2's {Mo2LaunchPanel.EditEntry}");
+            else if (!listed.SequenceEqual(wanted))
+                faults.Add($"the executables box lists {listed.Length - 1} of MO2's {live.Profile.Executables.Count} executables");
+            else if (executables.SelectedItem as string == Mo2LaunchPanel.EditEntry)
+                faults.Add("the executables box is sitting on MO2's edit entry rather than on an executable");
+            else worked.Add($"the executables box opens with MO2's {Mo2LaunchPanel.EditEntry} above its {live.Profile.Executables.Count} executable(s), " +
+                $"with {executables.SelectedItem} chosen — its dialog is modal and was not opened");
+        } else faults.Add("there is no executables box to run anything from");
+
         await Navigate(restore);
         await Task.Delay(600);
 

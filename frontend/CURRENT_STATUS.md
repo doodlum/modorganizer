@@ -2627,3 +2627,64 @@ Also still open: MO2's `<Edit...>` entry, which is the first row of its
 previous selection. The frontend reaches that dialog from Tools instead. And
 `linkButton`'s menu — Toolbar and Menu, Desktop, Start Menu, each showing add or
 remove by whether the shortcut exists — has no counterpart beside the launch panel.
+
+## In the layout this frontend is meant to be used in, no page had its actions
+
+The previous turn put every page's actions into a row of its own and the check
+passed. It passed because the check built each page on its own. Adding the two live
+list pages to it, read in the open window, failed at once:
+
+```
+FAIL reachable actions: My Mods cannot reach ColumnsButton, Toolbar;
+                        Plugins cannot reach ColumnsButton, PluginsToolbar
+```
+
+`MO2_REACHABLE_TRACE=1` prints the chain from a lost control up to its page with
+what each link says about itself, and named the link in one line:
+
+```
+TRACE My Mods ColumnsButton: ColumnsButton[vis=True,eff=False,w=24]
+  < PanelActionRow[vis=True,eff=False,w=120]
+  < PanelHeaderStack[vis=False,eff=False,w=506]   <-- here
+  < Panel[vis=True,eff=True,w=506] < ...
+```
+
+`Mo2ResponsiveHeaders` hides a page's whole header stack when its panel is not
+alone in the workspace: a shared panel is named by its tab strip, so its page
+header would say the same thing twice. That is right for the title, the pictogram,
+the description and the rule under them. It is not right for the page's own
+actions, which the tab strip does not carry and nothing else offers — and **the
+default layout is two panels**, so in the layout this frontend exists to
+reproduce, every page's actions were off screen. The action row stays now; the
+rest of the header still stands down.
+
+This is the second time the same hole has been found one layer further out. Worth
+stating as a rule: **a check that builds a page beside the window is not checking
+the page the user has.** The live pass is what caught it, and it is the pass to
+extend first next time.
+
+## MO2's `<Edit...>`
+
+MO2's `executablesListBox` opens with its own `<Edit...>` row
+(`MainWindow::refreshExecutablesList`); choosing it opens the Edit Executables
+dialog and puts the previous choice back
+(`on_executablesListBox_currentIndexChanged`). The frontend's box listed
+executables only, and that dialog was reachable from the Tools page and nowhere
+else — not from where the executable about to be run is chosen.
+
+The entry is MO2's own wording and MO2's own position, and choosing it restores the
+previous selection **before** handing over rather than after: MO2's dialog is modal
+and the bridge call waits on it, and a box reading `<Edit...>` for as long as that
+dialog is open is not what MO2 shows.
+
+The check reads it where it sits and does not choose it — that would open a modal
+MO2 dialog and wedge the host for the rest of the run, the same reason Restore,
+Sort and the category editor are not driven. It reads the run row off
+`Mo2LiveWorkspace.LaunchPanel` rather than out of the window, because a collapsed
+sidebar — which is this host's saved state — moves the whole row into its tool
+flyout, where nothing in the window's tree can find it.
+
+**Still open:** `linkButton`'s menu — Toolbar and Menu, Desktop, Start Menu, each
+drawn with an add or a remove icon by whether that shortcut already exists — has no
+counterpart beside the frontend's run row. It needs a bridge action and therefore
+an MO2 restart, which is why it is not in this turn.

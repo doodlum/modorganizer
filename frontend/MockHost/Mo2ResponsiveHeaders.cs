@@ -126,7 +126,23 @@ internal static class Mo2ResponsiveHeaders
                 var alone = panel?.ViewModel?.IsAlone != false;
                 var stack = header.GetVisualAncestors().OfType<StackPanel>()
                     .FirstOrDefault(x => x.Name == "PanelHeaderStack");
-                if (stack is not null && stack.IsVisible != alone) stack.IsVisible = alone;
+                // A panel sharing the workspace is named by its tab strip, so its page
+                // header would say the same thing twice and stands down. What stands
+                // down with it is the title, the pictogram, the description and the
+                // rule under them — not the page's own actions, which the tab strip
+                // does not carry and nothing else offers.
+                //
+                // Hiding the whole stack took them with it, and the default layout is
+                // two panels: in the layout this frontend is meant to be used in,
+                // every page's actions were off screen. Found by
+                // MO2_VERIFY_REACHABLE_ACTIONS reading the live window — the same
+                // pages pass when built on their own, which is why this survived the
+                // turn that put the action row there.
+                if (stack is not null)
+                    foreach (var part in stack.Children.OfType<Control>()) {
+                        var wanted = part.Name == "PanelActionRow" || alone;
+                        if (part.IsVisible != wanted) part.IsVisible = wanted;
+                    }
                 if (panel?.FindControl<Control>("TabHeaderBorder") is { } tabs)
                     tabs.IsVisible = !alone || hidden || panel.ViewModel?.Tabs.Count > 1 || IsRevealed(panel);
                 header.Margin = ShrinkMargin(state.Margin);

@@ -453,7 +453,7 @@ public partial class MockApp : Application
                     // longer than the screenshot path waits before shutting down.
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
-                        try { await Mo2ReachableActionsCheck.Run(); }
+                        try { await Mo2ReachableActionsCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL reachable actions: " + error.Message); }
                         finally { Mo2CheckTurn.Finished(); }
                     };
