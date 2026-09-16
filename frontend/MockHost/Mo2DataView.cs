@@ -121,8 +121,7 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         // has. What stays is the way back up a folder, which this page needs because
         // it navigates where MO2's tree expands in place, and the two that stand in
         // for something MO2 does from its list header.
-        Mo2PanelChrome.Apply(this, root, header, _up, Mo2PanelChrome.SearchAction(toolbar, "Search this folder"),
-            _columns.Action);
+        Mo2PanelChrome.Apply(this, root, header, _up, Mo2PanelChrome.SearchAction(toolbar, "Search this folder"));
         _search.TextChanged += (_,_) => { if (ViewModel is { } model) model.SearchText = _search.Text ?? ""; Render(); };
         _conflicts.IsCheckedChanged += (_,_) => { if (ViewModel is { } model) model.ConflictsOnly = _conflicts.IsChecked == true; Render(); };
         _table.DoubleTapped += async (_,_) => await OpenFolder();

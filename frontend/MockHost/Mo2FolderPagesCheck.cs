@@ -76,8 +76,12 @@ internal static class Mo2FolderPagesCheck
                 else if (search.MinWidth != 60) faults.Add($"{name} sizes its search box to {search.MinWidth}, not the shared 60");
                 if (page.GetVisualDescendants().OfType<TextBlock>().All(x => x.Name?.EndsWith("Status", StringComparison.Ordinal) != true))
                     faults.Add($"{name} has no status line");
-                if (page.GetVisualDescendants().OfType<Button>().All(x => x.Name is not ("ColumnToggleButton" or "ColumnsButton")))
-                    faults.Add($"{name} offers no way to hide a column");
+                // And no column chooser. MO2 offers one on its downloads list alone —
+                // DownloadListView is the only view that sets Qt::CustomContextMenu
+                // on its header — so a file page that draws one has grown a control
+                // MO2 has not got.
+                if (page.GetVisualDescendants().OfType<Button>().Any(x => x.Name is "ColumnToggleButton" or "ColumnsButton"))
+                    faults.Add($"{name} draws a column chooser, which MO2 offers on its downloads list alone");
 
                 // Actions are icons in the page's own row under the separator, which is
                 // where MO2 puts a tab's own controls. Nothing goes on the title's
@@ -165,7 +169,7 @@ internal static class Mo2FolderPagesCheck
 
             if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
             Console.WriteLine($"PASS folder pages: {string.Join(", ", described)} share one file table, one search box, one " +
-                "status line, one column toggle, one name cell with a folder or file icon, and one way of writing a size; " +
+                "status line, one name cell with a folder or file icon, and one way of writing a size; " +
                 $"none of them draws a labelled button in its body, and all three draw {geometry[0].RowHeight:F0}px rows with " +
                 $"the icon {geometry[0].IconAt:F0}px and the name {geometry[0].NameAt:F0}px into that cell");
         } finally { shellWindow.Close(); }

@@ -272,16 +272,16 @@ internal static class Mo2WidgetBehaviourCheck
                 var items = options.Items.OfType<MenuItem>().Select(x => x.Header as string).ToArray();
                 foreach (var wanted in new[] { "Refresh", "Enable all", "Disable all" })
                     if (!items.Contains(wanted)) faults.Add($"the list options menu has no {wanted}");
-                // And nothing about columns. This used to require a tick per column
-                // here as well as the chooser on the page's header line — the same
-                // columns, the same hidden set, the same preference file — where
-                // MO2's own listOptionsBtn carries the list's global actions and no
-                // columns at all.
-                if (Named<Button>(mods, "ColumnsButton") is null)
-                    faults.Add("My Mods has no column chooser on its header line");
+                // And nothing about columns, anywhere on this page. This first
+                // required a tick per column in this menu, then a chooser on the
+                // header line instead — and MO2 has neither: its listOptionsBtn
+                // carries the mod list's global actions, and the only column menu
+                // MO2 offers a user is on its downloads header.
+                if (Named<Button>(mods, "ColumnsButton") is not null)
+                    faults.Add("My Mods draws a column chooser, which MO2 offers on its downloads list alone");
                 else if (items.Any(x => Mo2ModRow.OptionalColumns.Any(column => column.Name == x)))
                     faults.Add("the list options menu offers columns the header's chooser already offers");
-                else worked.Add($"the list options menu offers MO2's {items.Length} list actions and leaves columns to the one chooser");
+                else worked.Add($"the list options menu offers MO2's {items.Length} list actions and says nothing about columns, as MO2's does not");
             } else faults.Add("My Mods has no list options menu");
 
             // And the open-folders menu, over folders that are actually there.

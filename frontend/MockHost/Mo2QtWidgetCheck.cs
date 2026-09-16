@@ -259,7 +259,16 @@ internal static class Mo2QtWidgetCheck
             var wanted = widgets.Where(x => Answers[x.Name] is { Kind: Kind.Page or Kind.Elsewhere } answer && answer.Page == page).ToArray();
             if (wanted.Length == 0) continue;
             await open[page]();
+            // MO2's filter list starts hidden and so does this one —
+            // restoreVisibility(ui->categoriesGroup, false) in mainwindow.cpp is what
+            // a profile with nothing saved gets, whatever the .ui this check reads
+            // declares. A widget behind its own button is not a missing widget, so it
+            // is opened through that button to be measured and put back the way it
+            // was found: what this check is for is whether the widget is there and
+            // can be drawn, not which way its button happens to be set.
+            var folded = page == "my-mods" ? await OpenCategories(window, true) : (bool?)null;
             var missing = (await Missing(window, live, wanted)).ToArray();
+            if (folded is { } was) await OpenCategories(window, was);
             if (missing.Length > 0) faults.Add($"{page} is missing {string.Join(", ", missing)}");
             else if (wanted.All(x => Answers[x.Name].Kind == Kind.Elsewhere))
                 described.Add($"{page} carries the {wanted.Length} MO2 puts beside its mod list — " +
@@ -305,6 +314,21 @@ internal static class Mo2QtWidgetCheck
         else Console.WriteLine($"PASS MO2 widgets: all {widgets.Length} widgets MO2 names in {Path.GetFileName(source)} " +
             "have a counterpart here and it is drawn — " + string.Join(", ", described) +
             (sidebar.WasCollapsed ? ", with the sidebar opened for the run row as MO2 keeps it and closed again" : ""));
+
+        // Shows or hides MO2's filter list through its own button, and answers with
+        // how it was set before.
+        static async Task<bool> OpenCategories(Window window, bool open)
+        {
+            var toggle = window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+                .FirstOrDefault(x => x.Name == "ModsDisplayCategoriesButton");
+            var was = toggle?.IsChecked == true;
+            if (toggle is not null && was != open) {
+                toggle.IsChecked = open;
+                await Task.Delay(400);
+                window.UpdateLayout();
+            }
+            return was;
+        }
 
         // Drawn, not merely built. A collapsed control is still a visual child, so
         // looking it up by name alone passed for a category filter that was hidden at

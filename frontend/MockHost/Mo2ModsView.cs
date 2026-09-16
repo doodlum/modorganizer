@@ -316,9 +316,14 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // The shared chrome gives this page the same separator and animated
         // compaction as the others. Its action row holds the column chooser alone
         // now that the toolbar beside it is gone.
-        var modColumns = Mo2TableRow.ColumnsButton(Mo2ModRow.OptionalColumns, Mo2ModRow.HiddenColumns, columns, Mo2ModColumnPreference.Save);
+        // No column chooser. MO2 offers one on exactly one list — its downloads
+        // header, which is the only view that sets Qt::CustomContextMenu on its
+        // header (downloadlistview.cpp) — and its mod list has none at all: the
+        // columns it starts with are set in code and then remembered from the
+        // header's saved geometry. What columns this list draws still follows the
+        // width it is given, as MO2's do.
         Mo2ModColumnPreference.Load();
-        Mo2PanelChrome.Apply(this, (Panel)header.Parent!, header, modColumns);
+        Mo2PanelChrome.Apply(this, (Panel)header.Parent!, header);
         // The native table is pushed 8px below its own headings, which it no longer
         // draws — the column headings above it are this page's. Plugins has none, and
         // the two tables' first rows sat 8px apart because of it.
@@ -430,8 +435,14 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // the grouping box and the filter field.
         var filterBar = new Grid { Name = "ModsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
             Margin = new Thickness(0,6,0,0) };
+        // Off to begin with, because MO2's is. Read off mainwindow.ui alone this
+        // looks the other way round — the .ui declares categoriesGroup visible — but
+        // MO2 overrides that on every start: restoreVisibility(ui->categoriesGroup,
+        // false) in mainwindow.cpp, whose second argument is what a profile with
+        // nothing saved gets, and displayCategoriesBtn is then set to match it. The
+        // .ui says which widgets MO2 has; it does not say how MO2 starts them.
         categoriesToggle = Mo2QtWidgets.Toggle("ModsDisplayCategoriesButton", Mo2QtWidgets.DisplayCategoriesTip,
-            "mdi-filter-variant", true, on => { if (categoriesRef is not null) categoriesRef.IsVisible = on && Bounds.Width >= 420; });
+            "mdi-filter-variant", false, on => { if (categoriesRef is not null) categoriesRef.IsVisible = on && Bounds.Width >= 420; });
         filterBar.Children.Add(categoriesToggle);
         var filterLabel = Mo2QtWidgets.Caption("ModsFilterLabel", Mo2QtWidgets.FilterLabel);
         filterLabel.Margin = new Thickness(6,0,4,0);
@@ -581,7 +592,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // which starved the background work that builds the rows, so the lists drew
         // two mods and no plugins at all.
         var paneWidth = double.NaN;
-        var toggleWas = true;
+        var toggleWas = false;
         // Whether the filter list should be beside the list right now: its button
         // says whether it is wanted, and the pane has to be wide enough to hold it.
         bool WantsCategories() => categoriesToggle.IsChecked == true && Bounds.Width >= 420;

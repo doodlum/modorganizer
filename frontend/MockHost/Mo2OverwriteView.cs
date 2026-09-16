@@ -80,7 +80,7 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
         // Search beneath the header behind a magnifier, and a way to hide a column,
         // as the other two folder pages have.
         Mo2PanelChrome.Apply(this, root, header,
-            [Mo2PanelChrome.SearchAction(filter, "Search generated files"), .. actions, _columns.Action, refresh]);
+            [Mo2PanelChrome.SearchAction(filter, "Search generated files"), .. actions, refresh]);
         _search.TextChanged += (_,_) => Render();
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;

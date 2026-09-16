@@ -162,10 +162,9 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         }
         tab.AttachedToVisualTree += (_, _) => RefreshCount();
         tab.LayoutUpdated += (_, _) => RefreshCount();
-        // Same as Mods: the column chooser alone on the action row, and no toolbar
-        // beside it.
-        var pluginColumns = Mo2TableRow.ColumnsButton(Mo2PluginRow.OptionalColumns, Mo2PluginRow.HiddenColumns, headings);
-        Mo2PanelChrome.ApplyDocked(this, layout, header, pluginColumns);
+        // Same as Mods: nothing on the action row. MO2's espList header offers no
+        // column menu either — only its downloads list does.
+        Mo2PanelChrome.ApplyDocked(this, layout, header);
         Mo2PanelChrome.Apply(this, layout, header);
         this.WhenActivated(disposables => {
             ViewModel!.Adapter.ViewHierarchical.Value = false;

@@ -60,8 +60,7 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         // three actions it does offer are on the menu it builds for a save row:
         // details, fixing the mods a save wants, and deleting it. They were drawn
         // here as well; the row menu is where MO2 has them.
-        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search saves"),
-            _columns.Action);
+        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search saves"));
         _table.Classes.Add("MainListsStyling");
         _search.TextChanged += (_,_) => Render();
         _table.DoubleTapped += async (_,_) => await RunAction("details");

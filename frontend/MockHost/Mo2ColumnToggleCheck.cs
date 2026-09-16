@@ -18,25 +18,20 @@ internal static class Mo2ColumnToggleCheck
         host.Content = panel;
         for (var attempt = 0; attempt < 40; attempt++) { await Task.Delay(60); window.UpdateLayout(); }
         try {
-            // MO2 puts its own column chooser on the downloads header alone
-            // (DownloadListView::onHeaderCustomContextMenu), which is where this
-            // frontend puts that one. The chooser on these pages is the frontend's
-            // own, for the columns its folder pages carry and MO2's tabs do not, and
-            // it belongs in the page's own action row with the rest of them.
+            // MO2 offers a column chooser on exactly one list. Only
+            // DownloadListView sets Qt::CustomContextMenu on its header, and only its
+            // menu lists the columns (DownloadListView::onHeaderCustomContextMenu);
+            // the mod, plugin, data, archive and save lists have nothing a user can
+            // press. So Archives draws none either.
             //
-            // Two earlier versions of this were both wrong about where to look. It
-            // first wanted the button on the header line, and failed from the day the
-            // tab toolbars went; it was then changed to require the page not to draw
-            // one at all, which was true only because the page could not draw any of
-            // its actions — a bug, not a decision. It is in the row now, with a press
-            // on it, so neither mistake can be made again quietly.
-            var action = panel.GetVisualDescendants().OfType<Button>().FirstOrDefault(x => x.Name == "ColumnToggleButton")
-                ?? throw new Exception("Archives has no column chooser in its action row");
-            if (panel.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelActionRow") is not { } row ||
-                !row.Children.Contains(action))
-                throw new Exception("the column chooser is not in the page's own action row");
-            if (!action.IsEffectivelyVisible || action.Bounds.Width <= 0) throw new Exception("the column chooser is not drawn");
-            if (action.Flyout is null) throw new Exception("Column toggle has no menu");
+            // Three versions of this were wrong about where to look, in both
+            // directions: it wanted a button on the header line, then required the
+            // page to draw none — which was true then only because the page could
+            // draw no actions at all, a bug rather than a decision — then required
+            // one in the action row, which is what MO2 has not got. Read against
+            // MO2's source rather than against what the page happened to draw.
+            if (panel.GetVisualDescendants().OfType<Button>().Any(x => x.Name == "ColumnToggleButton"))
+                throw new Exception("Archives draws a column chooser, which MO2 offers on its downloads list alone");
 
             // The toggle is exercised directly: it owns the hidden set, and the panel
             // re-applies it to every freshly built source.
@@ -87,8 +82,8 @@ internal static class Mo2ColumnToggleCheck
             if (restored.Count != 3) throw new Exception("Reset did not restore every column");
             if (toggle.Hidden.Count != 0) throw new Exception("Reset left hidden columns behind");
 
-            Console.WriteLine("PASS column toggle: Archives draws its chooser in its own action row carrying its menu, " +
-                "hiding survives a source rebuild and a reload, " +
+            Console.WriteLine("PASS column toggle: Archives draws no chooser, as MO2 offers one on its downloads list alone; " +
+                "the machinery behind the one MO2 does have hides a column that survives a source rebuild and a reload, " +
                 "the last visible column is protected, and reset restores all three columns");
         } finally {
             window.Close();

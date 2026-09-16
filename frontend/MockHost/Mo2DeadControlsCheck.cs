@@ -136,6 +136,27 @@ internal static class Mo2DeadControlsCheck
                 var fault = $"{name}: {container.Name ?? container.GetType().Name} is drawn holding nothing";
                 if (!faults.Contains(fault)) faults.Add(fault);
             }
+            // A button that carries a menu has to open it when it is pressed. Every
+            // check that drives one of these opens the flyout itself — ShowAt, or
+            // RaiseEvent over the Click event — and neither goes through the path a
+            // press takes, so a button whose menu never opens for a user passed all
+            // of them. Invoked here through Button.OnClick, which is what a real
+            // press calls.
+            foreach (var button in Drawn(window, open_menus).OfType<Button>()
+                         .Where(x => x.Flyout is not null && x.Name is { Length: > 0 })
+                         .GroupBy(x => x.Name!).Select(x => x.First())) {
+                var flyout = button.Flyout!;
+                if (flyout.IsOpen) flyout.Hide();
+                await Task.Delay(100);
+                Click(button);
+                await Task.Delay(400);
+                var opened = flyout.IsOpen;
+                if (opened) { flyout.Hide(); await Task.Delay(200); }
+                if (!opened) {
+                    var fault = $"{name}: {button.Name} carries a menu that does not open when it is pressed";
+                    if (!faults.Contains(fault)) faults.Add(fault);
+                }
+            }
             foreach (var flyout in open_menus) flyout.Hide();
             await Task.Delay(200);
         }
@@ -158,6 +179,13 @@ internal static class Mo2DeadControlsCheck
                 .Concat(open.SelectMany(flyout => flyout.Items.OfType<Control>()))
                 .Where(x => x.IsEffectivelyVisible)
                 .ToArray();
+
+        // The path a press takes. RaiseEvent over the Click event does not: it
+        // raises the event without calling the method that opens the flyout, which
+        // is why every check that used it passed over this.
+        static void Click(Button button) =>
+            typeof(Button).GetMethod("OnClick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.Invoke(button, null);
 
         static string Describe(Control control) =>
             control is ContentControl { Content: string text } && text.Length > 0

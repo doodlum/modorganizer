@@ -25,11 +25,14 @@ internal static class Mo2ExtraButtonsCheck
     // widget on the tab — its list headers, its row menus, its own dialogs — or a
     // part of this frontend's own chrome that a page cannot do without.
     private static readonly Dictionary<string, string> Own = new() {
-        // MO2 chooses a list's columns by right-clicking its header. This frontend
-        // puts that on a button beside the list, which is the same chooser in a
-        // place a touch screen can reach.
-        ["ColumnsButton"] = "MO2's own column chooser, which MO2 opens from the list header",
-        ["ColumnToggleButton"] = "the same chooser on the file pages",
+        // There is no column chooser here. The entry that used to sit above said MO2
+        // opens one from any list header; it does not. Only DownloadListView sets
+        // Qt::CustomContextMenu on its header, and only its menu lists the columns —
+        // MO2's mod and plugin lists start from defaults set in code and are
+        // remembered from the header's saved geometry, with nothing for a user to
+        // press. The five buttons that stood for a chooser MO2 has not got are gone;
+        // the downloads header's own menu, which is MO2's, stays.
+        //
         // MO2's tabs each show their whole list; the file pages here are one panel
         // that navigates, so they need a way back up and a way to search in place.
         ["SearchToggleButton"] = "shows the page's filter row, which MO2 draws permanently under its list",
