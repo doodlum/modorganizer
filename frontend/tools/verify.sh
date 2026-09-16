@@ -34,7 +34,13 @@ mkdir -p "$out"
 PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER "
 # The checks that do not register a turn, so the screenshot path would shut them
 # down mid-run. They are given no screenshot and are ended by the timeout instead.
-UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS PLUGIN_ROW SORTED_ROOTS_UI "
+#
+# DEAD_CONTROLS is here for the other reason a screenshot is unwanted: it walks
+# every page, and the gate that guards the screenshot waits thirty seconds for both
+# live tables to settle on the page it happens to be on. That gate is right to
+# report an untrustworthy screenshot, but there is no screenshot worth having from
+# a check whose answer is a sentence.
+UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS PLUGIN_ROW SORTED_ROOTS_UI DEAD_CONTROLS FOLDER_PAGES "
 
 layout_source="$frontend_root/artifacts/verify-paired-layout.json"
 status=0

@@ -41,16 +41,13 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         DockPanel.SetDock(detailScroll, Dock.Bottom); layout.Children.Add(detailScroll);
         DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
         var toolbar = Mo2ListToolbar.Create("PluginsToolbar");
-        // An icon like every other header action. As a labelled button it was the one
-        // control wide enough to cost this page its title: the actions could not fit
-        // beside it, so the header gave way at ordinary panel widths.
-        var sort = Mo2TableRow.IconButton("mdi-sort-alphabetical-variant", "Sort with LOOT…",
-            async () => { if (ViewModel?.LiveProfile is { } profile) await profile.SortPlugins(profile.CurrentTarget); });
-        sort.Name = "SortPluginsWithLoot"; sort.IsEnabled = false;
-        ToolTip.SetTip(sort, "Sort plugins using MO2’s original LOOT workflow");
-        ToolTip.SetShowOnDisabled(sort, true);
-
-        var primaryActions = new List<Control> { sort };
+        // This header used to carry a LOOT sort of its own beside the overflow. MO2
+        // has one sortButton and this page draws it — the labelled Sort in the row
+        // of MO2's own widgets below — and the two called the same method, were
+        // greyed by the same line, and explained themselves with the same tooltip.
+        // One action, drawn twice, on a header line that had to give up the page
+        // title to fit its actions.
+        var primaryActions = new List<Control>();
         var history = Mo2ModRow.IconButton("mdi-dots-vertical", "Plugin actions", () => { });
         history.Name = "PluginsOverflowButton";
         var historyMenu = new MenuFlyout();
@@ -233,9 +230,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             }
             void UpdateConnection() {
                 var connected = profile.ProfilePath.Length > 0;
-                sort.IsEnabled = profile.CanChangeOriginalUi && profile.CanSortPlugins;
-                ToolTip.SetTip(sort, profile.CanSortPlugins ? "Sort plugins using MO2’s original LOOT workflow" : profile.SortPluginsUnavailableReason);
-                qtSort.IsEnabled = sort.IsEnabled;
+                qtSort.IsEnabled = profile.CanChangeOriginalUi && profile.CanSortPlugins;
                 ToolTip.SetTip(qtSort, profile.CanSortPlugins ? Mo2QtWidgets.SortTip : profile.SortPluginsUnavailableReason);
                 qtRestore.IsEnabled = qtSave.IsEnabled = profile.CanChangeOriginalUi;
                 editor.IsVisible = connected;

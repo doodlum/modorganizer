@@ -501,6 +501,14 @@ public partial class MockApp : Application
                         finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
                 }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DEAD_CONTROLS") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2DeadControlsCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL dead controls: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    }, TimeSpan.FromSeconds(2));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_ACTIONS") == "1") {
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {

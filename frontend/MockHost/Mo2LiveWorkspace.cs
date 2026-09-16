@@ -337,6 +337,30 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     // Diagnostics need a window wide enough for the responsive columns to appear;
     // MO2_WINDOW_SIZE=WxH overrides the normal launch size.
+    // Takes named entries out of the menus the top bar's buttons carry, and then
+    // tidies the rules between them: the original markup writes a separator as a
+    // MenuItem headed "-", so removing the entries around one leaves a rule at the
+    // top of a menu, at the bottom of it, or two in a row.
+    // The two buttons in the top bar that carry a menu. Named rather than searched
+    // for: this runs while the window is being built, where nothing is in a visual
+    // tree yet and a walk of one finds nothing at all.
+    private static readonly string[] MenuHosts = ["HelpButton", "AvatarMenuItemButton"];
+
+    private static void RemoveMenuEntries(Control topBar, params string[] names)
+    {
+        foreach (var flyout in MenuHosts
+                     .Select(host => topBar.FindControl<NexusMods.App.UI.Controls.StandardButton>(host)?.Flyout)
+                     .OfType<MenuFlyout>()) {
+            foreach (var entry in flyout.Items.OfType<MenuItem>().Where(x => x.Name is { } name && names.Contains(name)).ToArray())
+                flyout.Items.Remove(entry);
+            bool Rule(object? item) => item is MenuItem { Header: "-" };
+            while (flyout.Items.Count > 0 && Rule(flyout.Items[0])) flyout.Items.RemoveAt(0);
+            while (flyout.Items.Count > 0 && Rule(flyout.Items[^1])) flyout.Items.RemoveAt(flyout.Items.Count - 1);
+            for (var at = flyout.Items.Count - 1; at > 0; at--)
+                if (Rule(flyout.Items[at]) && Rule(flyout.Items[at - 1])) flyout.Items.RemoveAt(at);
+        }
+    }
+
     private static (double Width, double Height) WindowSize()
     {
         var value = Environment.GetEnvironmentVariable("MO2_WINDOW_SIZE");
@@ -363,6 +387,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             topBar.FindControl<TextBlock>(name)!.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         topBar.FindControl<MenuItem>("ViewAppLogsMenuItem")!.Header = "View MO2 logs";
         topBar.FindControl<MenuItem>("OpenNexusModsAccountSettingsMenuItem")!.Header = "Connect MO2 instances…";
+        // The entries this frontend has nothing behind. They were bound to commands
+        // that answer "no" for good, so they were drawn greyed in the two top-bar
+        // menus on every run, for every user — a Nexus profile page, a Premium
+        // upsell, Nexus forums, a changelog for an application this is not, and a
+        // welcome message that does not exist. A greyed entry reads as "not now";
+        // these mean "never", and the difference is the whole of what a menu is for.
+        // Taken out rather than greyed, which is the rule MO2's own widgets are held
+        // to: a control that draws and does nothing is the fault, not the remedy.
+        RemoveMenuEntries(topBar, "ViewChangelogMenuItem", "OpenForumsMenuItem", "ShowWelcomeMessageMenuItem",
+            "OpenNexusModsProfileMenuItem", "OpenGetPremiumMenuItem");
         var presetMenu = new MenuFlyout();
         var preset = new MenuItem { Header = "Use MO2 panel layout" };
         var undoPreset = new MenuItem { Header = "Undo panel layout" };

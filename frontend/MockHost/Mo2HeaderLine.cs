@@ -4,17 +4,21 @@ using Avalonia.VisualTree;
 
 namespace Mo2.Frontend;
 
-// The panel that lays out a page header's title and its actions on one line,
-// and decides what gives way as the panel narrows:
+// The panel that lays out a page header on one line and decides what gives way as
+// the panel narrows:
 //
-//   1. title, description and pictogram beside the actions;
+//   1. title, description and pictogram;
 //   2. the words stand down and the pictogram alone marks the page;
-//   3. the pictogram goes too and the actions take the whole line, still one row;
-//   4. only then do the actions wrap onto a second row.
+//   3. the pictogram goes too and the line is given up.
 //
-// The order matters: squeezing the actions into whatever is left beside the title
-// turned them into a vertical strip of buttons one per row, next to a title nobody
-// needed at that width.
+// It used to lay the header out beside the page's actions, and to decide the order
+// those two gave way in. There are no actions on this line any more — MO2 puts no
+// toolbar on a tab, so a page's actions go in a row of their own under the
+// separator, and the group kept here for them had been empty on every page for
+// long enough that two checks asserted its emptiness and a third measured how its
+// contents wrapped, which nothing could ever answer. An empty box measured and
+// arranged on every layout pass of every page is a toolbar that no longer has a
+// use.
 //
 // This is a layout container rather than a Grid with a LayoutUpdated handler
 // adjusting widths afterwards. That handler wrote the decision back into the very
@@ -29,18 +33,17 @@ internal sealed class Mo2HeaderLine : Panel
     internal enum Showing { Words, Pictogram, Nothing }
 
     private readonly Control _header;
-    private readonly Control _actions;
     private Showing _shown = Showing.Words;
     private double _plateGap;
     private Control? _words;
     private Control? _plate;
     private TextBlock? _title;
 
-    internal Mo2HeaderLine(Control header, Control actions)
+    internal Mo2HeaderLine(Control header)
     {
         Name = "PanelHeaderRow";
-        _header = header; _actions = actions;
-        Children.Add(header); Children.Add(actions);
+        _header = header;
+        Children.Add(header);
     }
 
     // How much of the header is on the line at the current width. Read by the
@@ -65,11 +68,7 @@ internal sealed class Mo2HeaderLine : Panel
     {
         var unlimited = new Size(double.PositiveInfinity, availableSize.Height);
 
-        _actions.Measure(unlimited);
-        var natural = _actions.DesiredSize.Width;
-
-        var width = double.IsInfinity(availableSize.Width)
-            ? natural + Mo2PanelChrome.TitleFloor : availableSize.Width;
+        var width = double.IsInfinity(availableSize.Width) ? Mo2PanelChrome.TitleFloor : availableSize.Width;
         var room = width;
 
         FindParts();
@@ -79,57 +78,40 @@ internal sealed class Mo2HeaderLine : Panel
             + _plate.Margin.Left + _plate.Margin.Right;
         // The pictogram sits beside the words, so the room the title needs includes it.
         _plateGap = plateWidth;
-        // The title's own width on one line, not a fixed floor. A page whose actions
-        // grow — Mods and Plugins do, the moment rows are selected — was left with
-        // just over the floor and kept its words, wrapping "My Mods" into a column
-        // two letters wide above five lines of description. Below what the title
-        // needs to read as a title, the words stand down instead.
+        // The title's own width on one line, not a fixed floor. A page whose title
+        // is long was left with just over the floor and kept its words, wrapping
+        // "My Mods" into a column two letters wide above five lines of description.
+        // Below what the title needs to read as a title, the words stand down.
         if (_title is not null) _title.Measure(unlimited);
         var titleFloor = Math.Max(Mo2PanelChrome.TitleFloor,
             _title is null ? 0 : _title.DesiredSize.Width + _plateGap);
-        _shown = natural <= room - titleFloor ? Showing.Words
-            : plateWidth > 0 && natural <= room - plateWidth ? Showing.Pictogram
+        _shown = room >= titleFloor ? Showing.Words
+            : plateWidth > 0 && room >= plateWidth ? Showing.Pictogram
             : Showing.Nothing;
         // The words are taken out of the layout rather than squeezed: a pictogram
         // beside a title clipped to nothing reads as a bug, not as a smaller header.
         if (_words is not null && _words.IsVisible != (_shown == Showing.Words))
             _words.IsVisible = _shown == Showing.Words;
 
-        // Past that, the actions take the line; past that again they wrap within it.
-        if (natural > room) _actions.Measure(new Size(room, availableSize.Height));
-        var actionsWidth = Math.Min(_actions.DesiredSize.Width, room);
-
-        // The pictogram keeps its own width even when the actions have taken the rest,
-        // so the stage that exists to show it can actually show it.
-        var forHeader = Math.Max(_shown == Showing.Pictogram ? plateWidth : 0, room - actionsWidth);
+        // The pictogram keeps its own width at the stage that exists to show it.
+        var forHeader = Math.Max(_shown == Showing.Pictogram ? plateWidth : 0, room);
         _header.Measure(new Size(Math.Max(0, forHeader), availableSize.Height));
-        var height = Math.Max(_actions.DesiredSize.Height,
-            _shown == Showing.Nothing ? 0 : _header.DesiredSize.Height);
+        var height = _shown == Showing.Nothing ? 0 : _header.DesiredSize.Height;
         return new Size(double.IsInfinity(availableSize.Width) ? width : availableSize.Width, height);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
     {
         var room = finalSize.Width;
-        // The actions give the pictogram its width back rather than taking the line
-        // and leaving it nothing; that stage exists to keep the pictogram on screen.
-        var plateWidth = _plate is null || _shown != Showing.Pictogram ? 0
-            : (double.IsNaN(_plate.Width) ? _plate.DesiredSize.Width : _plate.Width) + _plate.Margin.Left + _plate.Margin.Right;
-        var actionsWidth = Math.Min(_actions.DesiredSize.Width, Math.Max(0, room - plateWidth));
-
-        // Everything on this line sits against its top edge, so the actions stay
-        // level with the title rather than centring against a header that is three
-        // lines tall.
-        // Clamped at zero. A Rect with a negative width normalises to a box that
-        // starts at minus that width, so a header asked for -28px was drawn 29px to
-        // the left of the line — the pictogram ended up outside the panel's padding
-        // rather than beside its actions.
-        var headerWidth = Math.Max(0, Math.Min(_header.DesiredSize.Width, room - actionsWidth));
+        // The header sits against the line's top edge, so it stays level with
+        // whatever is beside it rather than centring against a header three lines
+        // tall. Clamped at zero: a Rect with a negative width normalises to a box
+        // that starts at minus that width, so a header asked for -28px was drawn
+        // 29px to the left of the line, outside the panel's padding.
+        var headerWidth = Math.Max(0, Math.Min(_header.DesiredSize.Width, room));
         _header.Arrange(_shown == Showing.Nothing
             ? default
             : new Rect(0, 0, headerWidth, Math.Min(_header.DesiredSize.Height, finalSize.Height)));
-        _actions.Arrange(new Rect(room - actionsWidth, 0, actionsWidth,
-            Math.Min(_actions.DesiredSize.Height, finalSize.Height)));
         return finalSize;
     }
 }

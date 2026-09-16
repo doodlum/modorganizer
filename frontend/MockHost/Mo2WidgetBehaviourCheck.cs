@@ -40,11 +40,20 @@ internal static class Mo2WidgetBehaviourCheck
         // --- The mod pane ---
         await Navigate(menu.LeftMenuItemLoadout);
         await Settle();
-        var mods = Find<Mo2ModsView>();
+        var mods = For<Mo2ModsView>(live.ModsPage);
         if (mods is null) faults.Add("My Mods never drew");
         else {
             var adapter = (Mo2ModsAdapter)mods.ViewModel!.Adapter;
+            // Wait for MO2's mods to arrive before working the widgets over them.
+            // Every count below is taken against this one, and a page read before
+            // its rows had come reported "0 of 0" for the filter, "changed the list
+            // by 0 rows" for the separators box and "left the list in the same
+            // order" for the grouping — five faults in a row, none of them about
+            // the widgets, on a profile that had simply grown past what a fixed
+            // 800ms pause covered.
+            await Until(() => adapter.VisibleRowCount > 0, seconds: 30);
             var all = adapter.VisibleRowCount;
+            if (all == 0) faults.Add("My Mods drew no rows to work its widgets over");
 
             // The filter field under the list narrows it, and clearing it puts the
             // rest back.
@@ -263,8 +272,16 @@ internal static class Mo2WidgetBehaviourCheck
                 var items = options.Items.OfType<MenuItem>().Select(x => x.Header as string).ToArray();
                 foreach (var wanted in new[] { "Refresh", "Enable all", "Disable all" })
                     if (!items.Contains(wanted)) faults.Add($"the list options menu has no {wanted}");
-                if (items.Length <= 3) faults.Add("the list options menu offers no columns to hide");
-                else worked.Add($"the list options menu offers {items.Length} entries");
+                // And nothing about columns. This used to require a tick per column
+                // here as well as the chooser on the page's header line — the same
+                // columns, the same hidden set, the same preference file — where
+                // MO2's own listOptionsBtn carries the list's global actions and no
+                // columns at all.
+                if (Named<Button>(mods, "ColumnsButton") is null)
+                    faults.Add("My Mods has no column chooser on its header line");
+                else if (items.Any(x => Mo2ModRow.OptionalColumns.Any(column => column.Name == x)))
+                    faults.Add("the list options menu offers columns the header's chooser already offers");
+                else worked.Add($"the list options menu offers MO2's {items.Length} list actions and leaves columns to the one chooser");
             } else faults.Add("My Mods has no list options menu");
 
             // And the open-folders menu, over folders that are actually there.
@@ -404,8 +421,9 @@ internal static class Mo2WidgetBehaviourCheck
 
         // --- Plugins ---
         await Navigate(menu.LeftMenuItemExternalChanges!);
+        await Until(() => live.Profile.Order.Plugins.Count > 0, seconds: 30);
         await Settle();
-        if (Find<Mo2PluginsView>() is { } plugins) {
+        if (For<Mo2PluginsView>(live.PluginsPage) is { } plugins) {
             if (Named<TextBox>(plugins, "PluginsQtFilter") is { } filter) {
                 // The rows the table is showing, not the adapter's source count: the
                 // source holds every plugin whether the filter passes it or not.
@@ -475,7 +493,13 @@ internal static class Mo2WidgetBehaviourCheck
         await Settle();
         if (Find<Mo2DataView>() is { } data) {
             var rows = () => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()?.Rows?.Count ?? 0;
+            // Data is read from MO2 when the page opens, so the tree arrives after
+            // the page does. Read too early, every count below is taken against
+            // nothing: the Archives box reported putting 52 rows back into a tree
+            // that had had 0.
+            await Until(() => rows() > 0, seconds: 30);
             var before = rows();
+            if (before == 0) faults.Add("Data drew no rows to work its boxes over");
             if (Named<TextBox>(data, "DataQtFilter") is { } filter) {
                 // Text off a row the tree is showing, not "zzzzzz": a field that emptied
                 // the tree whatever was typed passed that. The page keeps a row whose
@@ -518,10 +542,20 @@ internal static class Mo2WidgetBehaviourCheck
                     }
                 var here = rows();
                 var served = Served();
-                archives.IsChecked = false; await Settle();
+                archives.IsChecked = false;
+                // Data reads itself again when a box is ticked, so the tree is
+                // rebuilt rather than refiltered. Waited for rather than read once:
+                // a fixed pause was long enough while this instance served nothing
+                // out of an archive and not once it did, which is how a run that had
+                // reported the box unexercised for weeks turned into "reticking
+                // Archives did not put Data back".
+                await Until(() => rows() != here || served == 0, 15);
+                await Settle();
                 var without = rows();
-                archives.IsChecked = true; await Settle();
-                if (rows() != here) faults.Add($"reticking Archives did not put {reached} back");
+                archives.IsChecked = true;
+                await Until(() => rows() == here, 15);
+                await Settle();
+                if (rows() != here) faults.Add($"reticking Archives left {rows()} of {reached}'s {here} row(s)");
                 else if (served == 0)
                     worked.Add($"the Archives box found no archive-served file under Data to take away, so it was not exercised");
                 else if (without != here - served)
@@ -877,6 +911,18 @@ internal static class Mo2WidgetBehaviourCheck
         else Console.WriteLine($"PASS MO2 widget behaviour: all {workable.Length - undrivable.Count} of MO2's " +
             $"{workable.Length} workable widgets were worked — " + string.Join(", ", worked) +
             ". Not worked, and why: " + string.Join("; ", undrivable.Select(x => $"{x.Key} {x.Value}")));
+
+        // The view built for a page, not whichever view of that type turns up first.
+        // The workspace keeps the view a panel was showing before beside the one it
+        // is showing now, so a window with two panels holds more than one Mo2ModsView
+        // — and the retained one has an adapter with nothing in it. Picked up by a
+        // walk of the window, it reported My Mods as a page with no rows and every
+        // widget over it as doing nothing: "0 of 0 rows", "changed the list by 0
+        // rows", "left the list in the same order".
+        T? For<T>(object? page) where T : Control =>
+            window.GetVisualDescendants().OfType<T>()
+                .FirstOrDefault(x => page is not null && ReferenceEquals(x.DataContext, page))
+            ?? Find<T>();
 
         T? Find<T>() where T : Control =>
             window.GetVisualDescendants().OfType<T>().FirstOrDefault(x => x.IsEffectivelyVisible)

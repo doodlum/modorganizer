@@ -429,19 +429,13 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 };
                 listOptionsMenu.Items.Add(item);
             }
-            listOptionsMenu.Items.Add(new Separator());
-            foreach (var (column, label) in Mo2ModRow.OptionalColumns) {
-                var target = column;
-                var item = new MenuItem { Header = label, StaysOpenOnClick = true,
-                    Icon = new CheckBox { IsChecked = !Mo2ModRow.HiddenColumns.Contains(column), IsHitTestVisible = false } };
-                item.Click += (_, _) => {
-                    if (!Mo2ModRow.HiddenColumns.Remove(target)) Mo2ModRow.HiddenColumns.Add(target);
-                    ((CheckBox)item.Icon!).IsChecked = !Mo2ModRow.HiddenColumns.Contains(target);
-                    Mo2ModColumnPreference.Save();
-                    columns.InvalidateMeasure(); columns.InvalidateArrange();
-                };
-                listOptionsMenu.Items.Add(item);
-            }
+            // This menu used to end in a tick per optional column. The page already
+            // carries a column chooser on its header line, over the same list of
+            // columns and the same set of hidden ones, writing the same preference
+            // file — one chooser for one list, drawn twice, and MO2 puts none here
+            // at all: its listOptionsBtn carries the mod list's global actions
+            // (ModListGlobalContextMenu) and its columns are chosen from the list's
+            // own header, as this frontend's Downloads does.
         };
         barActions.Children.Add(listOptions);
         // MO2's openFolderMenu, over the folders this frontend knows the way to.

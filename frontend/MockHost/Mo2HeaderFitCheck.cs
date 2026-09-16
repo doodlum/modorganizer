@@ -129,22 +129,14 @@ internal static class Mo2HeaderFitCheck
                         faults.Add($"{name} {width}x{height}@{scrolled:F0}: description is {description.Bounds.Height:F0}px for " +
                             $"{description.DesiredSize.Height:F0}px of text");
 
-                    // The actions never become a vertical strip. They give way in
-                    // order: title and actions side by side, then the title goes and
-                    // the actions take the whole line, and only then do they wrap onto
-                    // a second row. Capping them against the title from the start
-                    // stacked them one per row instead.
-                    var group = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
-                    var shown = group?.Children.Where(x => x.IsVisible && x.Bounds.Height > 0).ToArray() ?? [];
-                    if (shown.Length > 1) {
-                        var rows = shown.Select(x => Math.Round(x.Bounds.Y)).Distinct().Count();
-                        if (rows > 2)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions took {rows} rows");
-                        else if ((double)shown.Length / rows < 2)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions stacked {shown.Length} over {rows} rows");
-                        if (rows > 1 && stage == Mo2HeaderLine.Showing.Words)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: actions wrapped while the title was still shown");
-                    }
+                    // This used to measure how the header line's actions wrapped as
+                    // the panel narrowed — how many rows they took, and whether they
+                    // wrapped while the title was still shown. There have been no
+                    // actions on that line since a page's actions moved into a row
+                    // of their own, so every one of those comparisons was made
+                    // against an empty group and none of them could ever fail.
+                    // MO2_VERIFY_PANEL_CHROME is what holds the line to carrying the
+                    // header alone.
 
                     // Once the description is gone the header is one line, and the
                     // pictogram has to sit on it. While the description is still shown

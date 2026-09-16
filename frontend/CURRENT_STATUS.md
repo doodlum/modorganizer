@@ -3090,3 +3090,154 @@ it.
 
 Three consecutive runs pass, and the profile still carries the plugin enabled and
 both mods enabled afterwards.
+
+## Controls that were drawn and could never be used
+
+A frontend built on another application's views inherits that application's
+controls. What could be re-pointed was; what could not was left where it stood,
+still drawn. Nothing looked for that, so it was found by looking:
+`MO2_VERIFY_DEAD_CONTROLS` walks the window and every page, asks every command a
+**drawn** control is bound to whether it can run, and fails on one that cannot
+unless it is named in the check with the condition that would let it.
+
+Two things that first run got wrong, and both mattered:
+
+* **In the tree is not drawn.** The first version judged everything under the
+  window and reported the account role badges — Supporter, Free — which the theme
+  keeps built and never shows. Judging only what is effectively visible dropped
+  them, which is right: nobody can read them either way.
+* **A menu's entries are in no tree until it opens.** The entries this check was
+  written for are in the top bar's two menus, and a walk of the window found
+  every control except them. They are opened, judged and closed again.
+
+### What it found
+
+Five entries, drawn greyed in the top bar's menus on every run for every user:
+
+| Entry | Bound to |
+| --- | --- |
+| Nexus profile | a command constructed disabled |
+| Get Premium | a command constructed disabled |
+| Nexus forums | a command constructed disabled |
+| Changelog | a command constructed disabled |
+| Welcome message | a command constructed disabled |
+
+A greyed entry reads as "not now". These meant "never". They are taken out, along
+with the rules left stranded between them, rather than greyed — which is the rule
+MO2's own widgets are already held to: a control that draws and does nothing is
+the fault, not the remedy. What remains disabled is named with what would enable
+it: sign-out needs an account, the two history arrows need somewhere to go.
+
+**Negative control.** One entry was put back and the check named it —
+`ViewChangelogMenuItem is drawn bound to a command that cannot run` — and with the
+removal restored byte for byte it passes over all 262 commanded controls again.
+
+## One action, drawn twice
+
+Three controls were doing a job another control on the same page already did.
+
+**Plugins had two LOOT sorts.** An icon on the header line and MO2's own labelled
+Sort in the row of MO2 widgets under it called the same method, were greyed by the
+same line, and explained themselves with the same tooltip. MO2 has one
+`sortButton`. The header's copy is gone — and that header is the one that had to
+give up its page title to fit its actions.
+
+**My Mods had two column choosers.** The chooser on its header line and a tick per
+optional column at the foot of MO2's list-options menu ran over the same columns,
+the same hidden set and the same preference file. MO2 puts none there at all: its
+`listOptionsBtn` carries the mod list's global actions and its columns are chosen
+from the list's own header, which is what this frontend's Downloads does. The
+menu's copy is gone, and `MO2_VERIFY_WIDGET_BEHAVIOUR` now fails if it comes back
+— it used to *require* it.
+
+## The toolbar that had been empty for months
+
+Every page's header line carried a `PanelHeaderActions` group, built, measured and
+arranged on every layout pass of all fifteen pages. It had held nothing since a
+page's actions moved into a row of their own under the separator — MO2 puts no
+toolbar on a tab — and three checks had grown around that emptiness:
+
+* `MO2_VERIFY_PANEL_CHROME` threw if it held anything;
+* `MO2_VERIFY_SHARED_LISTS` faulted if it held anything;
+* `MO2_VERIFY_HEADER_FIT` measured how its contents wrapped across 13 window
+  sizes — over an empty group, so not one of those comparisons could ever fail;
+* and `MO2_VERIFY_PANEL_CHROME` checked the size of the buttons in it, and that no
+  text box had got onto that line, against the same nothing.
+
+A box that must exist and must be empty is a box with no use. It is gone, and
+`Mo2HeaderLine` lays out the header alone — which is what it was doing. The
+checks now assert what the group stood for rather than its emptiness: the header
+line carries the header and nothing beside it, and the two assertions that were
+being made against an empty group are made against `PanelActionRow`, where a
+page's actions actually are.
+
+## What this turn could not establish about MO2_VERIFY_WIDGET_BEHAVIOUR
+
+That check failed repeatedly while the cleanup above was being confirmed, and it
+is recorded here as it stands rather than rounded off.
+
+**It is not the cleanup.** The committed revision was built and run against the
+same host and failed too — differently, but failed. Two of the runs reported the
+mod list as empty (`0 of 0 rows` from every widget over it), and `MO2_VERIFY_DENSITY`
+at the committed revision reported `my-mods has no rows to measure` on the same
+host in the same state. MO2 itself answered a snapshot in 0.4s with 14 mods
+throughout, so the frontend was reading a host that was serving.
+
+**What was fixed, and each removed a class of false failure:**
+
+* The check read the mod list, the plugin list and the Data tree the frame after
+  navigating to them, with a fixed 800ms pause. On a profile large enough that
+  the rows had not arrived, that produced five faults in a row about widgets —
+  "the filter left 0 of 0 rows", "the separators box changed the list by 0 rows",
+  "the grouping left the list in the same order" — none of them about a widget.
+  Each section now waits for its rows and says so when there are none.
+* It found its Mods and Plugins views by walking the window for the first of that
+  type. The workspace keeps the view a panel was showing beside the one it is
+  showing now, so a two-panel window holds more than one `Mo2ModsView` and the
+  retained one has an empty adapter. Found by the page it belongs to now.
+* Its Archives box read the tree once after ticking. Data is re-read from MO2 when
+  a box is ticked, so the tree is rebuilt rather than refiltered — the single read
+  was long enough while the instance served nothing out of an archive, and not
+  once it did.
+
+**What remains, unfixed and named.** The check drives MO2 faster than MO2 answers.
+One run reported `MO2 offered no shortcut entry for NVSE — Asking MO2 to read its
+downloads again`: the profile's own status, quoted back, from an action issued
+while MO2 was still finishing the one before it. Gating every action on the
+profile being idle is a rework of a thousand-line check and was not attempted
+here. Its verdict is not evidence of anything on this host until that is done.
+
+**Host state.** Runs that fail part-way leave MO2 changed. `The Mod Configuration
+Menu` was left disabled by four separate runs and was re-enabled through MO2 each
+time; the profile carries it enabled, and all three `toolbar=` flags in
+`ModOrganizer.ini` are `false`, as they were. `MCM Author Examples` was put back
+to disabled — it was enabled earlier in this session to fix an unrelated check's
+precondition, which only needed the other mod, and enlarging the profile is what
+first pushed these waits over their budgets.
+
+**MO2 wedges under this load.** The bridge stopped answering twice, and the
+frontend's mod list came up empty on a host whose snapshot was healthy. Both
+cleared on restarting MO2. The IPC directory had 2,044 orphaned response files
+and 55 unconsumed requests — litter from runs killed part-way, which is what the
+runner does by design to the checks that cannot end themselves.
+
+### What the cleanup was confirmed against
+
+Fourteen checks, on the live host, after the removals:
+
+```
+DEAD_CONTROLS QT_WIDGETS QT_ACTIONS PRESET_FIT PAGE_AUDIT REACHABLE_ACTIONS
+HEADER_FIT PANEL_CHROME SHARED_LISTS FOLDER_PAGES COLUMN_TOGGLE DENSITY
+ROW_STYLE ROW_PADDING
+```
+
+All fourteen pass. Two of them — `ROW_STYLE` and `ROW_PADDING` — failed on the
+run where MO2 had wedged, both alongside `FAIL live gate` and with `ROW_PADDING`
+saying outright that neither table could be measured, and both pass on a restarted
+host. `ROW_PADDING` also failed once on a heading measured mid-layout and passed on
+the next run; that is a marginal reading rather than a result, and it is recorded
+as one.
+
+`QT_WIDGETS` still accounts for all 73 of MO2's widgets and `QT_ACTIONS` for all
+24 of its actions with the header-line group gone, so nothing MO2 draws was
+removed along with it.

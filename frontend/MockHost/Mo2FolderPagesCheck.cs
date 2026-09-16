@@ -96,9 +96,12 @@ internal static class Mo2FolderPagesCheck
                 // Checkboxes and other toggles carry a label by nature; what this is
                 // looking for is a plain command button sitting in the page body,
                 // which is the shape Overwrite used and no other page did.
+                // The exemption for the header line's own actions went with the group
+                // that held them: a page's actions have their own row under the
+                // separator now, and PanelActionRow is what they sit in.
                 var labelled = page.GetVisualDescendants().OfType<Button>()
                     .Where(x => x is not ToggleButton && x.Content is string text && text.Length > 0 &&
-                                x.GetVisualAncestors().OfType<Panel>().All(a => a.Name != "PanelHeaderActions")).ToArray();
+                                x.GetVisualAncestors().OfType<Panel>().All(a => a.Name != "PanelActionRow")).ToArray();
                 if (labelled.Length > 0)
                     faults.Add($"{name} still draws {labelled.Length} labelled buttons in its body: " +
                         string.Join(", ", labelled.Select(x => x.Content)));

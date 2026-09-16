@@ -82,32 +82,38 @@ internal static class Mo2PanelChromeCheck
                 // Mo2PanelChrome still takes each page's actions and detaching them is
                 // what stops the page drawing them a second time in a row of its own.
                 //
-                // This used to demand the group hold something, which was written when
-                // the toolbar was still drawn. It failed on the first panel it reached
-                // from that day on, and took the rest of the panels with it — the check
-                // was reporting the design it was written against, not the one the app
-                // has, which is the one thing a check must not do.
-                var actions = panel.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions")
-                    ?? throw new Exception(name + " has no actions group on its header line");
-                if (actions.Children.Count > 0)
-                    throw new Exception($"{name} draws {actions.Children.Count} action(s) on its header line, where MO2 puts no toolbar on a tab");
+                // Nothing beside the header on its line. This demanded the group hold
+                // something when the toolbar was still drawn, then that it hold
+                // nothing once the actions moved to a row of their own — a box that
+                // had to be there and had to be empty, which is a box with no use.
+                // The group is gone; what is asserted is what it stood for.
+                if (panel.GetVisualDescendants().OfType<Panel>().Any(x => x.Name == "PanelHeaderActions"))
+                    throw new Exception(name + " has grown back the header-line toolbar group");
+                var line = panel.GetVisualDescendants().OfType<Mo2HeaderLine>().FirstOrDefault()
+                    ?? throw new Exception(name + " has no header line");
+                if (line.GetVisualChildren().OfType<Control>().Count() != 1)
+                    throw new Exception($"{name} draws {line.GetVisualChildren().Count() - 1} thing(s) beside its header, where MO2 puts no toolbar on a tab");
                 if (!stack.Children.OfType<Panel>().Any(x => x.Name == "PanelHeaderRow"))
                     throw new Exception(name + " actions are not in the header row");
-                // Only icon actions belong on the header line. Search boxes and
-                // pickers live in the page's own filter row beneath the separator,
-                // which is what Mods and Plugins do and what Archives, Data, Logs and
-                // Saves did not — they carried a text box, and Logs two pickers too,
-                // which is why those four headers looked unlike the rest.
-                foreach (var stray in actions.Children.Where(x => x is TextBox or ComboBox))
-                    throw new Exception($"{name} has a {stray.GetType().Name} on its header line");
+                // Only icon actions belong in a page's action row. Search boxes and
+                // pickers live in the page's own filter row beneath it, which is what
+                // Mods and Plugins do and what Archives, Data, Logs and Saves did not
+                // — they carried a text box, and Logs two pickers too, which is why
+                // those four headers looked unlike the rest.
+                //
+                // Asked of the row the actions are actually in. Both of these used to
+                // read the header line's own group, which has held nothing since the
+                // actions moved off that line, so neither had anything to judge.
+                var row = stack.Children.OfType<Panel>().FirstOrDefault(x => x.Name == "PanelActionRow");
+                foreach (var stray in row?.Children.Where(x => x is TextBox or ComboBox) ?? [])
+                    throw new Exception($"{name} has a {stray.GetType().Name} in its action row");
 
-                // Every panel's header actions are the same size, so the row of
-                // buttons reads as one control group rather than a collection.
-                // Hidden actions have no size; only what is actually on the line has
-                // to match.
-                foreach (var button in actions.Children.OfType<Button>().Where(x => x.IsVisible)) {
+                // Every panel's actions are the same size, so the row reads as one
+                // control group rather than a collection. Hidden actions have no
+                // size; only what is actually drawn has to match.
+                foreach (var button in (row?.Children.OfType<Button>() ?? []).Where(x => x.IsVisible && x.Bounds.Width > 0)) {
                     if (Math.Abs(button.Bounds.Height - ActionSize) > .5 || Math.Abs(button.Bounds.Width - ActionSize) > .5)
-                        throw new Exception($"{name} header action is {button.Bounds.Width:F0}x{button.Bounds.Height:F0}, not {ActionSize}");
+                        throw new Exception($"{name} action {button.Name ?? button.GetType().Name} is {button.Bounds.Width:F0}x{button.Bounds.Height:F0}, not {ActionSize}");
                 }
                 for (var attempt = 0; attempt < 40 && header.GetVisualDescendants().OfType<Border>()
                          .All(x => Math.Abs(x.Width - Mo2PanelChrome.IconSize) > .5); attempt++) await Settle(window);

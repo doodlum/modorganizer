@@ -68,10 +68,12 @@ internal static class Mo2SharedListCheck
                 faults.Add($"{name} shows its table's own scrollbar ({viewer.VerticalScrollBarVisibility}) as well as the rail");
 
             // No toolbar. MO2 carries none on a tab, so a page that grows one back has
-            // drifted from what this frontend is replicating.
-            var line = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderActions");
-            var drawn = line is null ? 0 : line.Children.Count;
-            if (drawn > 0) faults.Add($"{name} draws a toolbar of {drawn} actions on its header line");
+            // drifted from what this frontend is replicating. The empty group that
+            // used to hold one is gone, so this asks the header line itself: the
+            // header, and nothing beside it.
+            var line = page.GetVisualDescendants().OfType<Mo2HeaderLine>().FirstOrDefault();
+            var beside = line is null ? 0 : line.GetVisualChildren().Count() - 1;
+            if (beside > 0) faults.Add($"{name} draws a toolbar of {beside} actions on its header line");
 
             described.Add($"{name}: rail {rail.RowDefinitions.Count} rows, " +
                 $"{page.GetVisualDescendants().OfType<Mo2ListScrollBar>().Count()} shared scrollbar, no toolbar");

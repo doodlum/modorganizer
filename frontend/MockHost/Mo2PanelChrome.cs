@@ -70,7 +70,7 @@ internal static class Mo2PanelChrome
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
         Handed.AddOrUpdate(view, actions);
-        stack.Children.Add(HeaderLine(header, actions));
+        stack.Children.Add(HeaderLine(header));
         stack.Children.Add(Separator());
         if (ActionRow(actions) is { } pageActions) stack.Children.Add(pageActions);
         Grid.SetRow(stack, row); Grid.SetColumn(stack, column); Grid.SetColumnSpan(stack, span);
@@ -106,7 +106,7 @@ internal static class Mo2PanelChrome
         header.Margin = new Thickness(0);
         var stack = new StackPanel { Name = "PanelHeaderStack", Spacing = 12 };
         Handed.AddOrUpdate(view, actions);
-        stack.Children.Add(HeaderLine(header, actions));
+        stack.Children.Add(HeaderLine(header));
         stack.Children.Add(Separator());
         if (ActionRow(actions) is { } pageActions) stack.Children.Add(pageActions);
         DockPanel.SetDock(stack, Dock.Top);
@@ -227,10 +227,14 @@ internal static class Mo2PanelChrome
         return row;
     }
 
-    private static Control HeaderLine(PageHeader header, Control[] actions)
+    // The header on its own. It used to be given a "PanelHeaderActions" group to sit
+    // beside, for the toolbar a page drew on this line; a page's actions have gone
+    // into a row of their own under the separator since — MO2 puts no toolbar on a
+    // tab — and that group has been empty on every page ever since. It was still
+    // built, measured and arranged fifteen times a layout pass, and the parameter
+    // holding the actions it was for went unread.
+    private static Control HeaderLine(PageHeader header)
     {
-        var group = new WrapPanel { Name = "PanelHeaderActions", Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Right };
         // Pinned left, because the floor below makes the header wider than the slot it
         // is given once only the pictogram is left, and Avalonia centres a control that
         // does not fit — which drew the pictogram 29px off the left of the panel,
@@ -245,7 +249,7 @@ internal static class Mo2PanelChrome
         // that is ~100px — while its own template pins the pictogram to the top and
         // centres the title in the space. The two ended up on different lines.
         header.VerticalAlignment = VerticalAlignment.Top;
-        return new Mo2HeaderLine(header, group);
+        return new Mo2HeaderLine(header);
     }
 
     // Header collapse belongs to Mo2ResponsiveHeaders, which blends the pictogram,
