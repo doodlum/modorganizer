@@ -80,9 +80,22 @@ internal static class Mo2SharedListCheck
         // Both lists carry MO2's own columns, under MO2's own headers, in MO2's own
         // order. Read from the headings each page draws rather than from the tables
         // they were built from, so a page that stops drawing one is caught.
+        // A column one icon wide takes the glyph it holds as its heading, as MO2's own
+        // do — "Conflicts" and "Flags" do not fit there and were drawn as "C…" and
+        // "Fl…" — and that glyph carries the column's name where a reader can get at
+        // it. Reading only the words missed all four of them and reported MO2's own
+        // columns as absent from both lists; it had been failing on that since the
+        // glyph headings went in. The name is read off whichever kind of heading the
+        // column has, in column order, so a heading that stops saying which column it
+        // is still fails.
+        static string NameOf(Control heading) => heading switch {
+            TextBlock { FontWeight: Avalonia.Media.FontWeight.SemiBold, Text: { } text } => text,
+            _ => Avalonia.Automation.AutomationProperties.GetName(heading) ?? "",
+        };
         string Headings(Control page, int expected) => string.Join(" ", page.GetVisualDescendants().OfType<Grid>()
             .Where(x => x.ColumnDefinitions.Count == expected)
-            .Select(x => string.Join(",", x.Children.OfType<TextBlock>().Where(t => t.FontWeight == Avalonia.Media.FontWeight.SemiBold).Select(t => t.Text)))
+            .Select(x => string.Join(",", x.Children.OfType<Control>()
+                .OrderBy(Grid.GetColumn).Select(NameOf).Where(name => name.Length > 0)))
             .Where(x => x.Length > 0).Take(1));
         var modHeadings = Headings(mods, Mo2ModRow.Headers.Length);
         var pluginHeadings = Headings(plugins, Mo2PluginRow.Headers.Length);
