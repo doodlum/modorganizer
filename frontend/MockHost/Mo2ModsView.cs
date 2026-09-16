@@ -229,23 +229,6 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             subtitle.Children.OfType<TextBlock>().First().Text = "Install mods from your MO2 downloads folder.";
         native.FindControl<StandardButton>("ViewLibraryButton")!.Text = "Downloads";
         ToolTip.SetTip(native.FindControl<StandardButton>("ViewFilesButton")!, "View this mod’s files and conflicts in MO2");
-        // The same group Plugins shows, built from the native view's own buttons so
-        // both pages draw one component rather than two that happen to look alike.
-        var nativeGroup = native.FindControl<ItemsControl>("ContextControlGroup")!;
-        var group = Mo2SelectionGroup.Adopt(nativeGroup, out var groupDeselect,
-            () => native.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
-        // The emptied original takes the shared group's place rather than lingering
-        // beside it: left in the toolbar it was still an item, so the two pages'
-        // toolbars held a different number of things.
-        if (nativeGroup.Parent is Panel groupOwner) {
-            var at = groupOwner.Children.IndexOf(nativeGroup);
-            groupOwner.Children.Remove(nativeGroup);
-            groupOwner.Children.Insert(Math.Max(0, at), group);
-        } else if (nativeGroup.Parent is ItemsControl groupHost) {
-            var at = groupHost.Items.IndexOf(nativeGroup);
-            groupHost.Items.Remove(nativeGroup);
-            groupHost.Items.Insert(Math.Max(0, at), group);
-        }
         var separator = new MenuItem { Name = "CreateSeparatorMenuItem", Header = "Add separator…" };
         separator.Click += async (_,_) => {
             if (ViewModel is { LiveProfile: { } profile } model)
@@ -261,41 +244,19 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             });
             if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) await profile.InstallArchive(path, target);
         };
-        var menu = new MenuFlyout();
-        menu.Items.Add(install); menu.Items.Add(separator); menu.Items.Add(new Separator());
-        foreach (var (label, step) in new[] { ("Move earlier", -1), ("Move later", 1) }) {
-            var move = new MenuItem { Header = label };
-            move.Click += async (_, _) => {
-                if (ViewModel is { } model && model.Adapter.SelectedModels.Count == 1)
-                    await ((Mo2ModsAdapter)model.Adapter).Move(model.Adapter.SelectedModels.Single().Key, step);
-            };
-            menu.Items.Add(move);
-        }
-
-        var overflow = Mo2ModRow.IconButton("mdi-dots-vertical", "Mod actions", () => { });
-        overflow.Name = "ModsOverflowButton";
-        overflow.Flyout = menu;
-        menu.Items.Add(new Separator());
-        Mo2OrderHistoryMenu.Add(menu, () => ViewModel?.LiveProfile, "mods");
-        var toolbar = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!.GetLogicalAncestors().OfType<Toolbar>().First();
-        Mo2ListToolbar.Wrap(toolbar);
-        Mo2ListToolbar.AddSearch(toolbar, native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!);
-        var primaryGroup = Mo2ListToolbar.Pill("ModPrimaryActions",
-            Mo2ModRow.IconButton("mdi-plus-circle-outline", "Add mod from archive…",
-                () => install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent))),
-            overflow);
-        toolbar.Items.Insert(0, primaryGroup);
-        // The native view already grows a selection group once rows are selected: a
-        // deselect action labelled with the count, then the actions that make sense in
-        // bulk. A second group of our own beside it meant two X buttons and the count
-        // twice over. Its deselect goes through the adapter's own selection model,
-        // which does not empty the models the toolbar counts, so it is re-pointed at
-        // the grid's row selection — the model the adapter actually listens to.
-        var deselect = native.FindControl<StandardButton>("DeselectItemsButton")!;
-        deselect.Command = ReactiveUI.ReactiveCommand.Create(
-            () => native.FindControl<TreeDataGrid>("TreeDataGrid")?.RowSelection?.Clear());
-        native.FindControl<StandardButton>("ViewFilesButton")!.ShowLabel = false;
-        native.FindControl<StandardButton>("DeleteButton")!.ShowLabel = false;
+        // The row of actions this page drew above its list is gone. Everything on it
+        // that MO2 also offers, MO2 offers from its own widgets, and this page draws
+        // those: Install mod... and Create separator from the list-options button
+        // (MO2's listOptionsBtn, where its own global menu keeps them), the search
+        // box from the filter field MO2 puts under the list (modFilterEdit), and
+        // Move earlier/later from the row's own menu, which carries MO2's
+        // Send to... Going with it: the selection group the original app grows when
+        // rows are picked, which MO2 has no equivalent of — it works a selection
+        // from the row menu, and so does this list.
+        var toolbar = native.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!
+            .GetLogicalAncestors().OfType<Toolbar>().First();
+        if (toolbar.Parent is Panel owner) owner.Children.Remove(toolbar);
+        else toolbar.IsVisible = false;
         var table = native.FindControl<TreeDataGrid>("TreeDataGrid")!;
         var listContainer = native.FindControl<EmptyState>("EmptyState")!;
         listContainer.Content = null;
@@ -358,15 +319,12 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         ToolTip.SetTip(help, "Mod priority help");
         help.Flyout = new Flyout { Content = new TextBlock { Text = "Drag mods to change their priority. Mods lower in the list win file conflicts. Select a mod to highlight its conflicts and linked plugins. Use separators to group mods; click the arrow to collapse a group, or double-click its name to rename it.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 280 } };
         Grid.SetColumn(help, 1); list.Children.Add(help);
-        // Vortex moves the toolbar onto the header's right side. The shared chrome
-        // gives this page the same separator and animated compaction as the others.
-        // The whole Toolbar moves onto the header line, search included. Moving its
-        // children individually fails: it is an ItemsControl and regenerates them.
-        if (toolbar.Parent is Panel toolbarOwner) toolbarOwner.Children.Remove(toolbar);
-        toolbar.Margin = new Thickness(0);
+        // The shared chrome gives this page the same separator and animated
+        // compaction as the others. Its action row holds the column chooser alone
+        // now that the toolbar beside it is gone.
         var modColumns = Mo2TableRow.ColumnsButton(Mo2ModRow.OptionalColumns, Mo2ModRow.HiddenColumns, columns, Mo2ModColumnPreference.Save);
         Mo2ModColumnPreference.Load();
-        Mo2PanelChrome.Apply(this, (Panel)header.Parent!, header, modColumns, toolbar);
+        Mo2PanelChrome.Apply(this, (Panel)header.Parent!, header, modColumns);
         // The native table is pushed 8px below its own headings, which it no longer
         // draws — the column headings above it are this page's. Plugins has none, and
         // the two tables' first rows sat 8px apart because of it.
@@ -383,32 +341,18 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         TextBox? filterField = null;
         ToggleButton? categoriesToggle = null;
 
-        // Above the list: the profile box, then the buttons MO2 puts on the right of
-        // that line and its count of active mods.
-        var qtBar = new Grid { Name = "ModsQtBar", ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"),
+        // Above the list: the buttons MO2 puts on the right of that line and its
+        // count of active mods.
+        var qtBar = new Grid { Name = "ModsQtBar", ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             Margin = new Thickness(0,0,0,6) };
-        var profileLabel = Mo2QtWidgets.Caption("ModsProfileLabel", Mo2QtWidgets.ProfileLabel);
-        profileLabel.Margin = new Thickness(0,0,6,0);
-        qtBar.Children.Add(profileLabel);
-        // Filling the box from the profile that is open must not read as the user
-        // picking one, or the frontend reselects the profile it is already on every
-        // time the list is refreshed.
-        var switching = false;
-        ComboBox? profileBoxRef = null;
-        var profileBox = Mo2QtWidgets.Choice("ModsProfileBox", Mo2QtWidgets.ProfileTip, [], 0, async choice => {
-            if (switching || choice < 0 || ViewModel?.LiveProfile is not { } live) return;
-            if (profileBoxRef?.SelectedItem is not string name) return;
-            var entry = ViewModel.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Endpoint);
-            if (entry?.Instance is null || name == live.CollectionName.Value) return;
-            if (entry.Instance.Profiles.FirstOrDefault(x => x.Name == name) is { } wanted)
-                await live.SelectProfile(entry.Registration, wanted);
-        });
-        profileBoxRef = profileBox;
-        profileBox.MinWidth = 120;
-        Grid.SetColumn(profileBox, 1); qtBar.Children.Add(profileBox);
+        // MO2 heads this line with "Profile" and a box to change it in. Neither is
+        // drawn here: this frontend has a page for the instances it is connected to
+        // and the profiles in each, which is where a profile is chosen and where the
+        // one in use is named. A second chooser on the mod pane offered the same
+        // switch from a place that showed none of what it would switch to.
         var barActions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 2,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-        Grid.SetColumn(barActions, 3); qtBar.Children.Add(barActions);
+        Grid.SetColumn(barActions, 1); qtBar.Children.Add(barActions);
         // MO2's listOptionsBtn: what to do with the list as a whole, and which of its
         // columns to draw.
         var listOptions = Mo2QtWidgets.Icon("ModsListOptionsButton", Mo2QtWidgets.ListOptionsTip, "mdi-cog-outline", () => { });
@@ -436,6 +380,16 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             // at all: its listOptionsBtn carries the mod list's global actions
             // (ModListGlobalContextMenu) and its columns are chosen from the list's
             // own header, as this frontend's Downloads does.
+            //
+            // MO2's own global menu opens with Install mod... and Create separator,
+            // which this page used to keep on a toolbar of its own above the list.
+            // They are here now, which is where MO2 has them, and the toolbar is
+            // gone.
+            listOptionsMenu.Items.Add(new Separator());
+            listOptionsMenu.Items.Add(install);
+            listOptionsMenu.Items.Add(separator);
+            listOptionsMenu.Items.Add(new Separator());
+            Mo2OrderHistoryMenu.Add(listOptionsMenu, () => ViewModel?.LiveProfile, "mods");
         };
         barActions.Children.Add(listOptions);
         // MO2's openFolderMenu, over the folders this frontend knows the way to.
@@ -776,22 +730,6 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
                 // profile sets reported one active mod out of twelve.
                 activeModsValue.Text = live.Mods.Count(x => !x.IsSeparator && !x.IsOverwrite && (x.State & 6) != 0).ToString();
                 restoreMods.IsEnabled = saveMods.IsEnabled = live.CanChangeOriginalUi;
-                // And its profile box, over the profiles of the instance this profile
-                // belongs to. Refilled only when the instance's profiles change, so a
-                // refresh does not close a list the user has open.
-                var entry = model.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Endpoint);
-                var names = entry?.Instance?.Profiles.Select(x => x.Name).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
-                switching = true;
-                try {
-                    if (!profileBox.Items.OfType<string>().SequenceEqual(names)) {
-                        profileBox.Items.Clear();
-                        foreach (var name in names) profileBox.Items.Add(name);
-                    }
-                    var current = live.CollectionName.Value;
-                    if ((string?)profileBox.SelectedItem != current)
-                        profileBox.SelectedIndex = Array.IndexOf(names, current);
-                    profileBox.IsEnabled = names.Length > 1 && live.CanChangeOriginalUi;
-                } finally { switching = false; }
             }
             ViewModel!.LiveProfile!.Changed += RefreshMods;
             System.Reactive.Disposables.Disposable.Create(() => ViewModel!.LiveProfile!.Changed -= RefreshMods).AddTo(disposables);
@@ -800,13 +738,10 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
             ViewModel!.SelectedSubTab = LoadoutPageSubTabs.Mods;
             SubTabs.SelectedIndex = 0;
             void UpdateSelection() {
-                    var count = ViewModel.Adapter.SelectedModels.Count;
-                    Mo2SelectionGroup.Update(group, groupDeselect, count);
+                    // What the selection is for is the conflict and linked-plugin
+                    // highlighting MO2 draws for it. The buttons that used to be
+                    // enabled alongside went with the toolbar.
                     ViewModel.LiveProfile!.HighlightMods(ViewModel.Adapter.SelectedModels.Select(x => x.Key));
-                    var selected = ViewModel.Adapter.SelectedModels.Select(x => x.Key).ToHashSet();
-                    var mods = ViewModel.LiveProfile!.Mods.Where(x => selected.Contains(x.Id)).ToArray();
-                    native.FindControl<StandardButton>("ViewFilesButton")!.IsEnabled = count == 1;
-                    native.FindControl<StandardButton>("DeleteButton")!.IsEnabled = mods.Any(x => x.CanManage);
             }
             ViewModel!.Adapter.SelectedModels.ObserveChanged().Subscribe(_ => UpdateSelection()).AddTo(disposables);
             UpdateSelection();

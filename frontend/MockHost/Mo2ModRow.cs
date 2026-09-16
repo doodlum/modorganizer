@@ -16,21 +16,24 @@ internal static class Mo2ModRow
     // (modlist.cpp, headerData). The enable box sits in the name column as it does
     // in MO2, and there is no actions column: MO2 puts a row's actions on its
     // right-click menu rather than drawing buttons on every row.
+    //
+    // MO2 also heads Author, Nexus ID, Source Game, Installation and Priority. Those
+    // five are not drawn here: the first four say where a mod came from rather than
+    // what it does in this profile, and MO2's own priority is the order the list is
+    // already in — the row's place in it is the column. What they hold is still
+    // MO2's and still reported: a mod's Information... entry carries all of it.
     internal const int Name = 0, Conflicts = 1, Flags = 2, Content = 3, Category = 4,
-        Author = 5, Uploader = 6, NexusId = 7, SourceGame = 8, Version = 9,
-        Installation = 10, Priority = 11, Notes = 12;
+        Uploader = 5, Version = 6, Notes = 7;
 
     // Widths for MO2's own text size rather than the theme's: a column sized for
     // 14px text and 24px of padding took a third more room than the text in it
     // needs, and the panel ran out of room three columns earlier than MO2 does.
     internal static Grid Columns() => new() { MinWidth = 0, ColumnDefinitions = new ColumnDefinitions(
-        "*,24,24,72,92,92,92,60,92,64,104,48,92") };
+        "*,24,24,72,92,92,64,92") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         (Name, "Mod Name"), (Conflicts, "Conflicts"), (Flags, "Flags"), (Content, "Content"),
-        (Category, "Category"), (Author, "Author"), (Uploader, "Uploader"), (NexusId, "Nexus ID"),
-        (SourceGame, "Source Game"), (Version, "Version"), (Installation, "Installation"),
-        (Priority, "Priority"), (Notes, "Notes")];
+        (Category, "Category"), (Uploader, "Uploader"), (Version, "Version"), (Notes, "Notes")];
 
     // Columns the user has switched off. The responsive widths below still apply: a
     // column shows only when it both fits and has not been hidden. Only the name is
@@ -47,8 +50,7 @@ internal static class Mo2ModRow
     // of MO2's columns than these thresholds used to let through.
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
         (Conflicts, 24, 250), (Flags, 24, 280), (Content, 72, 470), (Category, 92, 390),
-        (Author, 92, 880), (Uploader, 92, 1070), (NexusId, 60, 700), (SourceGame, 92, 980),
-        (Version, 64, 330), (Installation, 104, 800), (Priority, 48, 310), (Notes, 92, 610)];
+        (Uploader, 92, 1070), (Version, 64, 330), (Notes, 92, 610)];
 
     // Room the category filter takes out of the pane when it is showing. The column
     // fitting below measures the panel, not the list, so without this the columns
@@ -233,12 +235,7 @@ internal static class Mo2ModRow
         Add(row, conflicts, Conflicts); Add(row, flags, Flags); Add(row, content, Content);
 
         var category = Mo2TableRow.Cell(mod.Category, .6);
-        var author = Mo2TableRow.Cell(mod.Author, .6);
         var uploader = Mo2TableRow.Cell(mod.Uploader, .6);
-        var nexusId = Mo2TableRow.Cell(mod.NexusId > 0 ? mod.NexusId.ToString() : "", .6);
-        var sourceGame = Mo2TableRow.Cell(mod.SourceGame, .6);
-        var installation = Mo2TableRow.Cell(mod.InstallTime, .6);
-        var priority = Mo2TableRow.Cell(mod.PriorityText, .6);
         var notes = Mo2TableRow.Cell(mod.Notes, .6);
         if (mod.Notes.Length > 0) ToolTip.SetTip(notes, mod.Notes);
         // MO2 paints an ordinary mod's colour behind its Notes cell rather than across
@@ -276,9 +273,8 @@ internal static class Mo2ModRow
             ToolTip.SetTip(updatePill, $"Update available: {mod.Version} → {mod.NewestVersion}");
         }
         var versionCell = new Grid(); versionCell.Children.Add(version); versionCell.Children.Add(updatePill);
-        Add(row, category, Category); Add(row, author, Author); Add(row, uploader, Uploader);
-        Add(row, nexusId, NexusId); Add(row, sourceGame, SourceGame); Add(row, versionCell, Version);
-        Add(row, installation, Installation); Add(row, priority, Priority); Add(row, notesCell, Notes);
+        Add(row, category, Category); Add(row, uploader, Uploader);
+        Add(row, versionCell, Version); Add(row, notesCell, Notes);
         var isEndorsed = (mod.State & 0x10) != 0;
         // MO2 shows endorsement as one of the flag glyphs rather than a column, so it
         // rides along with the flags it belongs among.
@@ -292,10 +288,8 @@ internal static class Mo2ModRow
             toggle.IsEnabled = ready && mod.CanManage;
             title.Text = mod.DisplayName; title.Opacity = toggle.IsChecked == true ? .85 : .5;
             version.Text = mod.Version; category.Text = mod.Category;
-            author.Text = mod.Author; uploader.Text = mod.Uploader;
-            nexusId.Text = mod.NexusId > 0 ? mod.NexusId.ToString() : "";
-            sourceGame.Text = mod.SourceGame; installation.Text = mod.InstallTime;
-            priority.Text = mod.PriorityText; notes.Text = mod.Notes; PaintNotes();
+            uploader.Text = mod.Uploader;
+            notes.Text = mod.Notes; PaintNotes();
             ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
             var nextEndorsed = (mod.State & 0x10) != 0;
             if (nextEndorsed != isEndorsed) {

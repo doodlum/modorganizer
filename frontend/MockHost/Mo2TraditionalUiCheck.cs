@@ -42,13 +42,18 @@ internal static class Mo2TraditionalUiCheck
             if (((shell.Profile.Mods.Single(x => x.Name == modName).State & 2) != 0) != modActive) await shell.Profile.ToggleMod(mod.Id);
         }
         await Wait(() => ((shell.Profile.Mods.Single(x => x.Name == modName).State & 2) != 0) == modActive);
-        var overflow = mods.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "ModsOverflowButton");
-        if (!overflow.IsVisible || overflow.Flyout is not MenuFlyout menu || !menu.Items.OfType<MenuItem>().Any(x => x.Name == "AddModMenuItem"))
-            throw new InvalidOperationException("Mod toolbar overflow missing");
-        overflow.Flyout.ShowAt(overflow);
-        await Task.Delay(200);
-        overflow.Flyout.Hide();
-        Console.WriteLine("PASS mod toggle changed native activation and restored it; toolbar overflow contains archive and separator actions");
+        // The page's own toolbar overflow used to carry these. It is gone, and the
+        // two entries MO2 itself has are on MO2's own list-options button, where
+        // MO2's global mod-list menu keeps them.
+        var options = mods.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "ModsListOptionsButton");
+        if (options.Flyout is not MenuFlyout menu) throw new InvalidOperationException("Mod list options carries no menu");
+        menu.ShowAt(options);
+        await Task.Delay(400);
+        var entries = menu.Items.OfType<MenuItem>().ToArray();
+        menu.Hide();
+        if (!entries.Any(x => x.Name == "AddModMenuItem") || !entries.Any(x => x.Name == "CreateSeparatorMenuItem"))
+            throw new InvalidOperationException("Mod list options offers no archive and separator actions");
+        Console.WriteLine("PASS mod toggle changed native activation and restored it; MO2's list-options button contains archive and separator actions");
 
         var plugins = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
         var pluginRail = plugins.GetVisualDescendants().OfType<ScrollBar>().Single(x => x.Name == "PluginRailScrollBar");

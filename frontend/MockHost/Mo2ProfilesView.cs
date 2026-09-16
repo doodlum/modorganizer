@@ -111,7 +111,11 @@ internal sealed class Mo2ProfilesView : ReactiveUserControl<Mo2ProfilesPage>
                     var details = new StackPanel { Spacing = 4 };
                     details.Children.Add(new TextBlock { Text = profile.Name + (active ? " · Selected in MO2" : ""), FontSize = 16 });
                     details.Children.Add(new TextBlock { Text = $"{profile.ModEntries.Length} mod-list entries", Opacity = 0.65 });
-                    var button = new Button { Content = details, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                    // Named because this is now the only way to change profile: MO2's
+                    // own profileBox has come off the mod pane, where it repeated what
+                    // this page is for.
+                    var button = new Button { Name = "Mo2ChooseProfile", Content = details,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
                         IsEnabled = !model.Profile.SelectingProfile && !model.Profile.Installing };
                     button.Click += async (_, _) => {
                         if (await model.Profile.SelectProfile(entry.Registration, profile)) model.ShowProfile();

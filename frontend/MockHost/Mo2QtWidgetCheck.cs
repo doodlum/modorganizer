@@ -45,6 +45,11 @@ internal static class Mo2QtWidgetCheck
         // Answered by requiring every action MO2 puts on it to be one
         // MO2_VERIFY_QT_ACTIONS offers here, which is where they are driven.
         Carries,
+        // Deliberately not drawn where MO2 draws it, because this frontend offers
+        // the same thing from a page of its own. Still found, on that page, and
+        // reported apart from the widgets that are where MO2 puts them — so the
+        // difference is stated in every run rather than left to a comment.
+        Elsewhere,
     }
 
     internal sealed record Answer(Kind Kind, string Page, string Counterpart, Func<Control, bool> Match, string Note = "");
@@ -57,6 +62,8 @@ internal static class Mo2QtWidgetCheck
         new(Kind.Window, "", name, x => x.Name == name, note);
     private static Answer Holds(string reason) => new(Kind.Container, "", reason, _ => true, reason);
     private static Answer Carries(string note = "") => new(Kind.Carries, "", "the actions it carries", _ => true, note);
+    private static Answer Elsewhere(string page, string name, string note) =>
+        new(Kind.Elsewhere, page, name, x => x.Name == name, note);
 
     // MO2's widget, and what this frontend draws for it. Everything in
     // src/mainwindow.ui appears here exactly once.
@@ -88,8 +95,13 @@ internal static class Mo2QtWidgetCheck
         ["filtersSeparators"] = Named("my-mods", "ModsFiltersSeparators"),
 
         // The line above the mod list.
-        ["label_3"] = Named("my-mods", "ModsProfileLabel", "MO2's \"Profile\" caption"),
-        ["profileBox"] = Named("my-mods", "ModsProfileBox"),
+        // MO2 heads its mod pane with a "Profile" caption and a box to change it in.
+        // This frontend has a page for the instances it is connected to and the
+        // profiles in each, which is where a profile is chosen and where the one in
+        // use is named; a second chooser above the mod list offered the same switch
+        // from a place that showed none of what it would switch to.
+        ["label_3"] = Elsewhere("connections", "Mo2ChooseProfile", "MO2's \"Profile\" caption; the page names each profile on its own entry"),
+        ["profileBox"] = Elsewhere("connections", "Mo2ChooseProfile", "MO2's profile box"),
         ["listOptionsBtn"] = Named("my-mods", "ModsListOptionsButton"),
         ["openFolderMenu"] = Named("my-mods", "ModsOpenFolderButton"),
         ["restoreModsButton"] = Named("my-mods", "RestoreModsButton"),
@@ -178,6 +190,9 @@ internal static class Mo2QtWidgetCheck
             ["archives"] = () => Navigate(menu.ArchivesItem),
             ["saves"] = () => Navigate(menu.SavesItem),
             ["downloads"] = () => Navigate(menu.LeftMenuItemLibrary),
+            // The home workspace's own page, for the widgets this frontend offers
+            // there rather than beside MO2's list.
+            ["connections"] = () => { live.OpenConnections(); return Task.CompletedTask; },
         };
 
         using var turn = await Mo2CheckTurn.Take();
@@ -241,11 +256,14 @@ internal static class Mo2QtWidgetCheck
         else if (chrome.Length > 0) described.Add($"the window carries all {chrome.Length} MO2 keeps outside its tabs");
 
         foreach (var page in open.Keys) {
-            var wanted = widgets.Where(x => Answers[x.Name] is { Kind: Kind.Page } answer && answer.Page == page).ToArray();
+            var wanted = widgets.Where(x => Answers[x.Name] is { Kind: Kind.Page or Kind.Elsewhere } answer && answer.Page == page).ToArray();
             if (wanted.Length == 0) continue;
             await open[page]();
             var missing = (await Missing(window, live, wanted)).ToArray();
             if (missing.Length > 0) faults.Add($"{page} is missing {string.Join(", ", missing)}");
+            else if (wanted.All(x => Answers[x.Name].Kind == Kind.Elsewhere))
+                described.Add($"{page} carries the {wanted.Length} MO2 puts beside its mod list — " +
+                    string.Join(", ", wanted.Select(x => $"{x.Name} as {Answers[x.Name].Counterpart}")));
             else described.Add($"{page} carries all {wanted.Length}");
         }
 
@@ -254,6 +272,12 @@ internal static class Mo2QtWidgetCheck
         // what the pane is for. Driven here rather than only looked up, because the
         // fault this check exists to catch — a widget that draws but does nothing —
         // is exactly what a lookup passes.
+        // Back to the profile's own workspace first: the page walk above ends on the
+        // home workspace's Connections page, and the profile sidebar's items navigate
+        // a workspace that is no longer the active one — so this drove nothing and
+        // reported the mod pane as having no filter-list button at all.
+        live.ShowProfile();
+        await Task.Delay(400);
         await open["my-mods"]();
         await Task.Delay(400);
         window.UpdateLayout();

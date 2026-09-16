@@ -175,8 +175,8 @@ internal static class Mo2SharedListCheck
         }
 
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
-        Console.WriteLine($"PASS shared list pages: {string.Join("; ", described)} — both built from the same rail, scrollbar, " +
-            $"search control and selection group, each hiding its table's own scrollbar, and {scrolled} of them followed " +
+        Console.WriteLine($"PASS shared list pages: {string.Join("; ", described)} — both built from the same rail and " +
+            $"scrollbar, each hiding its table's own scrollbar, and {scrolled} of them followed " +
             "their rows in both directions once the list was too short to hold them");
     }
 }

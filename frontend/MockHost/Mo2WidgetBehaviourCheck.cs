@@ -393,15 +393,11 @@ internal static class Mo2WidgetBehaviourCheck
             else worked.Add("My Mods takes dropped archives, as MO2 does");
 
             // The profile box, over the profiles of the instance this one belongs to.
-            if (Named<ComboBox>(mods, "ModsProfileBox") is { } profiles) {
-                var entry = mods.ViewModel!.Instances().FirstOrDefault(x => x.Registration.Endpoint == live.Profile.Endpoint);
-                var names = entry?.Instance?.Profiles.Select(x => x.Name).ToArray() ?? [];
-                if (profiles.Items.Count != names.Length)
-                    faults.Add($"the profile box lists {profiles.Items.Count} of MO2's {names.Length} profiles");
-                else if ((string?)profiles.SelectedItem != live.Profile.CollectionName.Value)
-                    faults.Add($"the profile box shows {profiles.SelectedItem}, not the open {live.Profile.CollectionName.Value}");
-                else worked.Add($"the profile box lists all {names.Length} profiles with the open one chosen");
-            } else faults.Add("My Mods has no profile box");
+            // MO2's profile box is not on this page: this frontend chooses a profile
+            // on its Connections page, which is where MO2_VERIFY_QT_WIDGETS looks for
+            // it. A box here would be a second chooser over the same profiles.
+            if (Named<ComboBox>(mods, "ModsProfileBox") is not null)
+                faults.Add("My Mods has grown back a profile box, which the Connections page is for");
 
             // MO2's saveModsButton, driven through to the file MO2 writes. Its slot
             // flushes the mod list and copies it beside itself under the time it was
@@ -896,8 +892,13 @@ internal static class Mo2WidgetBehaviourCheck
             ["startButton"] = "runs the game",
             ["btnQueryDownloadsInfo"] = "asks Nexus about every download, which needs an account and changes MO2's metadata",
         };
+        // Only the widgets this frontend draws where MO2 draws them. The ones it
+        // deliberately offers from a page of its own — MO2's profile box, which is
+        // the Connections page here — are worked where they are, and
+        // MO2_VERIFY_QT_WIDGETS is what finds them there.
         var workable = Mo2QtWidgetSource.Read()
-            .Where(x => interactive.Contains(x.Class) && Mo2QtWidgetCheck.Answers.ContainsKey(x.Name)).ToArray();
+            .Where(x => interactive.Contains(x.Class) && Mo2QtWidgetCheck.Answers.TryGetValue(x.Name, out var answer)
+                        && answer.Kind != Mo2QtWidgetCheck.Kind.Elsewhere).ToArray();
         var untouched = workable
             .Where(x => !undrivable.ContainsKey(x.Name) && !reachedFor.Contains(Mo2QtWidgetCheck.Answers[x.Name].Counterpart))
             .Select(x => $"{x.Name} ({Mo2QtWidgetCheck.Answers[x.Name].Counterpart})").ToArray();

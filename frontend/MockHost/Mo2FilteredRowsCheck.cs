@@ -113,12 +113,26 @@ internal static class Mo2FilteredRowsCheck
                 () => NotReady(modTable, false) ?? NotReady(pluginTable, true));
             window.WindowState = WindowState.Normal;
             await Task.Delay(200);
-            window.Height = 520;
-            await Wait(() => Math.Abs(window.ClientSize.Height - 520) <= 1, "actual 520px viewport");
             var rails = new[] {
                 mods.GetVisualDescendants().OfType<ScrollBar>().Single(s => s.Name == "ModsRailScrollBar"),
                 plugins.GetVisualDescendants().OfType<ScrollBar>().Single(s => s.Name == "PluginRailScrollBar") };
-            await Wait(() => rails.All(rail => rail.Maximum > 0), "scrollable lists");
+            // Short enough that both lists overflow, found rather than assumed. This
+            // asked for 520px and then for something to scroll, which held while the
+            // mod pane drew a toolbar above its list and stopped the moment that row
+            // came off: thirteen rows fit in the height the check had fixed on, and
+            // a check about scrolling reported "scrollable lists did not settle".
+            // What it needs is a viewport the lists are too long for, whatever that
+            // height turns out to be.
+            var height = 520d;
+            for (; height >= 260; height -= 60) {
+                window.Height = height;
+                await Wait(() => Math.Abs(window.ClientSize.Height - height) <= 1, $"actual {height:F0}px viewport");
+                var settled = DateTime.UtcNow.AddSeconds(3);
+                while (!rails.All(rail => rail.Maximum > 0) && DateTime.UtcNow < settled) await Task.Delay(50);
+                if (rails.All(rail => rail.Maximum > 0)) break;
+            }
+            await Wait(() => rails.All(rail => rail.Maximum > 0),
+                $"both lists too long for the window, tried down to {height:F0}px");
             foreach (var bottom in new[] { true, false, true, false }) {
                 foreach (var rail in rails)
                     rail.Value = bottom ? rail.Maximum : 0;
@@ -131,7 +145,8 @@ internal static class Mo2FilteredRowsCheck
             if (target != profile.CurrentTarget || !modState.SequenceEqual(profile.Mods.Select(m => (m.Name, m.Priority, Active: m.State & 6))) ||
                 !pluginState.SequenceEqual(profile.Order.Plugins.Select(p => (p.DisplayName, p.SortIndex, p.IsActive))))
                 throw new Exception("Filtering/scrolling changed native mod or plugin state");
-            Console.WriteLine("PASS rapid debounced filtering, empty/clear, scrolling both lists: row handles/toggles match native models; native states unchanged");
+            Console.WriteLine($"PASS rapid debounced filtering, empty/clear, scrolling both lists at a {height:F0}px viewport: " +
+                "row handles/toggles match native models; native states unchanged");
         } finally { modBox.Text = modText; pluginBox.Text = pluginText; window.Height = originalHeight; window.WindowState = originalState; }
     }
 }

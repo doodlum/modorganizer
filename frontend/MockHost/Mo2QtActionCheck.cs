@@ -42,7 +42,10 @@ internal static class Mo2QtActionCheck
     // MO2's action, and what answers for it here. Everything in src/mainwindow.ui's
     // action list appears exactly once.
     internal static readonly Dictionary<string, Answer> Answers = new() {
-        ["actionInstallMod"] = On("my-mods", "ModsOverflowButton", "Add mod from archive…"),
+        // MO2 opens its own global mod-list menu with Install mod..., which is the
+        // button this offers it from; the page's own toolbar, which used to carry a
+        // copy, is gone.
+        ["actionInstallMod"] = On("my-mods", "ModsListOptionsButton", "Add mod from archive…"),
         ["actionAdd_Profile"] = On("connections","Mo2ManageProfiles"),
         ["actionModify_Executables"] = On("", "ExecutablesListBox", Mo2LaunchPanel.EditEntry,
             "MO2's own first row of the executables box, which opens its Edit Executables dialog"),

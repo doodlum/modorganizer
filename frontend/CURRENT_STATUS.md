@@ -3241,3 +3241,72 @@ as one.
 `QT_WIDGETS` still accounts for all 73 of MO2's widgets and `QT_ACTIONS` for all
 24 of its actions with the header-line group gone, so nothing MO2 draws was
 removed along with it.
+
+## The mod pane, cut back to what MO2 has and what this frontend adds
+
+Four removals from My Mods, each because something else already does the job.
+
+**The toolbar above the list.** It carried an add-mod button, an overflow menu, the
+original app's search box and the selection group it grows when rows are picked.
+MO2 puts no toolbar on a tab, and everything on that row that MO2 also offers, MO2
+offers from a widget this page already draws:
+
+| Was on the toolbar | Is now |
+| --- | --- |
+| Add mod from archive… | the list-options button — MO2's `listOptionsBtn`, whose own global menu opens with Install mod… |
+| Add separator… | the same menu, where MO2's own has Create separator |
+| Search box | MO2's filter field under the list (`modFilterEdit`) |
+| Move earlier / Move later | the row's own menu, which carries MO2's Send to… |
+| Order history | the list-options menu |
+| Selection group | nothing. MO2 has no equivalent — it works a selection from the row menu, and so does this list. That is a loss of the "3 selected" readout and its deselect action, and it is stated rather than glossed. |
+
+**MO2's profile box and its "Profile" caption.** This frontend has a page for the
+instances it is connected to and the profiles in each; a second chooser above the
+mod list offered the same switch from a place that showed none of what it would
+switch to. `MO2_VERIFY_QT_WIDGETS` gained a kind for this — a widget MO2 draws
+beside its list that this frontend deliberately draws elsewhere — and still has to
+**find it there**, on the Connections page, or fail. It reads:
+
+```
+… my-mods carries all 20, … connections carries the 2 MO2 puts beside its mod list
+— label_3 as Mo2ChooseProfile, profileBox as Mo2ChooseProfile
+```
+
+**Five columns: Author, Nexus ID, Source Game, Installation and Priority.** The
+first four say where a mod came from rather than what it does in this profile, and
+MO2's priority is the order the list is already in — the row's place in it is the
+column. Eight remain, and what the five held is still MO2's and still reported
+through a mod's Information… entry. `MO2_VERIFY_SHARED_LISTS` takes its expectation
+from the column table itself, so it followed without being told.
+
+### Checks this moved, and why each had to move
+
+None of these was deleted; each now asserts what the page actually does.
+
+* `MO2_VERIFY_QT_ACTIONS` — MO2's Install Mod is answered by the list-options
+  button, which is where MO2 keeps it, rather than by a toolbar overflow.
+* `MO2_VERIFY_SELECTION_PARITY` — compared the two lists' selection groups. They
+  differ on purpose now, so the group is **asserted** in both directions instead:
+  one appearing on My Mods fails, and Plugins losing its own fails too.
+* `MO2_VERIFY_TRADITIONAL_UI` — looked for the archive and separator entries in the
+  overflow; looks for them where they are.
+* `MO2_VERIFY_FILTERED_ROWS` — set the window to 520px and then required both lists
+  to be too long for it. That held while the mod pane drew a toolbar and stopped
+  the moment the row came off: thirteen rows fit. It now **finds** a viewport the
+  lists overflow rather than assuming one, and reports which it used (460px here).
+* `MO2_VERIFY_WIDGET_BEHAVIOUR` — its workable-widget count is now 29 rather than
+  30, because the profile box is worked where it is drawn.
+
+Thirteen checks were run against the live host after the removals and all thirteen
+pass: dead controls, preset fit, reachable actions, page audit, density, panel
+chrome, shared lists, selection parity, row style, row padding, column toggle,
+filtered rows and widget behaviour.
+
+### One thing found along the way that was not a UI fault
+
+The machine had run out of memory, and that is why MO2 kept wedging and why a build
+was killed mid-compile. The cause was this session's own runner: it kills a check by
+killing the job it started, and the app is a *grandchild* of that job — timeout,
+then `run-live.sh`, then `dotnet run`, then the host — so every killed run left a
+host behind at about 120MB. `frontend/tools/verify.sh` now sweeps them after every
+run, however it ended.

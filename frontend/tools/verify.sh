@@ -81,7 +81,13 @@ for name in "$@"; do
             now=$(stat -c %s "$log" 2>/dev/null || echo 0)
             if [[ "$now" == "$size" ]] && grep -qE '^(PASS|FAIL)' "$log"; then
                 quiet=$((quiet + 2))
-                [[ "$quiet" -ge 8 ]] && { pkill -KILL -P "$runner" 2>/dev/null; kill -KILL "$runner" 2>/dev/null; break; }
+                # The app is a grandchild — timeout, then run-live.sh, then dotnet
+                # run, then the host itself — so killing the job's own children left
+                # it running. Orphaned hosts piled up at ~120MB each until the
+                # machine had no memory left, which is when MO2 started wedging and
+                # the compiler was killed mid-build.
+                [[ "$quiet" -ge 8 ]] && { pkill -KILL -P "$runner" 2>/dev/null; kill -KILL "$runner" 2>/dev/null
+                                          sleep 1; pkill -KILL -f 'bin/Release/net9.0/MockHost' 2>/dev/null; break; }
             else
                 quiet=0; size="$now"
             fi
@@ -92,7 +98,11 @@ for name in "$@"; do
         env "${environment[@]}" timeout --signal=KILL "$deadline" \
             "$frontend_root/run-live.sh" "$bridge" >"$log" 2>&1
     fi
-    echo "=== $name (exit $?) ==="
+    status_of=$?
+    # And after every run, however it ended: a run that is killed by its timeout
+    # leaves the same orphan.
+    pkill -KILL -f 'bin/Release/net9.0/MockHost' 2>/dev/null
+    echo "=== $name (exit $status_of) ==="
     if grep -qE '^(PASS|FAIL)' "$log"; then
         grep -E '^(PASS|FAIL)' "$log"
         grep -qE '^FAIL' "$log" && status=1
