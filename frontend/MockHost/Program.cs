@@ -1164,10 +1164,10 @@ public partial class MockApp : Application
         await WaitFor(() => view.ViewModel!.Adapter.SelectedModels.Any(x => x.Key.Equals(plugin.Key)), "Pointer plugin selection failed");
         if (!view.GetVisualAncestors().OfType<PanelView>().Single().ViewModel!.IsSelected) throw new Exception("Plugin panel did not highlight");
         try {
-            await Click(view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins"));
-            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin disable click failed");
-            await Click(view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "EnableSelectedPlugins"));
-            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin enable click failed");
+            await PluginRowMenu(window, "Disable selected", plugin.DisplayName);
+            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin disable failed");
+            await PluginRowMenu(window, "Enable selected", plugin.DisplayName);
+            await WaitFor(() => live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive,"Plugin enable failed");
         } finally { await live.Profile.SetPluginsActive([plugin.DisplayName],true); }
         await Sidebar("Profiles");
         await WaitFor(() => window.GetVisualDescendants().OfType<MyLoadoutsView>().Any(), "Profiles click failed");
@@ -1568,13 +1568,16 @@ public partial class MockApp : Application
         Button LinkSubmit(Mo2DownloadsView page) => ((Control)LinkFlyout(page).Content!).GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DownloadNexusButton");
         var context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
         if (context.Text != "Fallout: New Vegas · Frontend Test") throw new InvalidOperationException("Downloads does not identify its MO2 game and profile");
-        var import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
+        // The Install archive... button on this page's toolbar is gone with the
+        // toolbar; installing an archive is MO2's own Install mod..., which the mod
+        // list's list-options button offers. What is watched through the profile
+        // switch below is the Nexus link action, which is the one on this page.
         var download = LinkSubmit(view);
-        if (!import.IsEnabled || !download.IsEnabled) throw new InvalidOperationException("Connected Downloads actions are disabled");
+        if (!download.IsEnabled) throw new InvalidOperationException("Connected Downloads actions are disabled");
         var started = false; var disabledDuringSwitch = false;
         void Changed() {
             started |= profile.Installing;
-            disabledDuringSwitch |= profile.SelectingProfile && !import.IsEnabled && !download.IsEnabled;
+            disabledDuringSwitch |= profile.SelectingProfile && !download.IsEnabled;
         }
         profile.Changed += Changed;
         var oldTarget = profile.CurrentTarget;
@@ -1592,7 +1595,6 @@ public partial class MockApp : Application
                 live.OpenDownloads();
                 view = await CurrentDownloads();
                 context = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DownloadProfileContext");
-                import = view.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "InstallArchiveButton");
                 download = LinkSubmit(view);
                 return missing;
             });
@@ -1613,14 +1615,14 @@ public partial class MockApp : Application
                 ("nxm://skyrimspecialedition/mods/1/files/1", "Choose a Nexus file for the current game")
             }) {
                 await profile.DownloadNexus(link, profile.CurrentTarget);
-                if (!profile.IsConnected || profile.Status != message || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
+                if (!profile.IsConnected || profile.Status != message || !download.IsEnabled || await State() != cloneBefore)
                     throw new InvalidOperationException("Local Nexus link validation disconnected or changed MO2");
             }
             await profile.InstallArchive(missing, new Mo2ProfileTarget(oldTarget.Endpoint + "-different-instance", profile.ProfilePath));
             if (started || !profile.IsConnected || !profile.Status.StartsWith("The MO2 profile changed."))
                 throw new InvalidOperationException("Archive target guard ignored instance identity");
             await view.ChooseArchive(() => Task.FromResult<string?>(missing));
-            if (!started || !profile.Status.Contains("The mod archive does not exist") || !profile.IsConnected || !import.IsEnabled || !download.IsEnabled)
+            if (!started || !profile.Status.Contains("The mod archive does not exist") || !profile.IsConnected || !download.IsEnabled)
                 throw new InvalidOperationException("Native archive rejection did not preserve the connected profile and usable controls");
             var downloadTable = view.GetVisualDescendants().OfType<TreeDataGrid>().Single(x => x.Name == "TreeDataGridDownloads");
             if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable" && x.IsEffectivelyVisible) ||
@@ -1631,7 +1633,7 @@ public partial class MockApp : Application
             await WaitFor(() => downloadTable.Rows?.Count == profile.Downloads.Count, "Fresh MO2 download rows did not settle");
             if (view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "DownloadsUnavailable" && x.IsEffectivelyVisible))
                 throw new InvalidOperationException("Fresh MO2 snapshot did not restore the download rows");
-            if (!profile.IsConnected || !import.IsEnabled || !download.IsEnabled || await State() != cloneBefore)
+            if (!profile.IsConnected || !download.IsEnabled || await State() != cloneBefore)
                 throw new InvalidOperationException("Downloads did not recover after refresh or changed clone state");
         } finally {
             profile.Changed -= Changed;
@@ -1802,37 +1804,61 @@ public partial class MockApp : Application
             throw new InvalidOperationException("Plugin mouse test requires the isolated FNV profile");
         var wrapper = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
         var table = wrapper.GetVisualDescendants().OfType<TreeDataGrid>().Single();
-        var enable = wrapper.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "EnableSelectedPlugins");
-        var disable = wrapper.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins");
+        // The page's toolbar carried an Enable and a Disable for the selection. It is
+        // gone — MO2 puts no toolbar on a tab — and the entries it duplicated are on
+        // the menu MO2 builds for a plugin row, gated by the same condition. Opened
+        // fresh each time: the menu is built when it opens and its entries are
+        // enabled against the selection as it then is.
+        async Task<MenuItem> Entry(string caption, string plugin) {
+            var row = PluginRow(window, plugin);
+            var menu = (MenuFlyout)row.ContextFlyout!;
+            menu.ShowAt(row);
+            await Task.Delay(500);
+            return menu.Items.OfType<MenuItem>().FirstOrDefault(x => x.Header?.ToString() == caption)
+                ?? throw new InvalidOperationException($"MO2's plugin menu has no {caption}");
+        }
+        async Task<bool> Offers(string caption, string plugin) {
+            var item = await Entry(caption, plugin);
+            var offered = item.IsEnabled;
+            ((MenuFlyout)PluginRow(window, plugin).ContextFlyout!).Hide();
+            await Task.Delay(150);
+            return offered;
+        }
         var original = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.IsActive, x.SortIndex)).ToArray();
         var mods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
         var targets = live.Profile.Order.Plugins.Where(x => x.DisplayName.StartsWith("MCM Example") && x.CanToggle && x.IsActive).Take(2).Select(x => x.DisplayName).ToArray();
         if (targets.Length != 2) throw new InvalidOperationException("Two active MCM example plugins are required");
-        async Task MousePhase(string phase, Button button) {
+        async Task MousePhase(string phase, string caption) {
             window.Activate();
             await SelectPluginsWithPointer(table, live.PluginsPage!, targets, phase);
-            var point = button.PointToScreen(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2));
+            var item = await Entry(caption, targets[0]);
+            var point = item.PointToScreen(new Point(item.Bounds.Width / 2, item.Bounds.Height / 2));
             File.WriteAllText("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json", System.Text.Json.JsonSerializer.Serialize(new {
                 Phase = phase, Points = new[] { new { X = point.X, Y = point.Y, Ctrl = false } }
             }));
         }
         try {
-            await MousePhase("disable", disable);
+            await MousePhase("disable", "Disable selected");
             await WaitFor(() => targets.All(name => !live.Profile.Order.Plugins.Single(x => x.DisplayName == name).IsActive), "Mouse multi-selection did not disable both ESPs", seconds: 60);
             if (!mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))))
                 throw new InvalidOperationException("Disabling plugins changed mod activation");
-            await MousePhase("enable", enable);
+            await MousePhase("enable", "Enable selected");
             await WaitFor(() => targets.All(name => live.Profile.Order.Plugins.Single(x => x.DisplayName == name).IsActive), "Mouse multi-selection did not re-enable both ESPs", seconds: 60);
-            await WaitFor(() => !enable.IsEnabled && disable.IsEnabled && live.PluginsPage!.Adapter.SelectedModels.Count == 2,
-                $"Selection or activation button availability disagrees with restored plugins: selected={live.PluginsPage!.Adapter.SelectedModels.Count}, enable={enable.IsEnabled}, disable={disable.IsEnabled}");
+            if (await Offers("Enable selected", targets[0]) || !await Offers("Disable selected", targets[0]) || live.PluginsPage!.Adapter.SelectedModels.Count != 2)
+                throw new InvalidOperationException($"MO2's menu disagrees with the restored plugins: selected={live.PluginsPage!.Adapter.SelectedModels.Count}");
             table.RowSelection!.Clear();
             var fixedIndex = live.Profile.Order.Plugins.ToList().FindIndex(x => !x.CanToggle);
             table.RowSelection.Select(new IndexPath(fixedIndex));
-            await WaitFor(() => !enable.IsEnabled && !disable.IsEnabled, "Fixed-only selection enables plugin activation");
+            await Task.Delay(400);
+            // Asked of the locked plugin's own row, which is what MO2 gates these on.
+            var locked = live.Profile.Order.Plugins.First(x => !x.CanToggle).DisplayName;
+            if (await Offers("Enable selected", locked) || await Offers("Disable selected", locked))
+                throw new InvalidOperationException("A locked plugin's menu offers activation");
             var targetIndex = live.Profile.Order.Plugins.ToList().FindIndex(x => x.DisplayName == targets[0]);
             table.RowSelection.Select(new IndexPath(targetIndex));
-            await WaitFor(() => disable.IsEnabled, "Mixed selection did not allow its editable plugin");
-            disable.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(400);
+            if (!await Offers("Disable selected", targets[0])) throw new InvalidOperationException("Mixed selection did not allow its editable plugin");
+            await PluginRowMenu(window, "Disable selected", targets[0]);
             await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.DisplayName == targets[0]).IsActive, "Mixed selection did not disable the editable plugin");
             if (!live.Profile.Order.Plugins.Where(x => !x.CanToggle).All(x => original.Single(o => o.DisplayName == x.DisplayName).IsActive == x.IsActive))
                 throw new InvalidOperationException("Mixed selection changed a fixed plugin");
@@ -1845,7 +1871,7 @@ public partial class MockApp : Application
         await live.Profile.Refresh();
         if (!original.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.IsActive, x.SortIndex))) ||
             !mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)))) throw new InvalidOperationException("Plugin test did not restore original MO2 state");
-        Console.WriteLine("PASS: real Ctrl-click multi-selection and activation buttons disable/enable two ESPs independently of mods; fixed and mixed selections respect restrictions; original state restored");
+        Console.WriteLine("PASS: real Ctrl-click multi-selection and MO2's own menu entries disable/enable two ESPs independently of mods; fixed and mixed selections respect restrictions; original state restored");
     }
 
     private static async Task VerifyTopBar(Mo2LiveWorkspace live, Window window, bool openLogs = false)
@@ -2549,12 +2575,11 @@ public partial class MockApp : Application
         }
         try {
             live.PluginsPage!.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
-            // By name rather than by caption: this button reads "Disable" beside the
-            // selection count now, as the mod list's does, and matching on the old
-            // wording made this check fail on a button that was right there.
-            window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "DisableSelectedPlugins")
-                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive, "Plugin disable button failed");
+            // Through MO2's own menu on the row. The page's toolbar carried a Disable
+            // button that called the same thing; the toolbar is gone and the entry it
+            // duplicated is what MO2 offers.
+            await PluginRowMenu(window, "Disable selected", plugin.DisplayName);
+            await WaitFor(() => !live.Profile.Order.Plugins.Single(x => x.Key.Equals(plugin.Key)).IsActive, "Plugin disable failed");
             if ((live.Profile.Mods.Single(x => x.Id == mod.Id).State & 2) == 0) throw new InvalidOperationException("Plugin disable also disabled its mod");
             await AssertHost(false, mod.Priority);
             live.ModsPage!.Adapter.SelectedModels.Add(live.ModsPage.Adapter.Source.Value.Items.Single(x => x.Key == mod.Id));
@@ -2706,6 +2731,37 @@ public partial class MockApp : Application
         if (page.CollectionName.Value != "Mojave Essentials" || page.TabTitle != "Mojave Essentials") throw new InvalidOperationException("Rename did not update open page");
         Console.WriteLine("PASS: native modal rename; cancel preserves state; accept updates open page, sidebar and Library target");
     }
+
+    // MO2's own Enable selected / Disable selected, from the menu it builds on a
+    // plugin row. The page used to carry two buttons for these on a toolbar of its
+    // own; that toolbar is gone, and these entries — which were always there beside
+    // them — are what MO2 offers.
+    // The row is named, not taken as whichever comes first: MO2 gates these entries
+    // on the plugin the menu was opened over — a locked plugin's menu offers them
+    // greyed however the selection stands — so opening the first row's menu asked
+    // about the wrong plugin and reported Disable selected greyed out on a list
+    // where it was live.
+    private static async Task PluginRowMenu(Avalonia.Controls.Window window, string entry, string plugin)
+    {
+        var row = PluginRow(window, plugin);
+        var menu = (MenuFlyout)row.ContextFlyout!;
+        menu.ShowAt(row);
+        await Task.Delay(500);
+        var item = menu.Items.OfType<MenuItem>().FirstOrDefault(x => x.Header?.ToString() == entry);
+        menu.Hide();
+        await Task.Delay(200);
+        if (item is null) throw new InvalidOperationException($"MO2's plugin menu has no {entry}");
+        if (!item.IsEnabled) throw new InvalidOperationException($"MO2's plugin menu has {entry} greyed out");
+        item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        await Task.Delay(300);
+    }
+
+    // The row MO2's menu is to be opened over, found by the plugin drawn in it.
+    private static Control PluginRow(Avalonia.Controls.Window window, string plugin) =>
+        window.GetVisualDescendants().OfType<Control>()
+            .FirstOrDefault(x => x.Name == "PluginRedesignRow" && x.ContextFlyout is MenuFlyout &&
+                x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == plugin))
+        ?? throw new InvalidOperationException($"No plugin row is drawing {plugin}");
 
     private static async Task WaitFor(Func<bool> ready, string failure, int seconds = 10)
     {

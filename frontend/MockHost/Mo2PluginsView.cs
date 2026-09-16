@@ -40,46 +40,15 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         var detailScroll = new ScrollViewer { Content = detailsPanel, MaxHeight = 150, IsVisible = false };
         DockPanel.SetDock(detailScroll, Dock.Bottom); layout.Children.Add(detailScroll);
         DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
-        var toolbar = Mo2ListToolbar.Create("PluginsToolbar");
-        // This header used to carry a LOOT sort of its own beside the overflow. MO2
-        // has one sortButton and this page draws it — the labelled Sort in the row
-        // of MO2's own widgets below — and the two called the same method, were
-        // greyed by the same line, and explained themselves with the same tooltip.
-        // One action, drawn twice, on a header line that had to give up the page
-        // title to fit its actions.
-        var primaryActions = new List<Control>();
-        var history = Mo2ModRow.IconButton("mdi-dots-vertical", "Plugin actions", () => { });
-        history.Name = "PluginsOverflowButton";
-        var historyMenu = new MenuFlyout();
-        historyMenu.Items.Add(Mo2EntryMenu.Action("Refresh plugins", () => ViewModel?.LiveProfile?.Refresh() ?? Task.CompletedTask));
-        historyMenu.Items.Add(new Separator());
-        Mo2OrderHistoryMenu.Add(historyMenu, () => ViewModel?.LiveProfile, "plugins");
-        history.Flyout = historyMenu; primaryActions.Add(history);
-        toolbar.Items.Add(Mo2ListToolbar.Pill("PluginPrimaryActions", primaryActions.ToArray()));
-        var search = _search;
-        Mo2ListToolbar.AddSearch(toolbar, search);
+        // This page drew a toolbar of its own above its list. It was not MO2's — MO2
+        // puts none on a tab — and everything on it is offered by a widget this page
+        // already draws or by the row menu MO2 itself builds: the search box by the
+        // filter field MO2 puts under the list (espFilterEdit), Enable and Disable
+        // for a selection by the row's own menu, which is how MO2 works one, and the
+        // backups behind its overflow by MO2's own Restore and Save beside Sort.
+        // Refreshing goes through MO2's list-options button on the mod pane, which is
+        // MO2's own Refresh over the whole profile.
         TreeDataGrid? editorTable = null;
-        // The same selection group My Mods gets from the original app's toolbar:
-        // how many rows are selected, a way to clear them, and the actions that
-        // apply to all of them. Selecting plugins used to say nothing at all, and
-        // the only way out of a selection was to click a single row again.
-        var enableSelected = new StandardButton {
-            Name = "EnableSelectedPlugins", Text = "Enable", Type = StandardButton.Types.Tertiary,
-            Size = StandardButton.Sizes.Toolbar, Fill = StandardButton.Fills.None,
-            ShowIcon = StandardButton.ShowIconOptions.Left, LeftIcon = IconValues.CheckCircleOutline,
-        };
-        ToolTip.SetTip(enableSelected, "Enable every selected plugin");
-        enableSelected.Click += async (_, _) => { if (ViewModel is { } model) await model.SetSelectedActive(true); };
-        var disableSelected = new StandardButton {
-            Name = "DisableSelectedPlugins", Text = "Disable", Type = StandardButton.Types.Tertiary,
-            Size = StandardButton.Sizes.Toolbar, Fill = StandardButton.Fills.None,
-            ShowIcon = StandardButton.ShowIconOptions.Left, LeftIcon = new ProjektankerIcon("mdi-close-circle-outline"),
-        };
-        ToolTip.SetTip(disableSelected, "Disable every selected plugin");
-        disableSelected.Click += async (_, _) => { if (ViewModel is { } model) await model.SetSelectedActive(false); };
-        var selectionGroup = Mo2SelectionGroup.Create(out var deselectPlugins,
-            () => editorTable?.RowSelection?.Clear(), enableSelected, disableSelected);
-        toolbar.Items.Add(selectionGroup);
 
         var editor = new LoadOrderView { Margin = new Thickness(0), Padding = new Thickness(0) };
         editorTable = editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid");
@@ -183,11 +152,10 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         }
         tab.AttachedToVisualTree += (_, _) => RefreshCount();
         tab.LayoutUpdated += (_, _) => RefreshCount();
-        // Same as Mods: the toolbar rides on the header line rather than in a row
-        // of its own, so both pages present one chrome.
-        toolbar.Margin = new Thickness(0);
+        // Same as Mods: the column chooser alone on the action row, and no toolbar
+        // beside it.
         var pluginColumns = Mo2TableRow.ColumnsButton(Mo2PluginRow.OptionalColumns, Mo2PluginRow.HiddenColumns, headings);
-        Mo2PanelChrome.ApplyDocked(this, layout, header, pluginColumns, toolbar);
+        Mo2PanelChrome.ApplyDocked(this, layout, header, pluginColumns);
         Mo2PanelChrome.Apply(this, layout, header);
         this.WhenActivated(disposables => {
             ViewModel!.Adapter.ViewHierarchical.Value = false;
@@ -210,20 +178,18 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 table.Columns.Add(_pluginColumn!);
             }).DisposeWith(disposables);
             editor.ViewModel = ViewModel;
-            search.Adapter = ViewModel.Adapter;
+            // The search control is not drawn any more — MO2's filter field under
+            // the list is what narrows this table — but it is still what the
+            // adapter's own query runs through, so it stays wired and unparented.
+            _search.Adapter = ViewModel.Adapter;
             this.Bind(ViewModel, vm => vm.Mo2SearchText, view => view.SearchBox.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.Mo2SearchExpanded, view => view.SearchPanel.IsVisible).DisposeWith(disposables);
-            search.AttachKeyboardHandlers(this, disposables);
-            System.Reactive.Disposables.Disposable.Create(() => search.Adapter = null).DisposeWith(disposables);
-            Mo2SearchQuery.Attach(search, profile, plugins: true).DisposeWith(disposables);
+            System.Reactive.Disposables.Disposable.Create(() => _search.Adapter = null).DisposeWith(disposables);
+            Mo2SearchQuery.Attach(_search, profile, plugins: true).DisposeWith(disposables);
             Mo2RowHighlights.Attach(editor, tableControl, profile, plugins: true).DisposeWith(disposables);
             void UpdateSelection() {
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
-                Mo2SelectionGroup.Update(selectionGroup, deselectPlugins, ViewModel.Adapter.SelectedModels.Count);
                 // The mirror of what selecting mods does to this table.
                 profile.HighlightPlugins(selected.Select(x => x.DisplayName));
-                enableSelected.IsEnabled = profile.CanChangeOriginalUi && selected.Any(x => x.CanToggle && !x.IsActive);
-                disableSelected.IsEnabled = profile.CanChangeOriginalUi && selected.Any(x => x.CanToggle && x.IsActive);
                 details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
                 if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";
                 detailScroll.IsVisible = ViewModel.ShowPluginDetails && profile.ProfilePath.Length > 0 && selected.Length > 0;

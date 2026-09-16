@@ -34,8 +34,14 @@ internal static class Mo2FilteredRowsCheck
         var plugins = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single(v => v.IsEffectivelyVisible);
         var modTable = mods.NativeView.FindControl<TreeDataGrid>("TreeDataGrid")!;
         var pluginTable = plugins.GetVisualDescendants().OfType<TreeDataGrid>().Single();
-        var modBox = mods.NativeView.FindControl<SearchControl>("SearchControl")!.FindControl<TextBox>("SearchTextBox")!;
-        var pluginBox = plugins.GetVisualDescendants().OfType<SearchControl>().Single().FindControl<TextBox>("SearchTextBox")!;
+        // MO2's own filter fields, which are what narrows these lists now: the search
+        // controls the two pages used to draw came off with their toolbars, and the
+        // plugin one is not in any visual tree to be found at all. These are the
+        // boxes a user types in, which is what this check is about.
+        TextBox Filter(Control page, string name) => page.GetVisualDescendants().OfType<TextBox>()
+            .FirstOrDefault(x => x.Name == name) ?? throw new Exception($"{name} is not drawn");
+        var modBox = Filter(mods, "ModsQtFilter");
+        var pluginBox = Filter(plugins, "PluginsQtFilter");
         var modText = modBox.Text; var pluginText = pluginBox.Text;
         var originalHeight = window.Height;
         var originalState = window.WindowState;

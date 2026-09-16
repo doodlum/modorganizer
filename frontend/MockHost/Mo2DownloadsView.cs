@@ -123,16 +123,12 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                 }) }
         });
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
-        var actions = new ItemsControl();
         StandardButton ActionButton(string text, string name, IconValue icon) {
             var button = new StandardButton { Text = text, Name = name, LeftIcon = icon,
                 Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None,
                 Size = StandardButton.Sizes.Toolbar, ShowIcon = StandardButton.ShowIconOptions.Left };
             ToolTip.SetTip(button, text); return button;
         }
-        var import = ActionButton("Install archive…", "InstallArchiveButton", IconValues.Add);
-        var install = ActionButton("Install selected", "InstallSelectedDownload", IconValues.DownloadDone);
-        var delete = ActionButton("Delete selected…", "DeleteSelectedDownload", IconValues.DeleteOutline);
         var nexus = ActionButton("Nexus link…", "OpenNexusLinkButton", IconValues.Link);
         var link = new TextBox { Watermark = "Paste a Nexus file link", Name = "NexusFileLink", MinWidth = 260 };
         var download = new Button { Content = "Download through MO2", Name = "DownloadNexusButton", Margin = new Thickness(0,8,0,0) };
@@ -142,8 +138,19 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         Mo2ProfileTarget? linkTarget = null;
         nexusFlyout.Opened += (_, _) => linkTarget = ViewModel?.Profile.CurrentTarget;
         nexusFlyout.Closed += (_, _) => linkTarget = null;
-        actions.Items.Add(import); actions.Items.Add(install); actions.Items.Add(delete); actions.Items.Add(nexus);
-        native.GetLogicalDescendants().OfType<Toolbar>().Single().Items.Insert(1, actions);
+        // The row of actions above this list is gone. It was the original app's
+        // toolbar, not MO2's — MO2 puts none on a tab — and everything on it that
+        // MO2 also offers, MO2 offers from its own download menu: Install, Delete...,
+        // Hide, Cancel, Pause and Resume are all on the row, and the search box is
+        // replaced by the filter field MO2 draws under the list. Install archive...
+        // is the same install MO2's mod list offers from its list-options button.
+        //
+        // Nexus link... is the one thing nothing else offers, so it moves to the row
+        // of MO2's own widgets beside Query Metadata, which is the other action on
+        // this page that asks Nexus about a download.
+        var nativeToolbar = native.GetLogicalDescendants().OfType<Toolbar>().Single();
+        if (nativeToolbar.Parent is Panel toolbarOwner) toolbarOwner.Children.Remove(nativeToolbar);
+        else nativeToolbar.IsVisible = false;
         Grid.SetRow(native,2); layout.Children.Add(native);
         var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,8,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
         layout.Children.Add(unavailable);
@@ -169,6 +176,10 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // recomputed which of the page's own controls were live, so a download added
         // or removed outside MO2 stayed off the list. It goes through MO2 first now,
         // then brings the page's own controls up to what came back.
+        // MO2's own two, and beside them the one action the page's toolbar carried
+        // that nothing else offers: pasting a Nexus file link to download through
+        // MO2. It sits here because Query Metadata beside it is the other action on
+        // this page that asks Nexus about a download.
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
             async () => {
                 if (ViewModel is { } model) await model.Profile.RefreshDownloads();
@@ -176,6 +187,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             }));
         qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadataTip,
             "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); }));
+        nexus.Margin = new Thickness(0); qtBar.Children.Add(nexus);
         Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
         // And the row MO2 puts under that list: the box that shows the downloads it
         // has been told to hide, and the field that narrows the list.
@@ -196,33 +208,15 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // chrome puts them on one line with the separator, padding and compaction
         // every other page has.
         Mo2PanelChrome.Adopt(native);
-        import.Click += async (_, _) => {
-            if (ViewModel is null || TopLevel.GetTopLevel(this) is not { } window) return;
-            await ChooseArchive(async () => {
-                var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
-                    Title = "Install mod archive", AllowMultiple = false,
-                    FileTypeFilter = [new FilePickerFileType("Mod archives") { Patterns = ["*.zip", "*.7z", "*.rar", "*.fomod"] }],
-                });
-                return files.FirstOrDefault()?.TryGetLocalPath();
-            });
-        };
-        install.Click += async (_,_) => {
-            if (ViewModel is not { } model) return;
-            var target = model.Profile.CurrentTarget;
-            foreach (var file in model.Selected.Where(x => !x.Partial).ToArray()) await model.Profile.InstallArchive(file.Path, target);
-        };
         // MO2 installs a download when it is double-clicked, which is how its own
-        // list is worked; the button beside the list does the same thing.
-        native.DoubleTapped += (_, e) => {
+        // list is worked. The button that used to share this code went with the
+        // toolbar; the gesture is MO2's own and stays.
+        native.DoubleTapped += async (_, e) => {
             if (ViewModel is not { } model || !model.Selected.Any(x => !x.Partial)) return;
             e.Handled = true;
-            install.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-        };
-        delete.Click += async (_, _) => {
-            if (ViewModel is not { } model) return;
             var target = model.Profile.CurrentTarget;
-            foreach (var file in model.Selected.Where(x => x.CanControl("delete")).ToArray())
-                await model.Profile.ControlDownload(file.Path, "delete", target);
+            foreach (var file in model.Selected.Where(x => !x.Partial).ToArray())
+                await model.Profile.InstallArchive(file.Path, target);
         };
         download.Click += async (_, _) => {
             if (ViewModel is not { } model || linkTarget is not { } target) return;
@@ -264,22 +258,10 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
             void Refresh()
             {
                 if (linkTarget is { } target && (target != profile.CurrentTarget || !profile.CanUseDownloads)) nexusFlyout.Hide();
-                import.IsEnabled = download.IsEnabled = nexus.IsEnabled = profile.CanUseDownloads;
-                install.IsEnabled = profile.CanUseDownloads && model.Selected.Any(x => !x.Partial);
-                delete.IsEnabled = profile.CanUseDownloads && model.Selected.Any(x => x.CanControl("delete"));
-                delete.IsVisible = model.Selected.Any(x => x.CanControl("delete"));
-                import.ShowLabel = install.ShowLabel = delete.ShowLabel = nexus.ShowLabel = Bounds.Width >= 900;
+                download.IsEnabled = nexus.IsEnabled = profile.CanUseDownloads;
                 context.Text = model.HeaderDescription;
                 unavailable.IsVisible = !profile.IsConnected;
                 unavailable.Text = profile.ProfilePath.Length == 0 ? "Select a profile to view downloads." : "Downloads are unavailable. Reconnect to MO2 to refresh this folder.";
-                foreach (var name in new[] { "PauseAllButton", "ResumeAllButton", "PauseSelectedButton", "ResumeSelectedButton", "CancelSelectedButton" }) {
-                    var button = native.FindControl<NexusMods.App.UI.Controls.StandardButton>(name)!;
-                    button.ShowLabel = Bounds.Width > 650;
-                    var operation = name.StartsWith("Cancel") ? "cancel" : name.StartsWith("Resume") ? "resume" : "pause";
-                    button.IsVisible = !name.Contains("Selected") || model.Selected.Any(x => x.CanControl(operation));
-                    button.IsEnabled = profile.CanUseDownloads && (name.Contains("Selected") ? model.Selected : profile.Downloads).Any(x => x.CanControl(operation));
-                    ToolTip.SetTip(button, name.Replace("Button", "").Replace("All", " all").Replace("Selected", " selected"));
-                }
             }
             profile.Changed += Refresh; SizeChanged += Resized;
             void Resized(object? sender, SizeChangedEventArgs args) { Refresh(); resizeColumns?.Invoke(); }

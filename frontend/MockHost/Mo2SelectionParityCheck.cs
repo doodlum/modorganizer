@@ -101,21 +101,13 @@ internal static class Mo2SelectionParityCheck
             Same("a row under the pointer is painted", x => x.HoveredRow);
         }
 
-        // The two lists no longer carry the same row of bulk actions, and that is
-        // deliberate rather than drift: My Mods draws no toolbar at all — MO2 puts
-        // none on a tab, and its row menu is what a selection is worked from — while
-        // Plugins keeps the Enable and Disable it grew for its own selection. So the
-        // group is asserted rather than compared, in both directions: a group that
-        // appears on My Mods, or one that stops appearing on Plugins, fails.
-        var modsGroup = behaviours.Single(x => x.Page == "My Mods");
-        var pluginsGroup = behaviours.Single(x => x.Page == "Plugins");
-        if (modsGroup.GroupShown)
-            faults.Add("My Mods grew a selection group back, where MO2 works a selection from the row menu");
-        if (!pluginsGroup.GroupShown) faults.Add("Plugins no longer shows a group when rows are selected");
-        else if (!pluginsGroup.GroupHiddenWhenEmpty) faults.Add("Plugins leaves its selection group up with nothing selected");
-        else if (pluginsGroup.CountText.Length == 0) faults.Add("Plugins does not say how many rows are selected");
-        else if (Digits(pluginsGroup.CountText) != "3") faults.Add($"Plugins reads \"{pluginsGroup.CountText}\" for three selected rows");
-        else if (!pluginsGroup.DeselectClears) faults.Add("Plugins has no deselect action that empties the selection");
+        // Neither list carries a row of bulk actions any more, and that is deliberate
+        // rather than drift: MO2 puts no toolbar on a tab, and a selection is worked
+        // from the row's own menu — which on both lists carries MO2's own entries.
+        // So the absence is asserted rather than the presence compared: a group that
+        // grows back on either page fails.
+        foreach (var page in behaviours.Where(x => x.GroupShown))
+            faults.Add($"{page.Page} grew a selection group back, where MO2 works a selection from the row menu");
 
         // What a selected row actually looks like, rather than what style was declared
         // for it. The plugin rows are wrapped in a border of the original view's own,
@@ -287,9 +279,8 @@ internal static class Mo2SelectionParityCheck
 
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
         Console.WriteLine($"PASS selection parity: both tables take {(first.MultiSelect ? "many rows" : "one row")} at a time " +
-            $"and paint a selected row {first.SelectedRow} with {first.HoveredRow} under the pointer; My Mods draws no " +
-            $"selection group, as MO2 draws none, and Plugins reports \"{pluginsGroup.CountText}\" when three are picked, " +
-            "hides that group again with nothing selected and clears from its own deselect action" +
+            $"and paint a selected row {first.SelectedRow} with {first.HoveredRow} under the pointer; neither draws a " +
+            "selection group, as MO2 draws none — a selection is worked from the row's own menu" +
             $"; selecting a mod marks {pluginsMarkedByMods} of its plugins and selecting a plugin marks " +
             $"{modsMarkedByPlugins} of the mods that install it; a refresh leaves {after.Mods} of {before.Mods} rows " +
             $"selected in both, and a click on a row selects exactly it on either page");

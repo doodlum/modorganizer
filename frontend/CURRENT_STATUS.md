@@ -3310,3 +3310,61 @@ killing the job it started, and the app is a *grandchild* of that job — timeou
 then `run-live.sh`, then `dotnet run`, then the host — so every killed run left a
 host behind at about 120MB. `frontend/tools/verify.sh` now sweeps them after every
 run, however it ended.
+
+## The toolbars on MO2's pages that were not MO2's
+
+MO2 puts no toolbar on a tab. Two of the six pages still drew one, and neither was
+MO2's: Plugins built one of this frontend's own, and Downloads used the original
+app's. Both are gone, and everything on them is accounted for.
+
+**Plugins.** Its toolbar carried a search box, an overflow menu and a selection
+group. Each has a home already:
+
+| Was on the toolbar | Is now |
+| --- | --- |
+| Search box | MO2's filter field under the list (`espFilterEdit`) |
+| Enable / Disable for a selection | the row's own menu, which has carried MO2's *Enable selected* and *Disable selected* all along — the buttons were duplicates of entries beside them |
+| Refresh plugins | MO2's list-options button on the mod pane, which is MO2's own Refresh over the whole profile |
+| Order-history menu | MO2's own Restore and Save beside Sort |
+
+**Downloads.** Its toolbar was the original app's, with the frontend's own actions
+inserted into it. MO2's download row menu — the one this frontend asks MO2 to build
+— already carries Install, Delete…, Hide, Cancel, Pause and Resume, so every
+transfer button on that row was a duplicate of an entry MO2 offers. *Install
+archive…* is the same install MO2's mod list offers from its list-options button.
+The search box is replaced by the filter field MO2 draws under the list.
+
+One action on it was offered nowhere else: **Nexus link…**, which downloads a file
+from a pasted link. It moves into the row of MO2's own widgets beside Query
+Metadata, the other action on that page that asks Nexus about a download. Nothing
+was dropped silently.
+
+MO2's double-click-to-install on a download stays: that gesture is MO2's own, and
+it shared its code with the button rather than the other way round.
+
+### Checks that were pointed at the removed controls
+
+Four, all re-pointed at what replaced their subject rather than deleted:
+
+* `MO2_VERIFY_CONTROLS` and the pointer plugin checks drove `DisableSelectedPlugins`
+  and `EnableSelectedPlugins`. They go through MO2's own menu entries now — **on the
+  row of the plugin in question**, which is the part that had to be got right: MO2
+  gates those entries on the plugin the menu was opened over, so opening the first
+  row's menu asked about the wrong plugin and reported *Disable selected* greyed out
+  on a list where it was live.
+* `MO2_VERIFY_SELECTION_PARITY` asserted that My Mods had no selection group and
+  Plugins did. Neither has one now, so it asserts the absence on both and fails if
+  either grows one back.
+* `MO2_VERIFY_FILTERED_ROWS` typed into the two pages' search controls. The plugin
+  one is in no visual tree at all any more, so it types into MO2's own filter fields
+  — `ModsQtFilter` and `PluginsQtFilter` — which is what a user types in.
+* `MO2_VERIFY_INSTALL_ARCHIVE` watched `InstallArchiveButton` across a profile
+  switch; it watches the Nexus link action, which is the one still on that page.
+
+Seventeen checks were run against the live host: fourteen passed on the first pass
+and the three that did not — selection parity, controls and filtered rows — pass
+after the re-pointing above. Two of the four re-pointed checks could not be run on
+this host: `MO2_VERIFY_PLUGIN_MULTI` needs two enabled MCM example plugins and that
+mod is disabled here, and `MO2_VERIFY_INSTALL_ARCHIVE` needs an archive path passed
+in. They are changed but unverified, and that is not the same as changed and
+working.
