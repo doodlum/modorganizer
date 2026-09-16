@@ -2014,3 +2014,41 @@ Open: `linkButton`'s shortcut menu (Toolbar and Menu, Desktop, Start Menu, each
 showing add or remove by whether the shortcut exists) has no counterpart; it needs
 a bridge action and an MO2 restart. Cold first-display latency and the combined
 end-to-end workflow remain open.
+
+## 2026-09-16 — MO2's shortcut menu, and the last of mainwindow.ui
+
+Previous turn was progress: the action row kept in shared panels and MO2's
+`<Edit...>` added. This turn added the last widget of MO2's run row.
+
+MO2's `linkButton` offers Toolbar and Menu, Desktop and Start Menu, each drawn with
+an add or a remove icon by whether that shortcut exists; the frontend had no
+counterpart. A new `shortcutMenu` bridge action presses MO2's own button — which is
+what makes those icons current — and compares each icon against MO2's own remove
+resource, so the state is MO2's answer rather than a second guess at where it keeps
+shortcuts. Naming an entry triggers MO2's own action. The frontend draws MO2's three
+captions worded by what MO2 reported, read when the menu opens rather than held.
+
+The check drives Toolbar and Menu through to MO2 and back, that being MO2's own
+executable setting rather than a file in the Proton prefix. On this host it went on
+and back off for NVSE and all three `toolbar=` flags in ModOrganizer.ini read false
+afterwards. Desktop and Start Menu are reported but not driven; they would write
+into the prefix's shell folders.
+
+The first version answered nothing: every bridge action past snapshot goes through
+a guard requiring the profile it is for to be named. That was only visible because
+the check was changed to report the reason MO2 gave rather than the emptiness — a
+route that answers nothing and says nothing being the same shape of fault as a
+button that draws and does nothing.
+
+MO2 was restarted for the plugin change and hung again after its window closed; it
+was terminated once the window was gone and the profile files were unchanged across
+the restart.
+
+Live on the FNV host: widget behaviour PASS including the run row and the shortcut
+round trip, Qt widgets PASS, row menus PASS, and the audit group PASS thirteen for
+thirteen. All 24 profile files hash identically to the start of the session.
+
+Every widget named in src/mainwindow.ui now has a counterpart driven live by
+MO2_VERIFY_WIDGET_BEHAVIOUR. Cold first-display latency and the combined end-to-end
+workflow remain open, as does a comparison of the frontend's own pinned-tool
+shortcuts against MO2's toolbar pins, which are separate stores.

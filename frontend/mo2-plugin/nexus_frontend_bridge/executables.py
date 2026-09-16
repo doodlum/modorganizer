@@ -38,6 +38,53 @@ class Executables:
         selector = self.selector()
         return {selector.itemText(index): icon_png(selector.itemIcon(index)) for index in range(1, selector.count())}
 
+    def shortcut_menu(self, name, entry=None):
+        """Read, or trigger one entry of, MO2's own linkButton menu.
+
+        MO2 builds that menu once and decides which way round each entry reads only
+        when the button is pressed: on_linkButton_pressed sets the remove icon where
+        the shortcut already exists and the add icon where it does not. So the button
+        is pressed here — that is what makes the icons current for the executable
+        asked about — and each icon is compared against MO2's own remove resource.
+        The answer is MO2's, not a second guess at where it keeps its shortcuts.
+
+        With no entry this reports the three; with one it triggers MO2's own action,
+        so the toggling, the toolbar update and the shortcut files are all MO2's.
+        """
+        from PyQt6.QtGui import QIcon
+        from PyQt6.QtWidgets import QPushButton
+        from .icons import icon_png
+        if not isinstance(name, str) or name not in self.snapshot():
+            raise ValueError('Choose an executable configured in MO2')
+        if not self.window.isEnabled():
+            raise ValueError('MO2 is busy')
+        button = self.window.findChild(QPushButton, 'linkButton')
+        if button is None or not button.isEnabled():
+            raise ValueError('MO2 shortcut controls are unavailable')
+        menu = button.menu()
+        if menu is None:
+            raise ValueError('This MO2 version does not expose its shortcut menu')
+        selector = self.selector()
+        previous = selector.currentIndex()
+        selector.setCurrentIndex(selector.findText(name))
+        try:
+            button.pressed.emit()
+            remove = icon_png(QIcon(':/MO/gui/remove'))
+            actions = [action for action in menu.actions() if not action.isSeparator()]
+            if entry is None:
+                return {'entries': [{'text': action.text(), 'exists': icon_png(action.icon()) == remove,
+                                     'enabled': action.isEnabled()} for action in actions]}
+            for action in actions:
+                if action.text() == entry:
+                    action.trigger()
+                    return {'triggered': entry}
+            raise ValueError('MO2 has no shortcut entry called ' + str(entry))
+        finally:
+            # Never back onto row 0: that row is MO2's <Edit...> and putting the
+            # selection there opens its Edit Executables dialog.
+            if previous >= 1:
+                selector.setCurrentIndex(previous)
+
     def launch(self, name):
         if not isinstance(name, str) or name not in self.snapshot():
             raise ValueError('Choose an executable configured in MO2')

@@ -2688,3 +2688,50 @@ flyout, where nothing in the window's tree can find it.
 drawn with an add or a remove icon by whether that shortcut already exists — has no
 counterpart beside the frontend's run row. It needs a bridge action and therefore
 an MO2 restart, which is why it is not in this turn.
+
+## MO2's shortcut menu
+
+MO2's `linkButton` sits beside its executables box and offers three places to put a
+shortcut to the chosen executable: **Toolbar and Menu**, **Desktop**, **Start
+Menu**. It decides which way round each entry reads only when the button is
+pressed — `on_linkButton_pressed` sets the remove icon where the shortcut already
+exists and the add icon where it does not. The frontend had no counterpart at all.
+
+The new `shortcutMenu` bridge action presses MO2's own button, which is what makes
+those icons current for the executable asked about, and compares each against MO2's
+own `:/MO/gui/remove` resource. The answer is MO2's rather than a second guess at
+where MO2 keeps its shortcuts; nothing here looks for `.lnk` files or reimplements
+`env::Shortcut`. With no entry named it reports the three; with one it triggers
+MO2's own action, so the toggling, the toolbar update and the shortcut files are all
+MO2's.
+
+The frontend draws MO2's three under MO2's own captions, worded by what MO2 just
+reported — **Add to Toolbar and Menu** where MO2 would draw its add icon, **Remove
+from …** where it would draw remove. Read when the menu opens rather than held: MO2
+is the only thing that knows whether a shortcut is still there, and one can be
+removed outside this window.
+
+The check drives **Toolbar and Menu** through to MO2 and back, because that one is
+MO2's own executable setting rather than a file in its Windows prefix and MO2
+reports it back from the icon it draws. On this host it went on and back off for
+NVSE, and all three of MO2's `toolbar=` flags in `ModOrganizer.ini` read `false`
+afterwards, as they did before. Desktop and Start Menu are offered and reported but
+not driven: both would write into the Proton prefix's own shell folders, which is
+not this desktop's.
+
+One thing the route needed that was not obvious: every bridge action past `snapshot`
+goes through a guard that refuses anything not naming the profile it is for, so the
+first version answered nothing and said **"Active MO2 profile changed; refresh
+before editing"** — which the check only surfaced because it was changed to report
+the reason MO2 gave rather than just the emptiness. A route that answers nothing and
+says nothing is the same shape of fault as a button that draws and does nothing.
+
+`refreshDownloads` and `shortcutMenu` are both plugin-side, so MO2 must be restarted
+after copying `frontend/mo2-plugin/nexus_frontend_bridge` over the host's `plugins/`
+copy. MO2 2.5.2 hung after its window closed again on this host and was terminated
+once its window was gone; the profile files were unchanged across the restart.
+
+**Every widget in `src/mainwindow.ui` now has a counterpart that is driven live.**
+The mod pane's eighteen, espTab's four, dataTab's five, downloadTab's four, and the
+run row's three — the executables box with MO2's `<Edit...>`, Run, and the shortcut
+menu. bsaTab and savesTab are the list alone in MO2 and here.

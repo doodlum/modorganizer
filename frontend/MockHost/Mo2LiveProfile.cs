@@ -1018,6 +1018,47 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
 
+    // MO2's linkButton menu: the three places it will put a shortcut to the chosen
+    // executable, and whether each one is already there. MO2 decides both — the
+    // wording is its own and the add-or-remove state is the one it draws on its own
+    // menu when the button is pressed — so nothing here works out where MO2 keeps a
+    // shortcut or what it should be called.
+    public readonly record struct Mo2Shortcut(string Text, bool Exists, bool Enabled);
+    public async Task<Mo2Shortcut[]> ReadShortcuts(string executable)
+    {
+        if (!CanStartHostAction || executable.Length == 0) return [];
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected) return [];
+            // Through the same profile guard as every other editing action: the bridge
+            // refuses anything past its snapshot that does not name the profile it is
+            // for, which is what keeps a stale window from writing to a profile MO2
+            // has since moved off.
+            var result = await Client.SendAsync("shortcutMenu",
+                new() { ["profilePath"] = CurrentTarget.ProfilePath, ["name"] = executable });
+            if (!result.TryGetProperty("entries", out var entries)) return [];
+            return entries.EnumerateArray().Select(x => new Mo2Shortcut(
+                x.GetProperty("text").GetString() ?? "",
+                x.TryGetProperty("exists", out var exists) && exists.ValueKind == JsonValueKind.True,
+                !x.TryGetProperty("enabled", out var enabled) || enabled.ValueKind != JsonValueKind.False)).ToArray();
+        } catch (Exception error) { Report(error); return []; }
+        finally { _commands.Release(); }
+    }
+
+    public async Task ToggleShortcut(string executable, string entry, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = "Asking MO2 for a " + entry + " shortcut"; Changed?.Invoke();
+            await Client.SendAsync("shortcutMenu",
+                new() { ["profilePath"] = target.ProfilePath, ["name"] = executable, ["entry"] = entry });
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
     // MO2's own Refresh over its download list, which reads the downloads folder
     // again rather than redrawing what is already held. The page's button used to
     // do neither: it recomputed which of its own controls were live and nothing

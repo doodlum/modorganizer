@@ -59,6 +59,7 @@ internal sealed class Mo2LaunchPanel : Border
     internal const string EditEntry = "<Edit...>";
     public Mo2LaunchButton Model { get; }
     public ComboBox Executable { get; } = new() { Name = "ExecutablesListBox", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    public Button? ShortcutMenu { get; private set; }
     public LaunchButtonView NativeButton { get; }
     public Mo2LaunchPanel(Mo2LiveProfile profile)
     {
@@ -69,7 +70,45 @@ internal sealed class Mo2LaunchPanel : Border
         var contents = new StackPanel { Spacing = 8 };
         var pins = new WrapPanel { Name = "PinnedToolShortcuts" };
         contents.Children.Add(pins);
-        contents.Children.Add(Executable); contents.Children.Add(NativeButton); Child = contents;
+        // MO2's linkButton, beside the box the executable is chosen in. Its three
+        // entries are MO2's own, and each is worded by what MO2 says it would do —
+        // MO2 draws a remove icon where the shortcut is already there and an add icon
+        // where it is not, which is the same answer in words.
+        var link = new Button { Name = "ShortcutMenuButton", Content = new TextBlock { Text = "Shortcut…" },
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, Padding = new Thickness(6, 2) };
+        ToolTip.SetTip(link, "Add or remove a shortcut to the chosen executable");
+        var linkMenu = new MenuFlyout { Placement = Avalonia.Controls.PlacementMode.Top };
+        link.Flyout = linkMenu;
+        // Read when it is opened, not held: MO2 is the only thing that knows whether
+        // a shortcut is still there, and it can be removed outside this window.
+        linkMenu.Opening += async (_, _) => {
+            linkMenu.Items.Clear();
+            var chosen = Model.SelectedExecutable;
+            var target = profile.CurrentTarget;
+            linkMenu.Items.Add(new MenuItem { Header = "Asking MO2…", IsEnabled = false });
+            var entries = await profile.ReadShortcuts(chosen);
+            if (profile.CurrentTarget != target) return;
+            linkMenu.Items.Clear();
+            if (entries.Length == 0) {
+                linkMenu.Items.Add(new MenuItem { Header = "MO2 offers no shortcut for this executable", IsEnabled = false });
+                return;
+            }
+            foreach (var entry in entries) {
+                var item = new MenuItem {
+                    Header = (entry.Exists ? "Remove from " : "Add to ") + entry.Text,
+                    IsEnabled = entry.Enabled && profile.CanChangeOriginalUi,
+                };
+                var name = entry.Text;
+                item.Click += async (_, _) => await profile.ToggleShortcut(chosen, name, target);
+                linkMenu.Items.Add(item);
+            }
+        };
+        var runRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 0) };
+        runRow.Children.Add(Executable);
+        link.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetColumn(link, 1); runRow.Children.Add(link);
+        contents.Children.Add(runRow); contents.Children.Add(NativeButton); Child = contents;
+        ShortcutMenu = link;
         ToolTip.SetTip(Executable, "Choose an executable configured in MO2");
         Avalonia.Automation.AutomationProperties.SetName(Executable, "Executable");
         var updating = false;
@@ -138,6 +177,9 @@ internal sealed class Mo2LaunchPanel : Border
                 if (!(Executable.ItemsSource as IEnumerable<string> ?? []).SequenceEqual(wanted)) Executable.ItemsSource = wanted;
                 Executable.SelectedItem = Model.SelectedExecutable;
                 Executable.IsEnabled = !Model.IsBusy;
+                // MO2 greys its linkButton out with the rest of the pane, and it has
+                // nothing to make a shortcut to until an executable is chosen.
+                link.IsEnabled = profile.CanChangeOriginalUi && Model.SelectedExecutable.Length > 0;
                 NativeButton.IsEnabled = Model.CanLaunch;
             } finally { updating = false; }
         }

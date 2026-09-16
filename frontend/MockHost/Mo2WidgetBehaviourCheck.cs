@@ -720,6 +720,58 @@ internal static class Mo2WidgetBehaviourCheck
                 $"with {executables.SelectedItem} chosen — its dialog is modal and was not opened");
         } else faults.Add("there is no executables box to run anything from");
 
+        // MO2's linkButton beside that box: the three places it will put a shortcut to
+        // the chosen executable, each drawn with an add or a remove icon by whether
+        // the shortcut is already there (on_linkButton_pressed). Read from MO2, and
+        // one of them driven through to MO2 and back.
+        if (live.LaunchPanel?.ShortcutMenu is { } shortcuts) {
+            var chosen = live.LaunchPanel.Model.SelectedExecutable;
+            var entries = await live.Profile.ReadShortcuts(chosen);
+            // MO2's own three, by its own wording (MainWindow's linkMenu).
+            string[] wanted = ["Toolbar and Menu", "Desktop", "Start Menu"];
+            var missing = wanted.Where(x => !entries.Any(e => e.Text == x)).ToArray();
+            // With the reason MO2 gave, not just the emptiness: a route that answers
+            // nothing and says nothing is the shape of fault this check exists for,
+            // and "no entries" alone does not say whether MO2 refused or was not asked.
+            if (entries.Length == 0) faults.Add($"MO2 offered no shortcut entry for {chosen} — {live.Profile.Status}");
+            else if (missing.Length > 0) faults.Add($"MO2's shortcut menu is missing {string.Join(", ", missing)}");
+            else {
+                // Toolbar and Menu is the one driven: it is MO2's own executable
+                // setting rather than a file in its Windows prefix, MO2 reports it
+                // back from the icon it draws, and it is put back the same way.
+                var toolbar = entries.First(x => x.Text == "Toolbar and Menu");
+                if (!toolbar.Enabled)
+                    worked.Add($"MO2 offers its three shortcut entries for {chosen} and will not take Toolbar and Menu, so none was driven");
+                else {
+                    await live.Profile.ToggleShortcut(chosen, "Toolbar and Menu", live.Profile.CurrentTarget);
+                    // Asked again rather than assumed: the toggle goes through MO2 and
+                    // MO2 is what says whether it took.
+                    var after = (await live.Profile.ReadShortcuts(chosen)).FirstOrDefault(x => x.Text == "Toolbar and Menu");
+                    await live.Profile.ToggleShortcut(chosen, "Toolbar and Menu", live.Profile.CurrentTarget);
+                    var back = (await live.Profile.ReadShortcuts(chosen)).FirstOrDefault(x => x.Text == "Toolbar and Menu");
+                    if (after.Exists == toolbar.Exists)
+                        faults.Add($"Toolbar and Menu did not change what MO2 reports for {chosen}");
+                    else if (back.Exists != toolbar.Exists)
+                        faults.Add($"{chosen} was left {(after.Exists ? "on" : "off")} MO2's toolbar");
+                    else worked.Add($"MO2's three shortcut entries are offered for {chosen}, and Toolbar and Menu went " +
+                        $"{(toolbar.Exists ? "off and back on" : "on and back off")} in MO2");
+                }
+            }
+            // The menu a user opens, over the same answer.
+            if (shortcuts.Flyout is MenuFlyout shortcutMenu && entries.Length > 0) {
+                shortcutMenu.ShowAt(shortcuts);
+                await Until(() => shortcutMenu.Items.OfType<MenuItem>().Any(x => (x.Header as string) != "Asking MO2…"), seconds: 30);
+                var captions = shortcutMenu.Items.OfType<MenuItem>().Select(x => x.Header as string ?? "").ToArray();
+                shortcutMenu.Hide();
+                // MO2 says add or remove with an icon; this says it in words, so the
+                // caption has to follow what MO2 reported rather than being fixed.
+                var expected = entries.Select(x => (x.Exists ? "Remove from " : "Add to ") + x.Text).ToArray();
+                if (!captions.SequenceEqual(expected))
+                    faults.Add($"the shortcut menu reads {string.Join(", ", captions)}, not {string.Join(", ", expected)}");
+                else worked.Add($"the shortcut menu reads {string.Join(", ", captions)}, following what MO2 reported");
+            }
+        } else faults.Add("there is no shortcut menu beside the executables box");
+
         await Navigate(restore);
         await Task.Delay(600);
 

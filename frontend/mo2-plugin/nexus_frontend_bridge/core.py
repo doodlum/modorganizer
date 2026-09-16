@@ -193,6 +193,10 @@ class Bridge:
             if self.executables is None:
                 raise ValueError('MO2 launch integration is unavailable')
             return self.executables.launch(request.get('name'))
+        if action == 'shortcutMenu':
+            if self.executables is None:
+                raise ValueError('MO2 launch integration is unavailable')
+            return self.executables.shortcut_menu(request.get('name'), request.get('entry'))
         if action == 'manageNexusAccount':
             if self.mod_actions is None:
                 raise ValueError('MO2 settings integration is unavailable')
