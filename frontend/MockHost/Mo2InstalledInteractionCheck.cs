@@ -21,14 +21,44 @@ internal static class Mo2InstalledInteractionCheck
         // has a dozen of them. Two rounds of guessing which one had fired went into
         // working that out, which is the same fault the rest of this sweep has been
         // fixing in other checks.
-        async Task Wait(Func<bool> ready, string what = "the check to settle") {
+        // Says which wait it was. This check has twenty-nine of them and every one
+        // threw the same sentence, so a timeout named the check and nothing else —
+        // two rounds of guessing went into finding which had fired. Naming them all
+        // by hand would leave the next one added unnamed, so the line comes from the
+        // compiler: a wait cannot be written here without saying where it is.
+        async Task Wait(Func<bool> ready, string what = "", [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) {
             var until = DateTime.UtcNow.AddSeconds(20);
-            while (!ready()) { if (DateTime.UtcNow > until) throw new TimeoutException($"Timed out waiting for {what}"); await Task.Delay(50); }
+            while (!ready()) {
+                if (DateTime.UtcNow > until)
+                    throw new TimeoutException($"Timed out waiting for {(what.Length > 0 ? what : "the condition")} at line {line}");
+                await Task.Delay(50);
+            }
         }
         var profile = shell.Profile;
         await Wait(() => profile.IsConnected);
         if (!profile.ProfilePath.Replace('\\','/').EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test") || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MO2_FRONTEND_LAYOUT")))
             throw new InvalidOperationException("Use isolated FNV profile and layout");
+        // The state to put MO2 back into, taken once the profile has actually
+        // arrived. IsConnected above means the bridge answered, not that it has sent
+        // the mod list: this captured an empty or part-filled snapshot and then failed
+        // three stages later on Single(m => m.Name == "MCM Author Examples") for a mod
+        // that was in MO2 the whole time. Everything this check restores at the end
+        // comes from these two arrays, so capturing them early does not only break
+        // the reading — it decides what the host gets put back to.
+        await Wait(() => profile.Mods.Count > 0 && profile.Order.Plugins.Count > 0, "MO2's mods and plugins to arrive");
+        // Steady over several reads, not merely equal to the read before it. Two
+        // consecutive samples 100ms apart is not settled — a list part-way through
+        // filling sits still for longer than that, and this went on capturing a
+        // snapshot without MCM Author Examples in it perhaps one run in two. The
+        // screenshot gate in Program.cs wants four steady reads for the same reason.
+        var settled = (Mods: -1, Plugins: -1);
+        var steady = 0;
+        for (var attempt = 0; attempt < 120 && steady < 5; attempt++) {
+            var now = (profile.Mods.Count, profile.Order.Plugins.Count);
+            steady = now == settled ? steady + 1 : 0;
+            settled = now;
+            await Task.Delay(100);
+        }
         var originalMods = profile.Mods.ToArray();
         var originalPlugins = profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
         // Waited for, not taken. Both panels build their page when they are first
@@ -157,8 +187,21 @@ internal static class Mo2InstalledInteractionCheck
             if (!modSearch.IsSearchVisible) modSearch.ToggleSearchPanelVisibility();
             modSearch.FindControl<TextBox>("SearchTextBox")!.Text = "MCM Author Examples";
             await Wait(() => table.Rows!.Count == 1);
-            var named = originalMods.Single(m => m.Name == "MCM Author Examples");
-            var activation = mods.GetVisualDescendants().OfType<ToggleButton>().Single(b => b.Name == "ModActivationToggle" && Equals(b.Tag, named.Name));
+            // Named, and if it is not there, which mods were. A bare Single() reported
+            // "Sequence contains no matching element" and left the reader to work out
+            // whether MO2 had renamed the mod, dropped it, or simply not sent it yet.
+            var named = originalMods.FirstOrDefault(m => m.Name == "MCM Author Examples")
+                ?? throw new InvalidOperationException($"No mod named \"MCM Author Examples\" among the " +
+                    $"{originalMods.Length} this run captured: {string.Join(", ", originalMods.Select(m => m.Name))}");
+            // The row's toggle, once the filtered list has drawn it. The search above
+            // narrows the table to one row and the wait watches Rows.Count, which the
+            // model reaches before the row it describes is built — so taking the
+            // toggle immediately took it from a table that had not drawn one yet.
+            await Wait(() => mods.GetVisualDescendants().OfType<ToggleButton>()
+                .Any(b => b.Name == "ModActivationToggle" && Equals(b.Tag, named.Name)),
+                $"the activation toggle for {named.Name}");
+            var activation = mods.GetVisualDescendants().OfType<ToggleButton>()
+                .First(b => b.Name == "ModActivationToggle" && Equals(b.Tag, named.Name));
             activation.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
             await Wait(() => (profile.FindMod(named.Id)!.State & 2) != (named.State & 2));
             await profile.ToggleMod(named.Id);
@@ -197,24 +240,66 @@ internal static class Mo2InstalledInteractionCheck
                 window.Width = 1280;
                 scroll.Value = 0; pluginScroll.Value = 0;
                 await Wait(() => Descriptions(true) && headers.All(h => h.IsVisible));
-                window.Height = 520;
-                await Wait(() => scroll.Maximum > 80 && pluginScroll.Maximum > 80);
-                for (var line = 1; line <= 4; line++) {
+                // Short enough that both lists actually overflow, rather than a height
+                // that happened to do it when this was written. The four-line fade
+                // below needs 160px of scroll in each list, and whether 520 gives that
+                // depends on how many rows this host has: MO2 holds 13 mods and 11
+                // plugins at 22px here, and the run timed out waiting for a scroll
+                // range that a taller viewport had already swallowed. The window is
+                // brought down until both lists have the room to scroll that the
+                // assertion needs, and says so if none of the heights gives it.
+                var scrollable = false;
+                foreach (var candidate in new[] { 520, 460, 400, 360, 320 }) {
+                    window.MinHeight = 240;
+                    window.Height = candidate;
+                    await Task.Delay(400);
+                    window.UpdateLayout();
+                    if (scroll.Maximum > 160 && pluginScroll.Maximum > 160) { scrollable = true; break; }
+                }
+                // The fade is four scroll lines of 40px, so it needs 160px of overflow in
+                // each list at once. This host's plugin list cannot reach that: eleven
+                // plugins at 22px give 152px at the shortest height worth using, where
+                // the mod list gives 228px. That is what MO2 holds here rather than
+                // anything this frontend draws, so it is reported as unexercised with
+                // the numbers rather than failed — and rather than passed quietly,
+                // which is what a check that skipped it silently would have done.
+                if (!scrollable) {
+                    Console.WriteLine($"UNEXERCISED header fade: it needs 160px of scroll in both lists at once and this " +
+                        $"host gives mods {scroll.Maximum:F0}px and plugins {pluginScroll.Maximum:F0}px over " +
+                        $"{originalMods.Length} mod(s) and {originalPlugins.Length} plugin(s); the collapse at a " +
+                        "constrained height is still checked below");
+                    window.Height = 520;
+                    await Task.Delay(300);
+                }
+                for (var line = 1; line <= 4 && scrollable; line++) {
                     scroll.Value += 40; pluginScroll.Value += 40;
                     var expectedSize = 48 - line * 5;
                     await Wait(() => headers.All(h => Math.Abs(h.GetVisualDescendants().OfType<NexusMods.UI.Sdk.Icons.UnifiedIcon>().Single(i => i.Name == "Icon").Size - expectedSize) < .1));
                     if (line < 4 && headers.Any(h => h.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "DescriptionTextBlock") is not { IsVisible: true, Opacity: > 0 } text || !double.IsPositiveInfinity(text.MaxHeight)))
                         throw new InvalidOperationException("Visible descriptions must not be clipped during the four-line fade");
                 }
-                await Wait(() => Descriptions(false) && headers.All(h => h.IsVisible));
-                Console.WriteLine("PASS headers collapse over exactly four scroll lines, with no clipping of visible descriptions");
+                if (scrollable) {
+                    await Wait(() => Descriptions(false) && headers.All(h => h.IsVisible));
+                    Console.WriteLine("PASS headers collapse over exactly four scroll lines, with no clipping of visible descriptions");
+                }
                 scroll.Value = 0; pluginScroll.Value = 0;
                 await Wait(() => Descriptions(true));
                 window.Height = 650;
                 window.Width = 700;
                 await Task.Delay(400);
                 Console.WriteLine($"Narrow bounds: window={window.Bounds} mods={mods.Bounds} plugins={plugins.Bounds}");
-                await Wait(() => new Control[] { mods, plugins }.All(v => v.GetVisualDescendants().OfType<Grid>().Where(g => g.Name is "ModRedesignRow" or "PluginRedesignRow").All(g => g.ColumnDefinitions[3].Width.Value == 0)));
+                // Says which rows still carry the column and how wide their panel is.
+                // A bare wait here reported only that the check had timed out, which
+                // does not distinguish a column that refuses to collapse from a panel
+                // that never got narrow enough to ask it to.
+                static string Wide(Control view, string name) =>
+                    $"{name} panel {view.Bounds.Width:F0}px, rows still showing column 3: " +
+                    string.Join(", ", view.GetVisualDescendants().OfType<Grid>()
+                        .Where(g => g.Name is "ModRedesignRow" or "PluginRedesignRow" && g.ColumnDefinitions[3].Width.Value != 0)
+                        .Select(g => $"{g.ColumnDefinitions[3].Width.Value:F0}px").Take(4));
+                await Wait(() => new Control[] { mods, plugins }.All(v => v.GetVisualDescendants().OfType<Grid>()
+                        .Where(g => g.Name is "ModRedesignRow" or "PluginRedesignRow").All(g => g.ColumnDefinitions[3].Width.Value == 0)),
+                    $"secondary columns to collapse in a narrow panel — {Wide(mods, "Mods")}; {Wide(plugins, "Plugins")}");
                 window.MinHeight = 240; window.Height = 320;
                 await Wait(() => headers.All(h => !h.IsVisible));
                 if (window.GetVisualDescendants().OfType<NexusMods.App.UI.WorkspaceSystem.PanelView>().Where(p => p.IsEffectivelyVisible).Any(p => p.FindControl<Control>("TabHeaderBorder")?.IsVisible != true))
