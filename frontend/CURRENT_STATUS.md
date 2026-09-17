@@ -3641,3 +3641,79 @@ What survives from all of it is smaller and more useful than any of the guesses:
 these checks report what they saw. `PAIRED_PANELS` names the header count, what was
 built, the panel count, the size and which ancestor hid each one — and that turned
 the last of them from three wrong guesses into one run.
+
+## Every check that had never been run, run
+
+Listing every `MO2_VERIFY_*` in `Program.cs` against the logs found **eighty-nine
+that no sweep had ever named**. The ones about widgets, pointer input, layout and
+panels were run — **thirty-three of them across three runners**. Eleven passed
+first time. **Twenty-two had rotted, and not one was a fault in the frontend.**
+
+They rotted for a single reason: nothing ran them. A check nobody runs stops being
+evidence and becomes a description of a program that no longer exists — and it
+fails in a way that reads exactly like the program being broken.
+
+### The two that looked like defects, and were not
+
+**"History restored an incorrect game page."** One message served six call sites,
+including the first, which runs before any history navigation. Made to say which
+step and what it saw, it answered at once: context New Vegas, headings *New Vegas
+profiles*, view unbound. It wanted *New Vegas Loadouts* — `ScenarioData`'s fixture
+wording — where `Mo2HomePages` heads a live section `"<game> profiles"`, because
+**profiles is MO2's word and loadouts is NMA's**. Against MO2's wording it passes
+whole.
+
+**"Panel interaction changed MO2 state"** — that dragging a divider wrote to the
+host. Thrown without naming anything. Made to print the difference, it printed
+none: 11 of 11 plugins and 14 of 14 mods identical, rebuilt in another enumeration
+order after a game switch reconnected. It was `SequenceEqual` over a collection
+whose order is not the state under test; `SortIndex` and `Priority` carry that, and
+both sit inside the tuples being compared.
+
+Both would have been reported as frontend defects on the strength of their own
+messages.
+
+### Six runners, not one
+
+`verify.sh` knew one way a check could need special handling. It knows six now, and
+every check it cannot run says why and names the runner that can:
+
+| Class | Why |
+| --- | --- |
+| paired layout | needs the two lists side by side |
+| tabbed layout | needs one panel with two tabs, which the paired fixture cannot hold |
+| attended | waits for a person at the keyboard |
+| pointer-driven | needs `check_plugin_mouse.py` and its virtual evdev devices |
+| parameterised | takes a value, and was being handed `1` |
+| fixtures-only | wired into the fixtures window, never reached against a bridge |
+
+### The pointer checks had not built since Debug broke
+
+`PANEL_DRAG`, `PLUGIN_DRAG` and `PLUGIN_MULTI` are the only checks that press a
+real pointer, and their driver launched `bin/Debug/net9.0/MockHost.dll`. Debug has
+not built since MockHost took `AvaloniaUI.DiagnosticsSupport`: upstream references
+`Avalonia.Diagnostics` in Debug alone and the two conflict under Avalonia v12.
+Release was untouched, so nothing noticed. The driver defaults to Release now.
+
+`PANEL_DRAG` then passes every phase under genuine kernel-level input — dividers
+resize, survive a game switch, and leave MO2's mods and plugins untouched.
+`PLUGIN_DRAG`, `PLUGIN_MULTI` and `PLUGIN_DOWN` need `MCM Author Examples` enabled
+in the Frontend Test profile; it is disabled, so there are no movable MCM plugins.
+Enabling it writes extra entries into `plugins.txt` that do not cleanly revert, so
+it is left as a decision rather than made here.
+
+### What the checks now do that they did not
+
+* A wait says which wait it was. `Mo2InstalledInteractionCheck` had twenty-nine
+  throwing one sentence; the line comes from `[CallerLineNumber]` now, so a wait
+  cannot be written without saying where it is.
+* A failure says what it saw. `PAIRED_PANELS` names the header count, what was
+  built, the panel count, the size and which ancestor hid each one — which turned
+  its diagnosis from three wrong guesses into one run.
+* Sixty-one live checks and the fixtures path are guarded, so a throw is a named
+  FAIL rather than a crash with no verdict.
+* A sweep takes a lock, because this script kills any MockHost after each run —
+  including another sweep's.
+* Three checks that capture MO2 state **to restore it** wait for that state to
+  arrive first. An early capture did not only misread the host; it decided what the
+  host was put back to.
