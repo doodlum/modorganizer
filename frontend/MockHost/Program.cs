@@ -608,6 +608,17 @@ public partial class MockApp : Application
                     }, TimeSpan.FromSeconds(8));
                 if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } liveScreenshot)
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        // Guarded as a whole, because none of the sixty-one checks below
+                        // was guarded at all. Every other block in this file wraps its
+                        // check and prints a named FAIL; these were bare awaits, so an
+                        // exception in one went unhandled, took the process down, and
+                        // left verify.sh reporting NO VERDICT for a check that had in
+                        // fact failed definitely and for a stateable reason. Six of them
+                        // did exactly that in one sweep — VerifyLiveHistory threw a
+                        // NullReferenceException and the log said only that the app had
+                        // crashed. One check is enabled per run, so naming the enabled
+                        // one turns that back into a verdict.
+                      try {
                         // Checks hooked outside this block drive the same tables and are
                         // started by the same window opening, so they are still running
                         // when this timer fires. Wait for the ones that said they would
@@ -915,6 +926,18 @@ public partial class MockApp : Application
                         using var bitmap = new RenderTargetBitmap(new PixelSize((int)liveWindow.ClientSize.Width, (int)liveWindow.ClientSize.Height));
                         bitmap.Render(liveWindow);
                         bitmap.Save(liveScreenshot);
+                      } catch (Exception error) {
+                        var enabled = Environment.GetEnvironmentVariables().Keys.OfType<string>()
+                            .Where(x => x.StartsWith("MO2_VERIFY_", StringComparison.Ordinal))
+                            // MO2_VERIFY_OUTPUT is where verify.sh puts its logs and
+                            // MO2_VERIFY_ATTENDED is its promise that someone is
+                            // watching. Neither names a check, and both were being
+                            // reported as one.
+                            .Where(x => x is not ("MO2_VERIFY_OUTPUT" or "MO2_VERIFY_ATTENDED" or "MO2_VERIFY_TIMEOUT"))
+                            .Select(x => x["MO2_VERIFY_".Length..]).OrderBy(x => x).ToArray();
+                        Console.WriteLine($"FAIL {(enabled.Length > 0 ? string.Join("+", enabled) : "live checks")}: " +
+                            error.Message + "\n" + error.StackTrace);
+                      }
                         desktop.Shutdown();
                     }, TimeSpan.FromSeconds(4));
                 base.OnFrameworkInitializationCompleted();
