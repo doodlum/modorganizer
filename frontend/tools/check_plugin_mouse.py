@@ -17,7 +17,16 @@ if panel:
  env['MO2_SCREENSHOT']='/home/deck/mo2/frontend/artifacts/panel-drag.png'
 seen=set()
 with open('/tmp/mo2-panel-drag.log' if panel else '/tmp/mo2-plugin-drag.log' if drag else '/tmp/mo2-plugin-multi.log','w') as output, UInput({e.EV_KEY:[e.KEY_LEFTCTRL,e.KEY_LEFTSHIFT,e.KEY_A]},name='MO2 multi-select keyboard') as keyboard, UInput({e.EV_KEY:[e.BTN_LEFT],e.EV_ABS:[(e.ABS_X,AbsInfo(0,0,1279,0,0,0)),(e.ABS_Y,AbsInfo(0,0,799,0,0,0))]},name='MO2 multi-select pointer',input_props=[e.INPUT_PROP_POINTER]) as pointer:
- process=subprocess.Popen(['.tools/dotnet/dotnet','frontend/MockHost/bin/Debug/net9.0/MockHost.dll'],env=env,stdout=output,stderr=subprocess.STDOUT)
+ # Release by default, as run.sh uses. This named the Debug build, and Debug has not
+ # built since MockHost took a reference to AvaloniaUI.DiagnosticsSupport: upstream
+ # references Avalonia.Diagnostics in Debug alone, the two conflict, and the build
+ # stops. So every check this driver exists to run — PANEL_DRAG, PLUGIN_DRAG,
+ # PLUGIN_MULTI, the only ones that press a real pointer — could not be started at
+ # all, and nothing said so, because nothing ran them.
+ configuration=os.environ.get('MO2_BUILD_CONFIGURATION','Release')
+ binary=f'frontend/MockHost/bin/{configuration}/net9.0/MockHost.dll'
+ if not os.path.exists(binary): raise SystemExit(f'No {configuration} build at {binary}; build it first')
+ process=subprocess.Popen(['.tools/dotnet/dotnet',binary],env=env,stdout=output,stderr=subprocess.STDOUT)
  try:
   while process.poll() is None:
    try: data=json.loads(phase.read_text())

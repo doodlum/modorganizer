@@ -1761,6 +1761,19 @@ public partial class MockApp : Application
         var workspace = live.WorkspaceController.ActiveWorkspace;
         var originalPanels = workspace.Panels.ToDictionary(x => x.Id, x => x.LogicalBounds);
         var tabs = workspace.Panels.SelectMany(x => x.Tabs).Select(x => x.Id).ToHashSet();
+        // The state to compare against at the end, taken once MO2 has actually sent
+        // it. The profile-path guard above means a profile is selected, not that its
+        // mods and plugins have arrived, and a baseline captured part-way through
+        // filling makes the comparison at the end disagree with itself.
+        await WaitFor(() => live.Profile.Mods.Count > 0 && live.Profile.Order.Plugins.Count > 0, "MO2's mods and plugins to arrive");
+        var steady = 0;
+        var seen = (Mods: -1, Plugins: -1);
+        for (var attempt = 0; attempt < 120 && steady < 5; attempt++) {
+            var now = (live.Profile.Mods.Count, live.Profile.Order.Plugins.Count);
+            steady = now == seen ? steady + 1 : 0;
+            seen = now;
+            await Task.Delay(100);
+        }
         var original = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
         var mods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
         async Task Drag(string phase, bool horizontal, int delta) {
@@ -1780,16 +1793,52 @@ public partial class MockApp : Application
                 Math.Abs((horizontal ? x.LogicalStartPoint.Y - before.Y : x.LogicalStartPoint.X - before.X)) > .05), "Pointer did not resize panels: " + phase, seconds: 30);
             if (!tabs.IsSubsetOf(workspace.Panels.SelectMany(x => x.Tabs).Select(x => x.Id)))
                 throw new InvalidOperationException("Resizing replaced MO2 tabs");
-            var pluginTable = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().GetVisualDescendants().OfType<TreeDataGrid>().Single();
+            // The plugin view on screen, not the only one. Switching games retains the
+            // view built for the profile left behind — that is what Mo2RetainedViews is
+            // for — so after the FNV/Skyrim/FNV loop below there are two, and Single()
+            // threw "Sequence contains more than one element" on the last phase.
+            var pluginViews = window.GetVisualDescendants().OfType<Mo2PluginsView>().ToArray();
+            var pluginView = pluginViews.FirstOrDefault(x => x.IsEffectivelyVisible && x.Bounds.Width > 0)
+                ?? pluginViews.FirstOrDefault()
+                ?? throw new InvalidOperationException("No plugin view is drawn to measure");
+            var pluginTable = pluginView.GetVisualDescendants().OfType<TreeDataGrid>().Single();
             if (phase == "panel-height-expand") {
+                // The last two rows this profile actually has. Rows 10 and 11 were
+                // named outright, and MO2 holds eleven plugins here — indices 0 to 10 —
+                // so the second select addressed a row that does not exist and the wait
+                // for two selected could never come true. It read as a short panel that
+                // cannot take a selection, which is what the check is for, rather than
+                // as a count this host does not reach.
+                var rows = pluginTable.Rows?.Count ?? 0;
+                if (rows < 2) throw new InvalidOperationException($"The plugin list has {rows} row(s); two are needed to select a pair");
                 pluginTable.RowSelection!.Clear();
-                pluginTable.RowSelection.Select(new IndexPath(10));
-                pluginTable.RowSelection.Select(new IndexPath(11));
-                await WaitFor(() => live.PluginsPage!.Adapter.SelectedModels.Count == 2, "Short panel could not select plugins");
+                pluginTable.RowSelection.Select(new IndexPath(rows - 2));
+                pluginTable.RowSelection.Select(new IndexPath(rows - 1));
+                await WaitFor(() => live.PluginsPage!.Adapter.SelectedModels.Count == 2,
+                    $"Short panel could not select plugins: rows {rows - 2} and {rows - 1} of {rows} left " +
+                    $"{live.PluginsPage!.Adapter.SelectedModels.Count} selected");
                 await Task.Delay(300);
             }
-            var viewport = pluginTable.GetVisualDescendants().OfType<ScrollViewer>().OrderByDescending(x => x.Extent.Height - x.Viewport.Height).First();
-            if (viewport.Viewport.Height < 48) throw new InvalidOperationException("Resized plugin panel has no room for a complete row");
+            // The scroller the rows are in, and what every scroller measured if none
+            // of them has room. This took whichever had the most overflow and asserted
+            // on its height, which is not necessarily the one holding the rows — a
+            // header or a horizontal scroller can out-overflow it — and then said only
+            // that there was no room for a row, naming neither the scroller it picked
+            // nor how tall it was.
+            // The scroller the rows are in, which is the tallest — not the one with the
+            // most overflow. Sorting by overflow ties every scroller at zero the moment
+            // the list fits without scrolling, and First() then took whichever came
+            // first in the tree: PART_HeaderScrollViewer, which measures 0x0. The check
+            // read that as a panel with no room for a row while PART_ScrollViewer beside
+            // it was 370x496, and blamed a resize that had worked.
+            var scrollers = pluginTable.GetVisualDescendants().OfType<ScrollViewer>().ToArray();
+            var viewport = scrollers.OrderByDescending(x => x.Viewport.Height).First();
+            if (viewport.Viewport.Height < 48)
+                throw new InvalidOperationException($"Resized plugin panel has no room for a complete row: picked a " +
+                    $"scroller {viewport.Viewport.Width:F0}x{viewport.Viewport.Height:F0} of extent " +
+                    $"{viewport.Extent.Width:F0}x{viewport.Extent.Height:F0}, out of " +
+                    string.Join(", ", scrollers.Select(x => $"{x.Name ?? x.GetType().Name} {x.Viewport.Width:F0}x{x.Viewport.Height:F0}")) +
+                    $"; plugin view {pluginTable.Bounds.Width:F0}x{pluginTable.Bounds.Height:F0}");
             var rectangles = workspace.Panels.Select(x => x.LogicalBounds).ToArray();
             if (Math.Abs(rectangles.Sum(x => x.Width * x.Height) - 1) > .001 || rectangles.Any(x => x.Width <= 0 || x.Height <= 0 || x.X < 0 || x.Y < 0 || x.Right > 1.001 || x.Bottom > 1.001))
                 throw new InvalidOperationException("Resize left invalid panel coverage");
@@ -1807,23 +1856,82 @@ public partial class MockApp : Application
             var spine = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Spine.Spine>().Single().ViewModel!;
             foreach (var directory in new[] { "/home/deck/Games/mod-organizer-2-skyrimspecialedition/modorganizer2", "/home/deck/mo2/frontend/artifacts/mo2-fnv-host" }) {
                 var entry = live.CatalogEntries.Single(x => x.Registration.Directory == directory);
-                var profile = entry.Instance!.Profiles.Single(x => x.Name == (directory.EndsWith("mo2-fnv-host") ? "Frontend Test" : "Default"));
-                await spine.LoadoutSpineItems.Single(x => x.Name == entry.Instance.Game + " — " + profile.Name + " (" + directory + ")").Click.Execute();
-                await WaitFor(() => Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath) == profile.Directory && !live.Profile.SelectingProfile, "Game switch did not connect", seconds: 110);
+                // One icon per game, named for the game. The spine carried an icon per
+                // profile once and this matched the name it built then — "<game> — 
+                // <profile> (<directory>)" — which no item has had since NMA_FIDELITY
+                // replaced them with one icon per game. Nothing caught it because
+                // nothing ran this check.
+                var wanted = entry.Instance!.Game;
+                var item = spine.LoadoutSpineItems.FirstOrDefault(x => x.Name == wanted)
+                    ?? throw new InvalidOperationException($"No spine item named \"{wanted}\" among " +
+                        string.Join(", ", spine.LoadoutSpineItems.Select(x => $"\"{x.Name}\"")));
+                await item.Click.Execute();
+                // Connected somewhere inside that instance. The icon names a game, not a
+                // profile, so which profile it lands on is the instance's business —
+                // what this check is about is that switching games leaves the
+                // pointer-resized workspace alone.
+                // Connected to that game. Waiting for a particular directory was still
+                // too strict: two Skyrim instances are registered here, one icon stands
+                // for the game, and clicking it landed on /home/deck/ModOrganizer2
+                // rather than the instance this loop happened to name. Which instance a
+                // game icon selects is the spine's business; what this check is about
+                // is that switching games leaves the pointer-resized workspace alone.
+                // Inside any instance registered for that game. Two naming sources meet
+                // here and they do not agree: the spine names an item from
+                // entry.Instance.Game ("New Vegas") and Mo2LiveProfile.GameName spells
+                // it "Fallout: New Vegas", so comparing them failed for FNV on a switch
+                // that had in fact connected to exactly the right profile. Comparing
+                // directories instead failed for Skyrim, where two instances are
+                // registered and one icon stands for the game. The instances belonging
+                // to the game are what the icon can land in, so that is the question.
+                var homes = live.CatalogEntries.Where(x => x.Instance?.Game == wanted)
+                    .Select(x => x.Registration.Directory).ToArray();
+                await WaitFor(() => !live.Profile.SelectingProfile && homes.Any(home =>
+                        Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath).StartsWith(home, StringComparison.Ordinal)),
+                    $"Game switch to {wanted} did not connect — profile is " +
+                    $"{Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath)}, and {wanted} is registered at " +
+                    string.Join(", ", homes), seconds: 110);
             }
             if (live.WorkspaceController.ActiveWorkspace.Id != workspace.Id || workspace.Panels.Count != layout.Count || workspace.Panels.Any(x => layout[x.Id] != x.LogicalBounds))
                 throw new InvalidOperationException("Game switching lost the pointer-resized workspace");
             await Drag("panel-height-restore", true, -80);
             await live.Profile.Refresh();
-            if (!original.SequenceEqual(live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive))) || !mods.SequenceEqual(live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority))))
-                throw new InvalidOperationException("Panel interaction changed MO2 state");
+            // What changed, if anything did. "Panel interaction changed MO2 state" is
+            // a serious claim — it says dragging a divider wrote to the host — and it
+            // was made without naming a single plugin or mod, so it could be neither
+            // trusted nor dismissed.
+            // Compared by name, because the order these collections are enumerated in
+            // is not the state under test — SortIndex and Priority carry that, and both
+            // are in the tuples. SequenceEqual on the raw enumeration said "Panel
+            // interaction changed MO2 state" with an empty difference: 11 of 11 plugins
+            // and 14 of 14 mods identical, rebuilt in another sequence after the game
+            // switch reconnected. VerifyLiveHistory already sorts before comparing.
+            var nowPlugins = live.Profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).OrderBy(x => x.DisplayName).ToArray();
+            var nowMods = live.Profile.Mods.Select(x => (x.Name, x.State, x.Priority)).OrderBy(x => x.Name).ToArray();
+            var wasPlugins = original.OrderBy(x => x.DisplayName).ToArray();
+            var wasMods = mods.OrderBy(x => x.Name).ToArray();
+            if (!wasPlugins.SequenceEqual(nowPlugins) || !wasMods.SequenceEqual(nowMods)) {
+                var pluginDiff = wasPlugins.Except(nowPlugins).Select(x => $"was {x.DisplayName} #{x.SortIndex} active={x.IsActive}")
+                    .Concat(nowPlugins.Except(wasPlugins).Select(x => $"now {x.DisplayName} #{x.SortIndex} active={x.IsActive}"));
+                var modDiff = wasMods.Except(nowMods).Select(x => $"was {x.Name} state={x.State} priority={x.Priority}")
+                    .Concat(nowMods.Except(wasMods).Select(x => $"now {x.Name} state={x.State} priority={x.Priority}"));
+                throw new InvalidOperationException($"Panel interaction changed MO2 state — " +
+                    $"{wasPlugins.Length}/{nowPlugins.Length} plugins, {wasMods.Length}/{nowMods.Length} mods; " +
+                    string.Join("; ", pluginDiff.Concat(modDiff).Take(8)));
+            }
             Console.WriteLine("PASS: FNV/Skyrim switching preserves pointer-resized FNV workspace; original mod/plugin state unchanged");
         } finally {
             File.Delete("/home/deck/mo2/frontend/artifacts/plugin-mouse-phase.json");
             foreach (var panel in workspace.Panels.Where(x => !originalPanels.ContainsKey(x.Id)).ToArray())
                 await panel.CloseCommand.Execute();
         }
-        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().Bounds.Height > 500, "Original two-panel view did not restore");
+        // The plugin view on screen, as above: switching games leaves the view built
+        // for the profile left behind in the tree, so Single() finds two by the time
+        // the panels are restored.
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>()
+                .Where(x => x.IsEffectivelyVisible).Select(x => x.Bounds.Height).DefaultIfEmpty(0).Max() > 500,
+            "Original two-panel view did not restore — tallest drawn plugin view is " +
+            $"{window.GetVisualDescendants().OfType<Mo2PluginsView>().Where(x => x.IsEffectivelyVisible).Select(x => x.Bounds.Height).DefaultIfEmpty(0).Max():F0}px");
         if (workspace.Panels.Count != originalPanels.Count || workspace.Panels.Any(x =>
             Math.Abs(x.LogicalBounds.Width - originalPanels[x.Id].Width) > .005 || Math.Abs(x.LogicalBounds.Height - originalPanels[x.Id].Height) > .005))
             throw new InvalidOperationException("Original panel bounds did not restore");
