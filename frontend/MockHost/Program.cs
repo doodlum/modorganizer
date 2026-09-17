@@ -986,7 +986,18 @@ public partial class MockApp : Application
             var screenshot = Environment.GetEnvironmentVariable("MO2_SCREENSHOT");
             if (screenshot is not null)
                 window.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
-                    await verification;
+                    // Guarded, like the live block. A fixture check that threw took the
+                    // process down unhandled and left the run with no verdict, which
+                    // reads the same as a check that asserted nothing.
+                    try { await verification; }
+                    catch (Exception error) {
+                        var enabled = Environment.GetEnvironmentVariables().Keys.OfType<string>()
+                            .Where(x => x.StartsWith("MO2_VERIFY_", StringComparison.Ordinal))
+                            .Where(x => x is not ("MO2_VERIFY_OUTPUT" or "MO2_VERIFY_ATTENDED" or "MO2_VERIFY_TIMEOUT"))
+                            .Select(x => x["MO2_VERIFY_".Length..]).OrderBy(x => x).ToArray();
+                        Console.WriteLine($"FAIL {(enabled.Length > 0 ? string.Join("+", enabled) : "fixture checks")}: " +
+                            error.Message + "\n" + error.StackTrace);
+                    }
                     await Task.Delay(150);
                     using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
                     bitmap.Render(window);
