@@ -113,6 +113,12 @@ DRIVEN=" PLUGIN_MULTI PLUGIN_DRAG PANEL_DRAG "
 # reported "Sequence contains no matching element" looking for a layout called 1.
 # Pass one as NAME=VALUE and it is used; without a value the check is skipped rather
 # than run against a meaningless one.
+# The checks that run against the scenario fixtures rather than a live MO2. They
+# are wired into the fixtures window in Program.cs, not the live one, so a run with
+# a bridge directory never reaches them: ORDER printed nothing at all and read as a
+# check that had stopped saying anything. Started with run-fixtures.sh instead.
+FIXTURES=" CONTEXTS DIALOGS INSTALLED LIBRARY ORDER SCENARIOS SETTINGS WORKSPACE "
+
 PARAMETERISED=" CROSS_GAME DISABLE_MOD DOWNLOADS ENABLE_MOD HEALTH_RESTART INSTALL_ARCHIVE LAUNCH LAYOUT_OPTIONS OPEN_MOD_DETAILS PLUGIN_DOWN "
 
 layout_source="$frontend_root/artifacts/verify-paired-layout.json"
@@ -123,6 +129,11 @@ for entry in "$@"; do
     name="${entry%%=*}"
     value="1"
     [[ "$entry" == *"="* ]] && value="${entry#*=}"
+    if [[ "$FIXTURES" == *" $name "* ]]; then
+        echo "=== $name (skipped) ==="
+        echo "$name runs against the scenario fixtures, not a live MO2 — it is wired into the fixtures window. Run it with MO2_FIXTURES=1 through run-fixtures.sh; from here it is never reached and prints nothing."
+        continue
+    fi
     if [[ "$DRIVEN" == *" $name "* ]]; then
         echo "=== $name (skipped) ==="
         echo "$name is driven by a real pointer. Run it with tools/check_plugin_mouse.py, which opens the virtual input devices and starts the app itself; from here it waits for a pointer that never moves."

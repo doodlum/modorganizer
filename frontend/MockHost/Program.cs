@@ -1221,19 +1221,49 @@ public partial class MockApp : Application
             using var process = System.Diagnostics.Process.Start(start)!; await process.WaitForExitAsync();
             if (process.ExitCode != 0) throw new Exception("Pointer helper failed");
         }
+        // By the label the sidebar actually draws, and saying what it drew when the
+        // name is not among them. This asked for "Mods" where the entry is "My Mods",
+        // and reported "Sequence contains no matching element" — which named neither
+        // the entry it wanted nor the eleven it could have had.
         async Task Sidebar(string name) {
-            var item = window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView>()
-                .Single(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == name));
+            var items = window.GetVisualDescendants().OfType<NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView>().ToArray();
+            string? Label(NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView view) =>
+                view.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).FirstOrDefault(t => !string.IsNullOrEmpty(t));
+            var item = items.FirstOrDefault(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == name))
+                ?? throw new InvalidOperationException($"No sidebar entry labelled \"{name}\" among " +
+                    string.Join(", ", items.Select(Label).Where(x => x is not null)));
             await Click(item);
         }
-        await Sidebar("Mods");
+        await Sidebar("My Mods");
         var modsView = window.GetVisualDescendants().OfType<Mo2ModsView>().First();
-        await Click(modsView.NativeView.GetVisualDescendants().OfType<TextBlock>().First(x => x.Text == "Mods"));
+        // Something on the Mods page to click, to prove a pointer press focuses the
+        // panel it lands in. This clicked the "Mods" sub-tab label, and reported
+        // "Sequence contains no matching element" when it was not there — naming
+        // neither the label nor what the page did draw.
+        var modsLabels = modsView.NativeView.GetVisualDescendants().OfType<TextBlock>()
+            .Where(x => !string.IsNullOrWhiteSpace(x.Text) && x.IsEffectivelyVisible).ToArray();
+        // MO2's own "Active:" caption beside its mod count. This clicked the "Mods"
+        // sub-tab label, which went with the Mods/Rules strip when the pane was cut
+        // back to MO2's widgets — the page draws MO2's captions and column headings
+        // now and no sub-tabs at all. What is being proven here is that a pointer
+        // press focuses the panel it lands in, so any drawn thing serves; this one is
+        // MO2's, is always there, and does nothing when it is clicked.
+        var target = modsLabels.FirstOrDefault(x => x.Text == "Active:")
+            ?? modsLabels.FirstOrDefault(x => x.Text == "Mod Name")
+            ?? throw new InvalidOperationException("No MO2 caption on the mod page to click; it draws " +
+                string.Join(", ", modsLabels.Select(x => $"\"{x.Text}\"").Distinct().Take(12)));
+        await Click(target);
         if (!modsView.GetVisualAncestors().OfType<PanelView>().Single().ViewModel!.IsSelected) throw new Exception("Mouse did not focus Mods panel");
         await Sidebar("Plugins");
         await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>().Any(), "Plugins sidebar click did not open Plugins");
         var view = window.GetVisualDescendants().OfType<Mo2PluginsView>().First();
-        var plugin = live.Profile.Order.Plugins.First(x => x.CanToggle && x.IsActive && x.DisplayName.EndsWith(".esp",StringComparison.OrdinalIgnoreCase));
+        // An active .esp MO2 will let this toggle. Which plugins MO2 holds is host
+        // state, so when there is none this says what there was rather than throwing
+        // "Sequence contains no matching element" — the difference between a profile
+        // that cannot exercise the check and a frontend that has lost its rows.
+        var plugin = live.Profile.Order.Plugins.FirstOrDefault(x => x.CanToggle && x.IsActive && x.DisplayName.EndsWith(".esp", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("This profile has no active, toggleable .esp to work: " +
+                string.Join(", ", live.Profile.Order.Plugins.Select(x => $"{x.DisplayName} (active {x.IsActive}, toggleable {x.CanToggle})")));
         var table = view.GetVisualDescendants().OfType<TreeDataGrid>().Single();
         await Task.Delay(300);
         foreach (var pluginScroll in table.GetVisualDescendants().OfType<ScrollViewer>())
@@ -2493,11 +2523,34 @@ public partial class MockApp : Application
             "Home workspace did not select a panel and tab");
         var panel = home.SelectedPanel;
         var tab = panel.SelectedTab;
-        async Task AssertPage(string game) {
+        // Which step, and what the page actually held. All six call sites shared one
+        // message — "History restored an incorrect game page" — including the first,
+        // which runs before any history navigation and so cannot be about history at
+        // all. A failure named none of: the step, the game the page was showing, the
+        // headings it drew, or whether its view was bound.
+        async Task AssertPage(string game, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) {
+            string Saw() {
+                var context = tab.Contents.PageData.Context is Mo2GamePageContext c ? c.Game : "(not a game page)";
+                var page = tab.Contents.ViewModel as Mo2LoadoutsPage;
+                var headings = page is null ? "(no loadouts page)"
+                    : page.GameSectionViewModels.Count == 0 ? "(no sections)"
+                    : string.Join("/", page.GameSectionViewModels.Select(x => x.HeadingText));
+                var bound = page is not null && window.GetVisualDescendants()
+                    .OfType<NexusMods.App.UI.Pages.MyLoadouts.MyLoadoutsView>().Any(x => ReferenceEquals(x.ViewModel, page));
+                return $"context {context}, headings {headings}, view bound {bound}";
+            }
             await WaitFor(() => tab.Contents.PageData.Context is Mo2GamePageContext context && context.Game == game &&
                 tab.Contents.ViewModel is Mo2LoadoutsPage page && page.GameSectionViewModels.Count > 0 &&
-                page.GameSectionViewModels.All(x => x.HeadingText == game + " Loadouts") &&
-                window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.MyLoadouts.MyLoadoutsView>().Any(x => ReferenceEquals(x.ViewModel, page)), "History restored an incorrect game page");
+                // MO2's word, not NMA's. Mo2HomePages heads a live game section
+                // "<game> profiles" because that is what MO2 calls them; " Loadouts"
+                // is ScenarioData's fixture wording, which this was written against
+                // and never moved off. The check then failed on the very first
+                // assertion — before any history navigation — and reported "History
+                // restored an incorrect game page", which named neither the step nor
+                // the heading it had actually found.
+                page.GameSectionViewModels.All(x => x.HeadingText == game + " profiles") &&
+                window.GetVisualDescendants().OfType<NexusMods.App.UI.Pages.MyLoadouts.MyLoadoutsView>().Any(x => ReferenceEquals(x.ViewModel, page)),
+                $"the page for {game} at line {line} — saw {Saw()}");
             if (live.Profile.Endpoint != endpoint || live.Profile.ProfilePath != path) throw new InvalidOperationException("Browsing game history changed the connected profile");
         }
         await AssertPage(fnv);
