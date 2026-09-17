@@ -259,6 +259,8 @@ public partial class MockApp : Application
                 Window liveWindow;
                 using (Mo2StartupCheck.Phase("window")) liveWindow = live.CreateWindow();
                 liveWindow.Opened += (_, _) => Mo2StartupCheck.WindowOpened(liveWindow, live);
+                // The eight keys MO2 gives its own actions, which this window had none of.
+                Mo2QtShortcuts.Install(liveWindow, live);
                 desktop.MainWindow = liveWindow;
                 if (endpoint.Length == 0) live.ShowHome();
                 desktop.Exit += (_, _) => live.Dispose();
@@ -514,6 +516,14 @@ public partial class MockApp : Application
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2ExtraButtonsCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL MO2 page buttons: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    }, TimeSpan.FromSeconds(2));
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_SHORTCUTS") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
+                        try { await Mo2QtShortcutCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL MO2 shortcuts: " + error.Message); }
                         finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
                 }

@@ -53,12 +53,16 @@ internal static class Mo2QtWidgetSource
     // MO2's actions: what its menus and its toolbar are made of. A QMenu carries no
     // widget of its own, so a check that only walks widgets says nothing about
     // whether the things MO2 offers from its menu bar are offered here at all.
-    internal sealed record Action(string Name, string Text);
+    // Shortcut is MO2's own <property name="shortcut">, empty for an action MO2
+    // gives no key to. Read here for the same reason the widget list is: eight of
+    // MO2's actions carry one, and a key MO2 adds or moves is a key this frontend
+    // would otherwise go on offering under its old gesture for good.
+    internal sealed record Action(string Name, string Text, string Shortcut);
 
     internal static Action[] Actions(string? path = null) =>
         XDocument.Load(path ?? Locate()).Descendants("action")
             .Where(x => (string?)x.Attribute("name") is { Length: > 0 })
-            .Select(x => new Action((string)x.Attribute("name")!, Caption(x)))
+            .Select(x => new Action((string)x.Attribute("name")!, Caption(x), Gesture(x)))
             .ToArray();
 
     // Which actions MO2 puts on a given menu or on its toolbar, in its own order.
@@ -71,6 +75,10 @@ internal static class Mo2QtWidgetSource
             .Select(x => (string?)x.Attribute("name") ?? "")
             .Where(x => x.Length > 0 && x != "separator")
             .ToArray();
+
+    private static string Gesture(XElement action) =>
+        action.Elements("property").FirstOrDefault(p => (string?)p.Attribute("name") == "shortcut")
+            ?.Element("string")?.Value ?? "";
 
     // MO2's caption for an action, with the Qt accelerator ampersand taken out.
     private static string Caption(XElement action) =>

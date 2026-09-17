@@ -3523,3 +3523,57 @@ VERDICT rather than passing over. Run to the end against the live FNV host, all
 three pass — row style on both tables, MO2's own menus on all six lists compared
 entry for entry and both ways round, and the plugin-disable and mod-priority round
 trip through MO2 with the host's original state restored.
+
+## The keyboard, which no check had ever looked at
+
+`MO2_VERIFY_QT_ACTIONS` requires every one of the twenty-four actions in MO2's
+`mainwindow.ui` to be offered from something on screen, and all twenty-four are. It
+says nothing about *how* they are reached, and eight of them MO2 also gives a key:
+**Ctrl+M, Ctrl+P, Ctrl+E, Ctrl+I, Ctrl+S, Ctrl+N, Ctrl+H and F5**.
+
+This window bound none of them. Not one — a grep for `KeyGesture`, `HotKey` or
+`KeyBinding` across the whole frontend found nothing, and no check named a gesture.
+"MO2's actions are all reachable here" was true of the pointer, and had never been
+asked of the keyboard at all.
+
+`Mo2QtShortcuts` binds all eight. A press opens the page the action is offered on
+and works the control that offers it — the same control `MO2_VERIFY_QT_ACTIONS`
+requires to be there, read from the same table. That table moved out of the check
+into `Mo2QtActions`, so the keys and the check read one list rather than two that
+could disagree without either being wrong on its own.
+
+### What the check found on its first run
+
+**Ctrl+I and F5 reached nothing from Connections.** Both actions are offered from
+the profile sidebar and Connections is on the home workspace; the two sidebars
+swap, so navigating to a profile page while the home workspace was showing put the
+page nowhere and left the control it is offered from out of the window entirely.
+MO2's keys act wherever its window happens to be. These two did not, and the fault
+was in the frontend rather than in the check.
+
+### And what the check was doing by accident
+
+It found that only because the gestures happen to be tried in MO2's own order, and
+Connections happens to come before Tool Plugins and Refresh in it. Reordering the
+list would have hidden it again — which is not a check, it is a coincidence that
+held. Every gesture is now pressed from **both** of this window's workspaces, the
+profile one and Connections, and has to arrive from each.
+
+### The negative control
+
+Three faults were planted in the bound list at once, and the run named all three:
+a gesture changed to one MO2 does not give (`actionInstallMod is bound to Ctrl+J
+where MO2 gives it Ctrl+M`), a binding for an action MO2 has no key for (`Ctrl+9 is
+bound to actionNotAThing, which MO2 no longer gives a key`), and F5 left unbound
+(`MO2 gives action_Refresh ("Refresh") F5 and nothing here binds it`). They were
+put back, and the run is green.
+
+### What this does not establish
+
+Six of the eight end in a modal MO2 dialog or a browser window: Settings,
+Executables, Install Mod and Profiles each open a dialog that owns the thread until
+a person closes it, and Visit Nexus and Help hand a URL to the desk. Those six are
+followed to the control and the entry MO2 would run, and then not pressed — which
+the verdict states rather than omits. What is established for them is that the key
+is bound and arrives at the right control, not that MO2 then did the work. Ctrl+I
+and F5 are pressed for real.

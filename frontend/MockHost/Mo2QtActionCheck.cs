@@ -20,60 +20,6 @@ namespace Mo2.Frontend;
 // fails this check until it is answered for.
 internal static class Mo2QtActionCheck
 {
-    internal enum Kind
-    {
-        // Offered here. Found live, through the control named.
-        Offered,
-        // Qt's own window furniture: how big the toolbar icons are, whether the
-        // menu bar is showing. This frontend draws no Qt toolbar, so there is
-        // nothing for these to act on.
-        Chrome,
-    }
-
-    // Page is the page to open first, or "" for something the window carries
-    // whatever page is open. Entry is the menu entry to look for inside Control's
-    // flyout, or "" when the control is the answer itself.
-    internal sealed record Answer(Kind Kind, string Page, string Control, string Entry, string Note);
-
-    private static Answer On(string page, string control, string entry = "", string note = "") =>
-        new(Kind.Offered, page, control, entry, note);
-    private static Answer Qt(string note) => new(Kind.Chrome, "", "", "", note);
-
-    // MO2's action, and what answers for it here. Everything in src/mainwindow.ui's
-    // action list appears exactly once.
-    internal static readonly Dictionary<string, Answer> Answers = new() {
-        // MO2 opens its own global mod-list menu with Install mod..., which is the
-        // button this offers it from; the page's own toolbar, which used to carry a
-        // copy, is gone.
-        ["actionInstallMod"] = On("my-mods", "ModsListOptionsButton", "Add mod from archive…"),
-        ["actionAdd_Profile"] = On("connections","Mo2ManageProfiles"),
-        ["actionModify_Executables"] = On("", "ExecutablesListBox", Mo2LaunchPanel.EditEntry,
-            "MO2's own first row of the executables box, which opens its Edit Executables dialog"),
-        ["actionTool"] = On("tools", "Mo2ToolsMenuItem", "", "MO2's tool plugins, as a page of their own"),
-        ["actionSettings"] = On("connections","OriginalMo2Settings", "", "opens MO2's own settings dialog"),
-        ["actionNexus"] = On("connections","OriginalMo2More", "Visit Nexus…"),
-        ["actionModPage"] = On("my-mods", "ModRedesignRow", "Visit on Nexus",
-            "MO2 offers this for a mod it knows on Nexus, and so does the row menu here"),
-        ["actionUpdate"] = On("connections","OriginalMo2More", "Check for MO2 updates…"),
-        ["actionNotifications"] = On("connections","OriginalMo2More", "MO2 notifications…"),
-        ["actionHelp"] = On("connections","OriginalMo2More", "MO2 help…"),
-        ["actionEndorseMO"] = On("connections","OriginalMo2More", "Endorse Mod Organizer…"),
-        ["actionChange_Game"] = On("connections","Mo2AddInstance"),
-        ["actionExit"] = On("", "CloseButton", "", "the window's own close button"),
-        ["actionViewLog"] = On("", "Mo2LogsMenuItem", "", "MO2's log, which MO2 docks and this frontend opens as a page"),
-        ["action_Refresh"] = On("my-mods", "ModsListOptionsButton", "Refresh"),
-
-        ["actionMainMenuToggle"] = Qt("shows and hides Qt's menu bar"),
-        ["actionStatusBarToggle"] = Qt("shows and hides Qt's status bar"),
-        ["actionToolBarMainToggle"] = Qt("shows and hides Qt's toolbar"),
-        ["actionToolBarSmallIcons"] = Qt("sizes Qt's toolbar icons"),
-        ["actionToolBarMediumIcons"] = Qt("sizes Qt's toolbar icons"),
-        ["actionToolBarLargeIcons"] = Qt("sizes Qt's toolbar icons"),
-        ["actionToolBarIconsOnly"] = Qt("captions Qt's toolbar buttons"),
-        ["actionToolBarTextOnly"] = Qt("captions Qt's toolbar buttons"),
-        ["actionToolBarIconsAndText"] = Qt("captions Qt's toolbar buttons"),
-    };
-
     internal static async Task Run(Mo2LiveWorkspace live, Window window)
     {
         for (var attempt = 0; attempt < 300 && !(live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0); attempt++)
@@ -109,23 +55,23 @@ internal static class Mo2QtActionCheck
         // Both ways round, as the widget check does: an action MO2 has that nothing
         // answers for is the fault this exists to catch, and an answer for an action
         // MO2 has dropped is an expectation that has stopped meaning anything.
-        var unanswered = actions.Where(x => !Answers.ContainsKey(x.Name)).Select(x => $"{x.Name} (\"{x.Text}\")").ToArray();
+        var unanswered = actions.Where(x => !Mo2QtActions.Answers.ContainsKey(x.Name)).Select(x => $"{x.Name} (\"{x.Text}\")").ToArray();
         if (unanswered.Length > 0)
             faults.Add($"MO2 offers {unanswered.Length} action(s) nothing answers for: {string.Join(", ", unanswered)}");
-        var stale = Answers.Keys.Where(x => !actions.Any(a => a.Name == x)).ToArray();
+        var stale = Mo2QtActions.Answers.Keys.Where(x => !actions.Any(a => a.Name == x)).ToArray();
         if (stale.Length > 0)
             faults.Add($"{stale.Length} answer(s) name an action MO2 has dropped: {string.Join(", ", stale)}");
         // Everything below reads an answer by name. An action with none is already a
         // fault above; looking one up anyway would end the run in a
         // KeyNotFoundException and report that instead of what was actually wrong.
-        actions = actions.Where(x => Answers.ContainsKey(x.Name)).ToArray();
+        actions = actions.Where(x => Mo2QtActions.Answers.ContainsKey(x.Name)).ToArray();
 
         // And that MO2's menu bar is accounted for entry by entry, rather than as a
         // total: a menu whose actions are all answered somewhere else still has to
         // have every one of its own entries answered.
         foreach (var host in new[] { "menuFile", "menuView", "menuTools", "menuRun", "menuHelp", "menuToolbars", "toolBar" }) {
             var carried = Mo2QtWidgetSource.Carries(host, source);
-            var lost = carried.Where(x => !Answers.ContainsKey(x) && !x.StartsWith("menu", StringComparison.Ordinal)).ToArray();
+            var lost = carried.Where(x => !Mo2QtActions.Answers.ContainsKey(x) && !x.StartsWith("menu", StringComparison.Ordinal)).ToArray();
             if (lost.Length > 0) faults.Add($"MO2's {host} carries {string.Join(", ", lost)}, which nothing answers for");
         }
 
@@ -137,8 +83,8 @@ internal static class Mo2QtActionCheck
         // The window's own, first: these do not depend on which page is open, and the
         // run row moves out of the window's tree when the sidebar is collapsed, so it
         // is reached through the workspace that holds it.
-        foreach (var action in actions.Where(x => Answers[x.Name] is { Kind: Kind.Offered, Page: "" })) {
-            var answer = Answers[action.Name];
+        foreach (var action in actions.Where(x => Mo2QtActions.Answers[x.Name] is { Kind: Mo2QtActions.Kind.Offered, Page: "" })) {
+            var answer = Mo2QtActions.Answers[action.Name];
             var found = Find(Roots(window, live), answer.Control);
             if (found is null) faults.Add($"{action.Name} (\"{action.Text}\") has no {answer.Control} in the window");
             else if (answer.Entry.Length > 0 && !await Carries(found, answer.Entry))
@@ -147,11 +93,11 @@ internal static class Mo2QtActionCheck
         }
 
         foreach (var page in open.Keys) {
-            var wanted = actions.Where(x => Answers[x.Name] is { Kind: Kind.Offered } answer && answer.Page == page).ToArray();
+            var wanted = actions.Where(x => Mo2QtActions.Answers[x.Name] is { Kind: Mo2QtActions.Kind.Offered } answer && answer.Page == page).ToArray();
             if (wanted.Length == 0) continue;
             await open[page]();
             foreach (var action in wanted) {
-                var answer = Answers[action.Name];
+                var answer = Mo2QtActions.Answers[action.Name];
                 // A page is built when it is first shown, so the frame right after
                 // navigating is still the one before it.
                 Control? found = null;
@@ -191,7 +137,7 @@ internal static class Mo2QtActionCheck
         await Navigate(restore);
         await Task.Delay(600);
 
-        var chrome = actions.Count(x => Answers[x.Name].Kind == Kind.Chrome);
+        var chrome = actions.Count(x => Mo2QtActions.Answers[x.Name].Kind == Mo2QtActions.Kind.Chrome);
         if (faults.Count > 0) Console.WriteLine("FAIL MO2 actions: " + string.Join("; ", faults));
         else Console.WriteLine($"PASS MO2 actions: all {actions.Length} actions MO2 names in {Path.GetFileName(source)} " +
             $"are accounted for — {described.Count} offered here ({string.Join(", ", described)}), " +

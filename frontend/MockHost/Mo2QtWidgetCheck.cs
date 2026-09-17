@@ -240,7 +240,7 @@ internal static class Mo2QtWidgetCheck
             var entries = Mo2QtWidgetSource.Carries(host.Name, source);
             // A menu bar carries menus, which are answered in their own right.
             var wanted = entries.Where(x => !widgets.Any(w => w.Name == x)).ToArray();
-            var lost = wanted.Where(x => !Mo2QtActionCheck.Answers.ContainsKey(x)).ToArray();
+            var lost = wanted.Where(x => !Mo2QtActions.Answers.ContainsKey(x)).ToArray();
             if (entries.Length == 0) faults.Add($"{host.Name} carries nothing in {Path.GetFileName(source)}");
             else if (lost.Length > 0) faults.Add($"{host.Name} carries {string.Join(", ", lost)}, which nothing offers here");
             else carried += wanted.Length;
