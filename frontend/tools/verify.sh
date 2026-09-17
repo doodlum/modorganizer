@@ -97,17 +97,49 @@ UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS
 # for them with MO2_VERIFY_ATTENDED=1, which is a promise that someone is watching.
 ATTENDED=" SEARCH_INPUT NEXUS_ACCOUNT OPEN_MOD_DETAILS "
 
+# The checks a real pointer drives. tools/check_plugin_mouse.py opens virtual evdev
+# devices, starts the app itself and performs actual kernel-level drags in answer to
+# the phase file the check writes. Started from here instead, they write that file
+# and wait for a pointer that will never move, then time out — PANEL_DRAG reported
+# "Pointer did not resize panels", which reads as a divider that cannot be dragged
+# rather than as a driver that was never running. The behaviour is covered; this is
+# the wrong runner for it.
+DRIVEN=" PLUGIN_MULTI PLUGIN_DRAG PANEL_DRAG "
+
+# The checks whose variable carries a value rather than 1 — a plugin to move, a mod
+# to enable, an executable to launch, a game to switch to. This script sets
+# MO2_VERIFY_<name>=1 for everything, so each of these was handed "1" and failed on
+# it: PLUGIN_DOWN wants a plugin named "MCM Example Menu...", and LAYOUT_OPTIONS
+# reported "Sequence contains no matching element" looking for a layout called 1.
+# Pass one as NAME=VALUE and it is used; without a value the check is skipped rather
+# than run against a meaningless one.
+PARAMETERISED=" CROSS_GAME DISABLE_MOD DOWNLOADS ENABLE_MOD HEALTH_RESTART INSTALL_ARCHIVE LAUNCH LAYOUT_OPTIONS OPEN_MOD_DETAILS PLUGIN_DOWN "
+
 layout_source="$frontend_root/artifacts/verify-paired-layout.json"
 tabbed_source="$frontend_root/artifacts/verify-tabbed-layout.json"
 status=0
-for name in "$@"; do
+for entry in "$@"; do
+    # NAME or NAME=VALUE.
+    name="${entry%%=*}"
+    value="1"
+    [[ "$entry" == *"="* ]] && value="${entry#*=}"
+    if [[ "$DRIVEN" == *" $name "* ]]; then
+        echo "=== $name (skipped) ==="
+        echo "$name is driven by a real pointer. Run it with tools/check_plugin_mouse.py, which opens the virtual input devices and starts the app itself; from here it waits for a pointer that never moves."
+        continue
+    fi
+    if [[ "$PARAMETERISED" == *" $name "* && "$entry" != *"="* ]]; then
+        echo "=== $name (skipped) ==="
+        echo "$name takes a value rather than 1 — pass it as $name=VALUE. Run against 1 it fails on the value, not on the behaviour."
+        continue
+    fi
     if [[ "$ATTENDED" == *" $name "* && "${MO2_VERIFY_ATTENDED:-}" != 1 ]]; then
         echo "=== $name (skipped) ==="
         echo "$name needs a person at the keyboard. Re-run with MO2_VERIFY_ATTENDED=1 and stay at the machine."
         continue
     fi
     log="$out/$name.log"
-    environment=("MO2_VERIFY_$name=1")
+    environment=("MO2_VERIFY_$name=$value")
     if [[ "$PAIRED" == *" $name "* ]]; then
         source_layout="$layout_source"
         build_with="tools/paired_layout.py"

@@ -1196,9 +1196,20 @@ public partial class MockApp : Application
 
     private static async Task VerifyWorkspaceInput(Mo2LiveWorkspace live, Window window)
     {
-        var entry = live.Catalog.Read().Single(x => x.Registration.Endpoint == live.Profile.Endpoint);
-        var original = entry.Instance!.Profiles.Single(x => Path.GetFullPath(x.Directory) == Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath));
-        var test = entry.Instance.Profiles.Single(x => x.Name == "Frontend Test");
+        // Each lookup says what it was looking through. All three were bare Single()
+        // calls reporting "Sequence contains no matching element", which named
+        // neither the endpoint, the profile, nor which of the three had missed.
+        var catalog = live.Catalog.Read().ToArray();
+        var entry = catalog.FirstOrDefault(x => x.Registration.Endpoint == live.Profile.Endpoint)
+            ?? throw new InvalidOperationException($"No catalog entry for endpoint {live.Profile.Endpoint} among " +
+                string.Join(", ", catalog.Select(x => x.Registration.Endpoint)));
+        var known = entry.Instance!.Profiles.ToArray();
+        var original = known.FirstOrDefault(x => Path.GetFullPath(x.Directory) == Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath))
+            ?? throw new InvalidOperationException($"No profile at {Mo2InstanceCatalog.LocalPath(live.Profile.ProfilePath)} among " +
+                string.Join(", ", known.Select(x => x.Directory)));
+        var test = known.FirstOrDefault(x => x.Name == "Frontend Test")
+            ?? throw new InvalidOperationException($"No profile named \"Frontend Test\" among " +
+                string.Join(", ", known.Select(x => x.Name)));
         try {
         if (!await live.Profile.SelectProfile(entry.Registration,test)) throw new Exception(live.Profile.Status);
         await Task.Delay(1500);
@@ -2473,6 +2484,13 @@ public partial class MockApp : Application
         var skyrim = games.Single(x => x.Contains("Skyrim"));
         live.OpenLoadouts(fnv);
         var home = live.WorkspaceController.ActiveWorkspace;
+        // SelectedPanel is set by the workspace view's own subscription when it
+        // activates, so it is null for the frames straight after the loadouts page is
+        // opened. Reading it immediately threw a NullReferenceException on the line
+        // below — which, in an unguarded block, took the whole process down and left
+        // the run with no verdict at all rather than a named failure.
+        await WaitFor(() => home.Panels.Count > 0 && home.SelectedPanel is not null && home.SelectedPanel.SelectedTab is not null,
+            "Home workspace did not select a panel and tab");
         var panel = home.SelectedPanel;
         var tab = panel.SelectedTab;
         async Task AssertPage(string game) {
