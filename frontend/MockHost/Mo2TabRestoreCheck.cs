@@ -30,7 +30,7 @@ internal static class Mo2TabRestoreCheck
                     await Wait(() => panel.SelectedTab == tab && window.GetVisualDescendants().OfType<PanelTabHeaderView>()
                         .Any(v => v.ViewModel?.Id == tab.Id && v.IsEffectivelyVisible && v.FindControl<Border>("Container")!.Classes.Contains("Selected")));
                     await Task.Delay(200);
-                    Mo2DeferredPresentationCheck.CheckPanelGeometry(window);
+                    await Mo2DeferredPresentationCheck.CheckPanelGeometry(window);
                 }
             }
             if (!window.GetVisualDescendants().OfType<Mo2PluginsView>().Any(v => v.IsEffectivelyVisible))

@@ -131,7 +131,7 @@ internal static class Mo2ProfileBufferCheck
                                 }
                                 return true;
                             });
-                            Mo2DeferredPresentationCheck.CheckPanelGeometry(window);
+                            await Mo2DeferredPresentationCheck.CheckPanelGeometry(window);
                             if (!ReferenceEquals(otherBody, window.GetVisualDescendants().OfType<Mo2ModsView>().Single(v => v.IsEffectivelyVisible)))
                                 throw new Exception("Hidden resize rebuilt the cached Mods body");
                             var divider = window.GetVisualDescendants().OfType<PanelResizerView>().Single(v => v.IsEffectivelyVisible);

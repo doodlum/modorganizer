@@ -17,7 +17,7 @@ internal static class Mo2DeferredPresentationCheck
             await Task.Delay(50);
         await Task.Delay(1500);
         await CheckHeaderRestoration(window);
-        CheckPanelGeometry(window);
+        await CheckPanelGeometry(window);
         var resizer = window.GetVisualDescendants().OfType<PanelResizerView>().Single(p => p.IsEffectivelyVisible);
         var point = resizer.TranslatePoint(new Point(resizer.Bounds.Width / 2, resizer.Bounds.Height / 2), window)!.Value;
         var hit = window.InputHitTest(point) as Visual;
@@ -52,9 +52,64 @@ internal static class Mo2DeferredPresentationCheck
             window.Width = 1280;
             window.Height = 750;
             await Wait(() => Math.Abs(window.ClientSize.Height - 750) <= 1 && Math.Abs(window.ClientSize.Width - 1280) <= 1);
-            var headers = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>()
-                .Where(h => h.IsEffectivelyVisible).ToArray();
-            if (headers.Length != 2) throw new Exception("Expected two visible game page headers");
+            // Two panels, and so no page header on either — which is the opposite of
+            // what this used to require.
+            //
+            // It wanted two visible page headers and had wanted them for as long as it
+            // existed. A panel that shares the workspace is named by its own tab strip,
+            // so its page header would say the same thing twice, and Mo2ResponsiveHeaders
+            // stands the title, pictogram, description and rule down whenever
+            // IsAlone is false — keeping the page's action row, which the tab strip does
+            // not carry. MO2 does the same thing: its tabs are named on the strip and
+            // its pages draw no header of their own.
+            //
+            // So the check asserted against a deliberate decision, and nothing caught
+            // the contradiction because this check had never been in a sweep. Its
+            // subject is what a restored paired workspace draws; that is what it reads
+            // now, and a header coming back — the page named twice over — fails it.
+            var settle = DateTime.UtcNow.AddSeconds(10);
+            NexusMods.App.UI.Controls.PageHeader.PageHeader[] headers;
+            do {
+                window.UpdateLayout();
+                headers = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>()
+                    .Where(h => h.IsEffectivelyVisible).ToArray();
+                if (headers.Length == 0) break;
+                await Task.Delay(100);
+            } while (DateTime.UtcNow < settle);
+            var built = window.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().ToArray();
+            var shown = window.GetVisualDescendants().OfType<PanelView>().Where(p => p.IsEffectivelyVisible).ToArray();
+            if (headers.Length > 0)
+                throw new Exception($"{headers.Length} page header(s) are drawn beside a tab strip that already names " +
+                    $"the panel — {string.Join(", ", headers.Select(h => $"\"{h.Title}\""))} — in {shown.Length} panel(s) " +
+                    $"at {window.ClientSize.Width:F0}x{window.ClientSize.Height:F0}");
+            if (built.Length != 2)
+                throw new Exception($"Expected both game pages to have built a header to stand down, found {built.Length}");
+            // What does not stand down with it. The action row is the only way a
+            // shared panel's page offers its own actions, and hiding the whole stack
+            // once took it with them.
+            foreach (var panel in shown) {
+                if (!panel.GetVisualDescendants().OfType<Control>().Any(x => x.Name == "TabHeaderBorder" && x.IsEffectivelyVisible))
+                    throw new Exception("A shared panel draws no tab strip, so nothing names the page in it");
+                // Every action this page handed to the chrome, still on screen.
+                //
+                // Requiring a visible PanelActionRow outright was wrong: My Mods and
+                // Plugins hand over none — MO2 works those two lists from the row's
+                // own menu — so the row has nothing to hold and does not draw, which
+                // is not the same as a page whose actions went missing. Read from
+                // Mo2PanelChrome.Handed, the record the reachability and preset-fit
+                // checks read, rather than from a second rule beside it that could
+                // disagree.
+                foreach (var handed in panel.GetVisualDescendants().OfType<Control>()
+                             .Where(x => Mo2PanelChrome.Handed.TryGetValue(x, out _))) {
+                    Mo2PanelChrome.Handed.TryGetValue(handed, out var given);
+                    var lost = (given ?? []).Where(action => !handed.GetVisualDescendants().OfType<Control>()
+                        .Any(x => ReferenceEquals(x, action) && x.IsEffectivelyVisible && x.Bounds.Width > 0))
+                        .Select(x => x.Name ?? x.GetType().Name).ToArray();
+                    if (lost.Length > 0)
+                        throw new Exception($"A shared panel's page cannot reach {string.Join(", ", lost)} — its " +
+                            "actions stood down with its header");
+                }
+            }
             if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEADER_SCROLL") == "1") {
                 var rails = window.GetVisualDescendants().OfType<Mo2ListScrollBar>()
                     .Where(r => r.IsEffectivelyVisible && r.Name is "ModsRailScrollBar" or "PluginRailScrollBar").ToArray();
@@ -125,17 +180,35 @@ internal static class Mo2DeferredPresentationCheck
         } finally { root.Children.Remove(host); }
     }
 
-    internal static void CheckPanelGeometry(Window window)
+    // A panel's drawn box against the box its view model says it has.
+    //
+    // This compared the two the instant it was called, which every caller does
+    // straight after changing the window's size or its selected tab — the one
+    // moment the arranged bounds are a frame behind the model they are catching up
+    // to. It then threw a sentence with no numbers in it, so a run that failed
+    // could not be told apart from a run that failed for a different reason. It
+    // waits for the two to agree now, and says what they were if they never do.
+    internal static async Task CheckPanelGeometry(Window window)
     {
         var panels = window.GetVisualDescendants().OfType<PanelView>().Where(p => p.IsEffectivelyVisible).ToArray();
         if (panels.Length == 0) throw new Exception("No visible native panels");
         foreach (var panel in panels) {
             var canvas = panel.GetVisualAncestors().OfType<Canvas>().First(p => p.Name == "WorkspaceCanvas");
-            var actual = panel.ViewModel!.ActualBounds;
-            var origin = panel.TranslatePoint(default, canvas) ?? throw new Exception("Detached native panel");
-            if (Math.Abs(origin.X - actual.X) > 1 || Math.Abs(origin.Y - actual.Y) > 1 ||
-                Math.Abs(panel.Bounds.Width - actual.Width) > 1 || Math.Abs(panel.Bounds.Height - actual.Height) > 1)
-                throw new Exception("Deferred panel no longer matches native workspace geometry");
+            string? apart = null;
+            var settle = DateTime.UtcNow.AddSeconds(10);
+            do {
+                window.UpdateLayout();
+                var actual = panel.ViewModel!.ActualBounds;
+                var origin = panel.TranslatePoint(default, canvas) ?? throw new Exception("Detached native panel");
+                apart = Math.Abs(origin.X - actual.X) > 1 || Math.Abs(origin.Y - actual.Y) > 1 ||
+                        Math.Abs(panel.Bounds.Width - actual.Width) > 1 || Math.Abs(panel.Bounds.Height - actual.Height) > 1
+                    ? $"drawn at {origin.X:F0},{origin.Y:F0} {panel.Bounds.Width:F0}x{panel.Bounds.Height:F0} " +
+                      $"where the workspace has it at {actual.X:F0},{actual.Y:F0} {actual.Width:F0}x{actual.Height:F0}"
+                    : null;
+                if (apart is null) break;
+                await Task.Delay(100);
+            } while (DateTime.UtcNow < settle);
+            if (apart is not null) throw new Exception("Deferred panel no longer matches native workspace geometry: " + apart);
         }
     }
 }

@@ -63,7 +63,21 @@ echo $$ >"$lockfile"
 trap 'rm -f "$lockfile"' EXIT
 
 # The checks that require an isolated paired layout, and refuse to run without one.
-PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER ALERT_LIFECYCLE "
+#
+# DEFERRED_PANELS, PAIRED_PANELS and INSTALLED_INTERACTIONS were missing from this
+# list, and each says plainly what it wants — "Use an isolated layout for the
+# restoration check", "Use isolated FNV profile and layout", two visible page
+# headers it cannot have in one panel. All three therefore failed every time they
+# were run, and read as three broken pages rather than as one line here being
+# short. Nothing noticed because no sweep had ever named them.
+PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTED_ROOTS_UI PLUGIN_ROW TAB_RESTORE PROFILE_BUFFER ALERT_LIFECYCLE DEFERRED_PANELS PAIRED_PANELS INSTALLED_INTERACTIONS "
+# And the ones that need those two tabs in one panel rather than side by side.
+# TAB_RESTORE switches between a panel's tabs and asserts on Panels.Single(); given
+# the paired layout it waits for a two-tab panel the fixture cannot contain, times
+# out, and says "Restored tab state did not settle" — the layout being the wrong
+# shape for the question, reported as the frontend failing to restore a tab.
+# DEFERRED_PANELS runs the same check as its second stage and needs the same shape.
+TABBED=" TAB_RESTORE DEFERRED_PANELS "
 # The checks that do not register a turn, so the screenshot path would shut them
 # down mid-run. They are given no screenshot and are ended by the timeout instead.
 #
@@ -74,15 +88,36 @@ PAIRED=" ENTRY_MENUS FILTERED_ROWS LAYOUT_PRESET SEARCH_INPUT SHARED_LISTS SORTE
 # a check whose answer is a sentence.
 UNREGISTERED=" ENTRY_MENUS FILTERED_ROWS PANEL_CHROME COLUMN_TOGGLE SHARED_LISTS PLUGIN_ROW SORTED_ROOTS_UI DEAD_CONTROLS FOLDER_PAGES EXTRA_BUTTONS "
 
+# The checks that need a person at the keyboard, and so cannot be judged by an
+# unattended sweep in either direction. SEARCH_INPUT waits for someone to type a
+# string into the mod filter and reports what the window saw of the keystrokes;
+# NEXUS_ACCOUNT and OPEN_MOD_DETAILS each open a modal MO2 dialog and wait three
+# minutes for it to be closed. Left in a sweep they fail on their timeout and read
+# as three broken features. They are skipped with the reason unless the run asks
+# for them with MO2_VERIFY_ATTENDED=1, which is a promise that someone is watching.
+ATTENDED=" SEARCH_INPUT NEXUS_ACCOUNT OPEN_MOD_DETAILS "
+
 layout_source="$frontend_root/artifacts/verify-paired-layout.json"
+tabbed_source="$frontend_root/artifacts/verify-tabbed-layout.json"
 status=0
 for name in "$@"; do
+    if [[ "$ATTENDED" == *" $name "* && "${MO2_VERIFY_ATTENDED:-}" != 1 ]]; then
+        echo "=== $name (skipped) ==="
+        echo "$name needs a person at the keyboard. Re-run with MO2_VERIFY_ATTENDED=1 and stay at the machine."
+        continue
+    fi
     log="$out/$name.log"
     environment=("MO2_VERIFY_$name=1")
     if [[ "$PAIRED" == *" $name "* ]]; then
-        [[ -f "$layout_source" ]] || { echo "$name needs $layout_source; build it with tools/paired_layout.py" >&2; status=1; continue; }
+        source_layout="$layout_source"
+        build_with="tools/paired_layout.py"
+        if [[ "$TABBED" == *" $name "* ]]; then
+            source_layout="$tabbed_source"
+            build_with="tools/paired_layout.py --tabbed"
+        fi
+        [[ -f "$source_layout" ]] || { echo "$name needs $source_layout; build it with $build_with" >&2; status=1; continue; }
         layout="$(mktemp /tmp/mo2-frontend-layout-XXXXXX.json)"
-        cp "$layout_source" "$layout"
+        cp "$source_layout" "$layout"
         environment+=("MO2_FRONTEND_LAYOUT=$layout")
     fi
     # The alias check compares against the icon styles as upstream shipped them,

@@ -16,9 +16,14 @@ internal static class Mo2InstalledInteractionCheck
 {
     public static async Task Run(Mo2LiveWorkspace shell, Window window)
     {
-        async Task Wait(Func<bool> ready) {
+        // Says what it was waiting for. Every wait in this check threw the same
+        // sentence, so a timeout named the check and nothing else — and this check
+        // has a dozen of them. Two rounds of guessing which one had fired went into
+        // working that out, which is the same fault the rest of this sweep has been
+        // fixing in other checks.
+        async Task Wait(Func<bool> ready, string what = "the check to settle") {
             var until = DateTime.UtcNow.AddSeconds(20);
-            while (!ready()) { if (DateTime.UtcNow > until) throw new TimeoutException("Installed interaction check timed out"); await Task.Delay(50); }
+            while (!ready()) { if (DateTime.UtcNow > until) throw new TimeoutException($"Timed out waiting for {what}"); await Task.Delay(50); }
         }
         var profile = shell.Profile;
         await Wait(() => profile.IsConnected);
@@ -26,11 +31,29 @@ internal static class Mo2InstalledInteractionCheck
             throw new InvalidOperationException("Use isolated FNV profile and layout");
         var originalMods = profile.Mods.ToArray();
         var originalPlugins = profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
-        var mods = window.GetVisualDescendants().OfType<Mo2ModsView>().Single();
-        var plugins = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
+        // Waited for, not taken. Both panels build their page when they are first
+        // shown, and this runs three seconds after the window opens — close enough to
+        // that boundary that it worked by margin rather than by design, and reported
+        // "Sequence contains no elements" from a bare Single() the run it did not.
+        await Wait(() => window.GetVisualDescendants().OfType<Mo2ModsView>().Any() &&
+                         window.GetVisualDescendants().OfType<Mo2PluginsView>().Any());
+        var mods = window.GetVisualDescendants().OfType<Mo2ModsView>().First();
+        var plugins = window.GetVisualDescendants().OfType<Mo2PluginsView>().First();
         var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
         const string separator = "__Drag modal check_separator";
-        if (profile.Mods.Any(x => x.Name == separator)) throw new InvalidOperationException("Fixture already exists");
+        // A stray from a run that did not reach its cleanup is taken out rather than
+        // refused. This threw "Fixture already exists" and stopped — outside the try
+        // below, so it did not even run the removal it was complaining about, and the
+        // check stayed wedged for every run afterwards. It wedged for real: the run
+        // that made this separator was cut off part-way, because nothing registered a
+        // turn for this check and the screenshot path shut the app down through it,
+        // so the finally that removes the fixture never ran. A check that cannot get
+        // past its own litter is a trap rather than a guard.
+        if (profile.Mods.Any(x => x.Name == separator)) {
+            Console.WriteLine($"CHECK installed interactions: removing {separator} left by an earlier run");
+            await profile.RemoveCollection(separator, profile.CurrentTarget);
+            await Wait(() => !profile.Mods.Any(x => x.Name == separator));
+        }
         try {
             foreach (var accept in new[] { false, true }) {
                 var pending = mods.ViewModel!.CreateSeparatorDialog(null);
@@ -94,15 +117,42 @@ internal static class Mo2InstalledInteractionCheck
             await profile.Order.MoveItems(default, movable.Take(2).Select(x => x.Key).ToArray(), movable[2].Key, NexusMods.Abstractions.Games.TargetRelativePosition.BeforeTarget);
             await Wait(() => originalPlugins.SequenceEqual(profile.Order.Plugins.Select(x => (x.DisplayName,x.SortIndex,x.IsActive))));
             Console.WriteLine("PASS multi-plugin row-drop handler updates native load order and restores it");
-            foreach (var view in new Control[] { mods, plugins }) {
-                var grip = view.GetVisualDescendants().OfType<Border>().First(x => x.Name is "ModDragHandle" or "PluginDragHandle");
-                var row = grip.GetVisualAncestors().OfType<TreeDataGridRow>().First();
-                if (row.ContextMenu is not { } menu) throw new InvalidOperationException("Row context actions missing");
-                row.RaiseEvent(new ContextRequestedEventArgs()); await Task.Delay(150);
-                if (menu.Items.Count < 3) throw new InvalidOperationException("Opened row context actions missing");
-                menu.Close();
-            }
-            Console.WriteLine("PASS both lists use non-button drag grips and row context menus");
+            // Each list's rows, as each list actually builds them.
+            //
+            // This required a drag grip on both and threw here. Only the mod list has
+            // one: Mo2EntryMenu.Create is called from Mo2ModRow alone, and it is that
+            // call which makes the "ModDragHandle" border and puts a ContextMenu on
+            // the row it attaches to. Mo2PluginRow builds neither — it sets a
+            // ContextFlyout and no grip — so waiting for a "PluginDragHandle" waited
+            // for something that has never existed, and the check timed out on the
+            // second list after passing the first.
+            //
+            // Three wrong corrections were made before that was read rather than
+            // inferred, and each is worth naming because the same inference is easy to
+            // repeat: a grep for ModDragHandle finds it only in checks, because the
+            // name is composed as kind + "DragHandle"; the row's ContextMenu looks
+            // superseded by the ContextFlyout beside it, and a mod row carries both;
+            // and the flyout builds on a trigger this does not use, so it opens empty
+            // when asked here. The grips are this frontend's own rather than MO2's,
+            // and whether they belong is MO2_VERIFY_EXTRA_BUTTONS' question.
+            await Wait(() => mods.GetVisualDescendants().OfType<Border>().Any(x => x.Name == "ModDragHandle"),
+                "a ModDragHandle border on a mod row");
+            var modGrip = mods.GetVisualDescendants().OfType<Border>().First(x => x.Name == "ModDragHandle");
+            var modRow = modGrip.GetVisualAncestors().OfType<TreeDataGridRow>().First();
+            if (modRow.ContextMenu is not { } modMenu) throw new InvalidOperationException("A mod row carries no menu");
+            modRow.RaiseEvent(new ContextRequestedEventArgs()); await Task.Delay(150);
+            if (modMenu.Items.Count < 3) throw new InvalidOperationException($"A mod row's menu opened with {modMenu.Items.Count} entries");
+            modMenu.Close();
+            if (plugins.GetVisualDescendants().OfType<Control>().Any(x => x.Name == "PluginDragHandle"))
+                throw new InvalidOperationException("The plugin list has grown a drag grip, which only the mod list has");
+            // On the row's own content grid, which is what Mo2PluginRow calls "row" —
+            // a Grid named PluginRedesignRow, not the TreeDataGridRow around it. Eleven
+            // rows were drawn and none of them carried the flyout, because it is one
+            // level further in than this looked.
+            await Wait(() => plugins.GetVisualDescendants().OfType<Grid>()
+                .Any(x => x.Name == "PluginRedesignRow" && x.ContextFlyout is MenuFlyout),
+                $"a PluginRedesignRow carrying MO2's flyout (rows drawn: {plugins.GetVisualDescendants().OfType<TreeDataGridRow>().Count()})");
+            Console.WriteLine("PASS a mod row carries its grip and opens its menu; a plugin row carries MO2's flyout and no grip");
             var modSearch = mods.NativeView.FindControl<NexusMods.App.UI.Controls.Search.SearchControl>("SearchControl")!;
             if (!modSearch.IsSearchVisible) modSearch.ToggleSearchPanelVisibility();
             modSearch.FindControl<TextBox>("SearchTextBox")!.Text = "MCM Author Examples";
@@ -115,16 +165,21 @@ internal static class Mo2InstalledInteractionCheck
             await Wait(() => profile.FindMod(named.Id)!.State == named.State);
             modSearch.ClearSearch();
             await Wait(() => table.Rows!.Count >= originalMods.Count(m => !m.IsOverwrite));
-            var pluginSearch = plugins.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.Search.SearchControl>().Single();
-            if (!pluginSearch.IsSearchVisible) pluginSearch.ToggleSearchPanelVisibility();
-            pluginSearch.FindControl<TextBox>("SearchTextBox")!.Text = "The Mod Configuration Menu.esp";
+            // MO2's own filter field under the plugin list. This took NMA's
+            // SearchControl, whose toolbar is off the page — MO2 carries no toolbar on
+            // a tab — so it was not in the visual tree to find, the same rot that had
+            // MO2_VERIFY_SEARCH_INPUT crashing on its first line.
+            await Wait(() => plugins.GetVisualDescendants().OfType<TextBox>().Any(x => x.Name == "PluginsQtFilter"),
+                "MO2's PluginsQtFilter under the plugin list");
+            var pluginFilter = plugins.GetVisualDescendants().OfType<TextBox>().First(x => x.Name == "PluginsQtFilter");
+            pluginFilter.Text = "The Mod Configuration Menu.esp";
             await Wait(() => pluginTable.Rows!.Count == 1);
             var selectedPlugin = profile.Order.Plugins.Single(p => p.DisplayName == "The Mod Configuration Menu.esp");
             var wasActive = selectedPlugin.IsActive;
             plugins.GetVisualDescendants().OfType<ToggleButton>().Single(b => b.Name == "PluginActivationToggle").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
             await Wait(() => profile.Order.FindPlugin(selectedPlugin.Key)!.IsActive != wasActive);
             await profile.SetPluginsActive([selectedPlugin.DisplayName], wasActive);
-            pluginSearch.ClearSearch();
+            pluginFilter.Text = "";
             await Wait(() => pluginTable.Rows!.Count == originalPlugins.Length);
             if (mods.GetVisualDescendants().OfType<Control>().Any(x => x.Name?.EndsWith("ColumnFilter") == true)) throw new InvalidOperationException("Removed filter bar is still present");
             Console.WriteLine("PASS matching Mods/Plugins redesign: expandable search, plain activation checkboxes, no filter row, native states restored");

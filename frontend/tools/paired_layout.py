@@ -29,7 +29,16 @@ def main() -> int:
     here = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint", default="", help="substring of the bridge directory to pick a connection")
-    parser.add_argument("--output", default=os.path.join(here, "..", "artifacts", "verify-paired-layout.json"))
+    parser.add_argument("--output", default="")
+    # One panel holding both tabs, rather than two panels side by side.
+    #
+    # MO2_VERIFY_TAB_RESTORE switches between two tabs of one panel and asserts on
+    # Panels.Single(); given the paired layout it waits for a panel with two tabs
+    # that the fixture can never contain, times out, and reports "Restored tab
+    # state did not settle" — which reads as the frontend failing to restore a tab
+    # rather than as the layout being the wrong shape for the question.
+    parser.add_argument("--tabbed", action="store_true",
+                        help="one panel carrying both tabs, for the tab-restoration check")
     options = parser.parse_args()
 
     source = saved_layout_path()
@@ -54,13 +63,18 @@ def main() -> int:
     def tab(factory):
         return {**copy.deepcopy(template), "Factory": factory}
 
-    paired = {"Version": 2, "Workspaces": [{
-        "Endpoint": chosen["Endpoint"], "ProfilePath": chosen["ProfilePath"],
-        "Panels": [
+    if options.tabbed:
+        panels = [{"X": 0, "Y": 0, "Width": 1, "Height": 1, "Selected": 0, "Tabs": [tab(MODS), tab(PLUGINS)]}]
+    else:
+        panels = [
             {"X": 0, "Y": 0, "Width": 0.5, "Height": 1, "Selected": 0, "Tabs": [tab(MODS)]},
             {"X": 0.5, "Y": 0, "Width": 0.5, "Height": 1, "Selected": 0, "Tabs": [tab(PLUGINS)]},
-        ]}]}
-    output = os.path.abspath(options.output)
+        ]
+    paired = {"Version": 2, "Workspaces": [{
+        "Endpoint": chosen["Endpoint"], "ProfilePath": chosen["ProfilePath"],
+        "Panels": panels}]}
+    default = "verify-tabbed-layout.json" if options.tabbed else "verify-paired-layout.json"
+    output = os.path.abspath(options.output or os.path.join(here, "..", "artifacts", default))
     os.makedirs(os.path.dirname(output), exist_ok=True)
     with open(output, "w") as handle:
         json.dump(paired, handle, indent=1)

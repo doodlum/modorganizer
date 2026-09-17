@@ -6,10 +6,18 @@ using NexusMods.MnemonicDB.Abstractions;
 
 namespace Mo2.Frontend;
 
-// Opt-in check for the Mods toolbar's selection group: hidden with nothing
-// selected, showing an accurate count once rows are, and gone again after the
-// clear action. Selection is driven through the real selection model, so this
-// exercises the same path a click takes.
+// What selecting mods does, driven through the real selection model.
+//
+// This checked the Mods toolbar's selection group — hidden with nothing selected,
+// counting rows once there were some, gone again after its clear action. That
+// group went when the mod pane was cut back to MO2's widgets, because MO2 has no
+// equivalent: MO2 works a selection from the row's own right-click menu, and so
+// does this list. The check was left pointing at it and failed on the first line
+// of every run, which nothing saw, because no sweep had ever named it.
+//
+// Its subject was never the group. It is the selection, which this still drives —
+// and it now fails if the group comes back, which is the same rule the other
+// checks over removed controls were put back under.
 internal static class Mo2ModSelectionCheck
 {
     internal static async Task Run(Mo2LiveWorkspace live, Window window)
@@ -46,46 +54,35 @@ internal static class Mo2ModSelectionCheck
         for (var attempt = 0; attempt < 80 && view.ViewModel?.Adapter.Source.Value.Items.Count() is null or 0; attempt++)
             await Task.Delay(100);
 
-        // The group that is actually on the toolbar, found the way anything else would
-        // find it. Looking it up through the native view's name scope returns the one
-        // the original markup declared, which is now emptied into the shared group and
-        // never shown — so this read as passing while checking a control nobody sees.
-        var group = view.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "ContextControlGroup")
-            ?? throw new Exception("No selection group in the Mods toolbar");
-        var deselect = view.NativeView.FindControl<NexusMods.App.UI.Controls.StandardButton>("DeselectItemsButton")
-            ?? throw new Exception("Selection group has no deselect action");
-        if (!ReferenceEquals(deselect.Parent, group))
-            throw new Exception("The deselect action is not in the group that is shown");
-        if (view.GetVisualDescendants().OfType<Border>().Any(x => x.Name == "ModSelectionGroup"))
-            throw new Exception("A second selection group is still on the toolbar");
-        if (view.GetVisualDescendants().OfType<Control>().Count(x => x.Name == "ContextControlGroup") != 1)
-            throw new Exception("More than one selection group is on the page");
+        // No selection group, and nothing of one left behind. MO2 draws none, so a
+        // page that grows one back has grown a control MO2 has not got.
+        foreach (var name in new[] { "ContextControlGroup", "AdoptedContextControlGroup", "ModSelectionGroup", "DeselectItemsButton" })
+            if (view.GetVisualDescendants().OfType<Control>().Any(x => x.Name == name))
+                throw new Exception($"{name} is drawn, and MO2 has no selection group — a selection is worked from the row's menu");
         if (view.ViewModel!.Adapter.Source.Value.Selection is not TreeDataGridRowSelectionModel<NexusMods.App.UI.Controls.CompositeItemModel<EntityId>> selection)
             throw new Exception("Mods table has no row selection model");
 
         selection.Clear();
         await Task.Delay(400);
-        if (group.IsVisible) throw new Exception("Selection group is showing with nothing selected");
+        if (view.ViewModel.Adapter.SelectedModels.Count != 0) throw new Exception("Clearing left rows selected");
 
         selection.Select(new Avalonia.Controls.IndexPath(0));
         await Task.Delay(400);
-        if (!group.IsVisible) throw new Exception("Selection group stayed hidden after selecting a row");
-        if (deselect.Text?.Contains('1') != true) throw new Exception("Deselect action read \"" + deselect.Text + "\" for one row");
+        if (view.ViewModel.Adapter.SelectedModels.Count != 1)
+            throw new Exception($"Selecting one row left {view.ViewModel.Adapter.SelectedModels.Count} selected");
 
         selection.Select(new Avalonia.Controls.IndexPath(1));
         selection.Select(new Avalonia.Controls.IndexPath(2));
         await Task.Delay(400);
         var selected = view.ViewModel.Adapter.SelectedModels.Count;
-        if (deselect.Text?.Contains(selected.ToString()) != true)
-            throw new Exception($"Deselect action read \"{deselect.Text}\" for {selected} rows");
+        if (selected != 3) throw new Exception($"Selecting three rows left {selected} selected");
 
-        deselect.Command?.Execute(null);
-        await Task.Delay(500);
-        if (view.ViewModel.Adapter.SelectedModels.Count != 0) throw new Exception("Clear action left rows selected");
-        if (group.IsVisible) throw new Exception("Selection group stayed visible after clearing");
+        selection.Clear();
+        await Task.Delay(400);
+        if (view.ViewModel.Adapter.SelectedModels.Count != 0) throw new Exception("Clearing left rows selected");
 
-        Console.WriteLine($"PASS mods selection group: the native group and no second one beside it, hidden with " +
-            $"nothing selected, reading 1 for one row and {selected} for {selected}, and its deselect action emptied " +
-            "the selection and hid the group");
+        Console.WriteLine("PASS mods selection: the table's own selection model took one row and then three, and " +
+            "clearing emptied it, with no selection group anywhere on the page — MO2 draws none, and works a " +
+            "selection from the row's own menu");
     }
 }

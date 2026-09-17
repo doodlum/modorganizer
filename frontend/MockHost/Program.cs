@@ -337,12 +337,22 @@ public partial class MockApp : Application
                         try { await Mo2FilteredRowsCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL filtered rows: " + error); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAIRED_PANELS") == "1")
+                // Registered, so the screenshot path waits for it. It settles the
+                // panels before measuring them, which takes longer than the shutdown
+                // timer allowed: the run was cut off before it printed anything and
+                // read as a check that had stopped saying anything.
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PAIRED_PANELS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2DeferredPresentationCheck.CheckPairedWorkspace(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL paired panels: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DEFERRED_PANELS") == "1")
+                }
+                // Registered for the same reason: it runs the tab-restoration check as
+                // its second stage, which walks four window widths and both tabs.
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DEFERRED_PANELS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
                         try {
                             await Mo2DeferredPresentationCheck.CheckRowLifecycle(liveWindow);
@@ -350,7 +360,9 @@ public partial class MockApp : Application
                             await Mo2SortedRootsUiCheck.Run(live, liveWindow);
                             Console.WriteLine("PASS deferred panels: repeated tab/size changes and live selection/sorting");
                         } catch (Exception error) { Console.WriteLine("FAIL deferred panels: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SORTED_ROOTS_UI") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2SortedRootsUiCheck.Run(live, liveWindow); }
@@ -404,16 +416,33 @@ public partial class MockApp : Application
                         try { await Mo2PluginRowCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL plugin row: " + error.Message); }
                     }, TimeSpan.FromSeconds(3));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALLED_INTERACTIONS") == "1")
+                // Registered, and this one had to be: unregistered it was shut down
+                // part-way through, which skipped the finally that takes its separator
+                // fixture back out of MO2. The fixture then stayed in the live profile
+                // and wedged every later run. A check that changes the host has to be
+                // waited for, or it changes the host and does not change it back.
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALLED_INTERACTIONS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2InstalledInteractionCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL installed interactions: " + error.Message + "\n" + error.StackTrace); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(3));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_RESTORE") == "1")
+                }
+                // Registered, like every other check started from the window opening.
+                // Without a turn the screenshot path does not wait for it, and its
+                // three-second timer put it on the wrong side of that: it was shut
+                // down part-way on every run and printed nothing at all, which
+                // verify.sh reported as NO VERDICT for a check that was never given
+                // the chance to have one.
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_RESTORE") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2TabRestoreCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL tab restoration: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(3));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_TRADITIONAL_UI") == "1")
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2TraditionalUiCheck.Run(live, liveWindow); }

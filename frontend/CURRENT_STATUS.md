@@ -3577,3 +3577,67 @@ followed to the control and the entry MO2 would run, and then not pressed — wh
 the verdict states rather than omits. What is established for them is that the key
 is bound and arrives at the right control, not that MO2 then did the work. Ctrl+I
 and F5 are pressed for real.
+
+## Twelve checks nothing had ever run, and the eight that had rotted
+
+The sweeps so far named the checks that were already known to matter. Listing every
+`MO2_VERIFY_*` in `Program.cs` against the logs showed **eighty-nine that had never
+been run in a sweep at all**. Twelve of those are about widgets, pointer input,
+narrow layouts and panel combinations, which is what this page is for, so they were
+run. Seven passed. **Eight had rotted, and not one of them was a product fault.**
+
+They had rotted for one reason: nothing ran them. A check nobody runs stops being
+evidence and quietly becomes a description of a program that no longer exists.
+
+| Check | What was actually wrong |
+| --- | --- |
+| `DEFERRED_PANELS`, `PAIRED_PANELS`, `INSTALLED_INTERACTIONS` | missing from `verify.sh`'s `PAIRED` list, though each says plainly it needs an isolated layout |
+| `TAB_RESTORE`, `INSTALLED_INTERACTIONS` | never registered a turn, so the screenshot path shut them down before they could speak |
+| `TAB_RESTORE` | then given a two-panel fixture when it asserts on `Panels.Single()` with two tabs |
+| `MODS_SELECTION` | required a selection group MO2 has not got and that was deliberately removed |
+| `SEARCH_INPUT` | drove a `SearchControl` whose toolbar is detached from the page, and needs a person besides |
+| `PAIRED_PANELS` | required two visible page headers, which a shared panel deliberately stands down |
+| `INSTALLED_INTERACTIONS` | read a row's `ContextMenu` after the row menus became MO2's own on `ContextFlyout` |
+
+### The one that left something behind
+
+`INSTALLED_INTERACTIONS` creates a separator in MO2 and removes it in a `finally`.
+Unregistered, it was shut down before that `finally` ran, and
+`__Drag modal check_separator` stayed in the live FNV profile — in `modlist.txt` and
+as a mod directory. Its guard against a stale fixture then sat *outside* the `try`,
+so it threw "Fixture already exists" without running the removal it was complaining
+about, and stayed wedged for every run after. A check that cannot get past its own
+litter is a trap rather than a guard. It now takes a stray out through MO2's own
+`RemoveCollection` — the same path its cleanup uses — and the stray is gone.
+
+**A check that changes the host has to be waited for, or it changes the host and
+does not change it back.** That is the general rule the registration was missing.
+
+### Attended checks are not unattended results
+
+`SEARCH_INPUT` waits thirty seconds for a person to type a string; `NEXUS_ACCOUNT`
+and `OPEN_MOD_DETAILS` each wait three minutes for someone to close a modal MO2
+dialog. In a sweep they fail on their timeout and read as three broken features.
+They are skipped with the reason now unless `MO2_VERIFY_ATTENDED=1` says someone is
+watching. Counting an attended check among unattended results misleads in both
+directions.
+
+### Six wrong diagnoses, and what stopped them
+
+Working through these, the cause was guessed wrong six times — that the pages had
+stopped drawing a `PageHeader`, that the window never resized, that the responsive
+header had stood down on width, that a geometry mismatch was transient, that a
+shared panel must draw a visible action row, and that the row drag grips had been
+deleted. Every one was disproved by looking, two of them only after reaching the
+code and being caught by the next live run.
+
+The grip is the one worth keeping: a `grep` for `ModDragHandle` across `.cs` found
+it only in checks, so it looked removed. `Mo2EntryMenu` composes that name as
+`kind + "DragHandle"`, and the grip is there. A literal search for a composed name
+proves nothing, and the only reason the wrong assertion did not survive is that
+everything here is run against the live app rather than reasoned about.
+
+What survives from all of it is smaller and more useful than any of the guesses:
+these checks report what they saw. `PAIRED_PANELS` names the header count, what was
+built, the panel count, the size and which ancestor hid each one — and that turned
+the last of them from three wrong guesses into one run.
