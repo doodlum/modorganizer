@@ -1961,16 +1961,44 @@ public partial class MockApp : Application
         var profile = live.Profile;
         if (!profile.ProfilePath.EndsWith("/frontend/artifacts/mo2-fnv-host/profiles/Frontend Test"))
             throw new InvalidOperationException("Plugin drag test requires the isolated FNV profile");
-        var table = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single().GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        // The plugin view, once the panel has built it. The profile-path guard above
+        // means a profile is selected, not that its pages are on screen, and Single()
+        // over an empty tree reported "Sequence contains no elements" before this
+        // check had looked at anything at all.
+        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2PluginsView>().Any(x => x.IsEffectivelyVisible),
+            "the plugin view to be drawn");
+        var pluginView = window.GetVisualDescendants().OfType<Mo2PluginsView>().First(x => x.IsEffectivelyVisible);
+        var table = pluginView.GetVisualDescendants().OfType<TreeDataGrid>().Single();
         table.RowDragStarted += (_, e) => Console.WriteLine("DRAG START: " + e.Models.Count() + " rows");
         table.RowDrop += (_, e) => Console.WriteLine("DRAG DROP: " + e.Position);
+        // And the state to restore MO2 to, once MO2 has sent it. This drags a plugin
+        // into a new load order and puts it back from these two arrays, so capturing
+        // them part-way through filling decides what the host is left holding.
+        await WaitFor(() => profile.Mods.Count > 0 && profile.Order.Plugins.Count > 0, "MO2's mods and plugins to arrive");
+        var steady = 0;
+        var seen = (Mods: -1, Plugins: -1);
+        for (var attempt = 0; attempt < 120 && steady < 5; attempt++) {
+            var now = (profile.Mods.Count, profile.Order.Plugins.Count);
+            steady = now == seen ? steady + 1 : 0;
+            seen = now;
+            await Task.Delay(100);
+        }
         var original = profile.Order.Plugins.Select(x => (x.DisplayName, x.SortIndex, x.IsActive)).ToArray();
         var mods = profile.Mods.Select(x => (x.Name, x.State, x.Priority)).ToArray();
         var names = original.Select(x => x.DisplayName).ToArray();
         var moving = profile.Order.Plugins.Where(x => x.DisplayName.StartsWith("MCM Example") && x.CanMove).Take(2).Select(x => x.DisplayName).ToArray();
         const string target = "The Mod Configuration Menu.esp";
+        // What the profile holds, when it does not hold what this needs. The check
+        // wants two movable "MCM Example" plugins sitting fourth and third from the
+        // end with The Mod Configuration Menu.esp last — an arrangement of the
+        // isolated FNV profile, not anything the frontend decides — and said only
+        // "Unexpected isolated plugin order", which cannot be acted on without
+        // opening MO2 and reading the list by hand.
         if (moving.Length != 2 || names[^1] != target || !names.Skip(names.Length - 4).Take(2).SequenceEqual(moving))
-            throw new InvalidOperationException("Unexpected isolated plugin order");
+            throw new InvalidOperationException($"Unexpected isolated plugin order: needs two movable \"MCM Example\" " +
+                $"plugins at positions {names.Length - 4} and {names.Length - 3} with \"{target}\" last; found " +
+                $"{moving.Length} movable MCM Example plugin(s) and the order " +
+                string.Join(" | ", profile.Order.Plugins.Select(x => $"{x.DisplayName}{(x.CanMove ? "" : " (fixed)")}")));
         var client = new Mo2BridgeClient(profile.Endpoint);
         async Task<string[]> HostOrder() => (await client.SendAsync("snapshot")).GetProperty("plugins").EnumerateArray()
             .OrderBy(x => x.GetProperty("priority").GetInt32()).Select(x => x.GetProperty("name").GetString()!).ToArray();
