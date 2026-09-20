@@ -302,6 +302,15 @@ public partial class MockApp : Application
                         finally { Mo2CheckTurn.Finished(); }
                     };
                 }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MOD_INFO_SHOT") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2ModInfoShotCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL mod info shot: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_MOD_INFO") == "1") {
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
