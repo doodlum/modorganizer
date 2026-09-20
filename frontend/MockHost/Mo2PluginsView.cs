@@ -133,7 +133,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // policy, the restore picker and the writes — the same route the order history
         // menu already takes.
         var qtRestore = Mo2QtWidgets.Icon("RestorePluginsButton", Mo2QtWidgets.RestoreTip, "mdi-backup-restore",
-            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "restore", live.CurrentTarget); });
+            async () => { if (ViewModel?.LiveProfile is { ChooseOrderBackup: { } choose }) await choose("plugins"); });
         var qtSave = Mo2QtWidgets.Icon("SavePluginsButton", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "backup", live.CurrentTarget); });
         var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);

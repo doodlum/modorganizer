@@ -162,6 +162,62 @@ the desktop shortcut with `python3 frontend/tools/install_desktop.py`.
 The installer also accepts `--configuration Debug` and checks that the selected
 binary exists before changing the shortcut.
 
+### Windows
+
+`frontend/run.ps1` is the Windows counterpart of `run.sh` and keeps the same
+contract, including the repository-local `.tools/dotnet` SDK and
+`MO2_BUILD_CONFIGURATION`:
+
+```powershell
+git submodule update --init frontend/upstream
+powershell -ExecutionPolicy Bypass -File .\frontend\run.ps1
+```
+
+MO2 runs natively here rather than under Proton, so the Proton launcher and the
+`install_desktop.py`/`install_nxm_handler.py` helpers do not apply. Frontend
+preferences live in `%APPDATA%\mo2-nexus-frontend`, and the MO2 copy and the
+instances it owns in `%LOCALAPPDATA%\mo2-nexus-frontend`.
+
+On **ARM64 Windows** the launcher builds and runs `win-x64` under emulation,
+because MnemonicDB's RocksDbNative dependency ships no `win-arm64` binary — only
+`linux-arm64`, `linux-x64`, `osx-arm64`, `osx-x64` and `win-x64`. A native ARM64
+build compiles but fails at startup in `RocksDbSharp.Native`'s type initializer.
+That path needs the x64 .NET runtime installed alongside the ARM64 one:
+
+```powershell
+winget install --id Microsoft.DotNet.Runtime.9 --architecture x64
+```
+
+Set `MO2_RUNTIME_IDENTIFIER` to override the chosen runtime identifier. Linux
+and x64 Windows are unaffected and build for their own architecture.
+
+## Onboarding and game icons
+
+My Games keeps NMA's own onboarding presentation: its "Add games to get started"
+header, its "No games found" empty state, and its second section. That section
+lists MO2's bundled game plugins that have no registered instance, since the
+bridge only reports the single managed game of a connected instance and
+onboarding needs the list before anything is connected. Nexus sign-in and the
+first-run welcome are NMA's own views, shown in NMA's overlay layer over the
+dimmed window rather than in separate windows.
+
+Game icons are square and come from the game itself. An installed game supplies
+its own icon from its executable — the PE resource tree is read directly rather
+than through Windows' icon APIs, so this behaves the same under Linux, where
+MO2's games are still Windows executables on disk. Games that are not installed
+use icons committed under `MockHost/Assets/GameIcons`, baked from Steam's own
+client icons. Nothing is downloaded at runtime.
+
+To refresh that set (it needs network, and Steam's PICS app info for the icon
+hashes, which no keyless web endpoint exposes):
+
+```sh
+./frontend/MockHost/bin/Release/net9.0/NexusModsApp --fetch-game-icons frontend/MockHost/Assets/GameIcons
+```
+
+`--check-game-icons` reports every supported game and fails on one whose
+executable is present but yields no usable icon.
+
 For a framework-dependent precompiled Linux build, publish with the local SDK:
 
 ```sh
@@ -169,7 +225,7 @@ DOTNET_PROCESSOR_COUNT=2 .tools/dotnet/dotnet publish frontend/MockHost/MockHost
 ```
 
 After validating that output, point the desktop shortcut at it with
-`python3 frontend/tools/install_desktop.py --app frontend/artifacts/linux-ready-to-run/MockHost.dll`.
+`python3 frontend/tools/install_desktop.py --app frontend/artifacts/linux-ready-to-run/NexusModsApp.dll`.
 The output directory must remain in place. Running the installer without `--app`
 restores the development Release build target. Startup measurements and remaining
 validation limits are recorded in [STARTUP_PUBLISH_VALIDATION.md](STARTUP_PUBLISH_VALIDATION.md).
@@ -187,7 +243,7 @@ because they cannot coexist. Leave the variable unset for a normal session.
 
 ## Instance startup
 
-Open the settings gear, then use **Choose MO2 launcher…** beside an instance to select the
+Use **Choose MO2 launcher…** beside an instance to select the
 script or executable that starts that instance. Selecting a profile then starts
 it if needed and waits for the MO2 bridge. Setup and extension dialogs remain in
 MO2. An already-running host is reused, including when its bridge responds slowly.
@@ -214,15 +270,31 @@ by games even when MO2 itself starts without them. If the runtime is installed
 in another Steam library, set `MO2_STEAM_RUNTIME=/path/to/runtime/run` in the
 instance launcher. A required runtime that cannot be found produces an error.
 
-Connections can also be registered without opening the UI:
-
-```sh
-./frontend/run.sh --register-mo2 /path/to/mo2-instance /path/to/launch-mo2.sh
-```
-
 Only instance, bridge and launcher paths are stored in
-`$XDG_CONFIG_HOME/mo2-nexus-frontend/instances.json` (normally under `~/.config`).
-All mod, profile and download state remains in MO2.
+`instances.json` under the frontend configuration directory. All mod, profile and
+download state remains in MO2.
+
+## Instances the frontend owns
+
+The frontend installs its own copy of MO2 and creates an instance per game
+beneath its data directory, so a machine with no MO2 at all can be taken from
+nothing to a managed game. **Add game** on a detected game installs MO2 if this
+is the first game added, writes the instance, registers it, puts it in the spine
+and navigates to it, the way NMA's own Add game does.
+
+It uses the published MO2 release as-is. This repository forks MO2 for a single
+patch to `src/processrunner.cpp` — unhooked launches keeping their arguments and
+skipping VFS preparation — which the release does not carry; everything the
+frontend needs of MO2 comes through the bridge, an ordinary Python plugin that is
+installed into that MO2 copy.
+
+Because the frontend owns its instances, it no longer adopts MO2 setups found
+elsewhere on the machine: the scan of `~/ModOrganizer2` and
+`~/Games/*/modorganizer2` and the `--register-mo2` command are both gone, and so
+is the Connections page they fed. A bridge directory passed in still attaches one
+running host explicitly, which is how live sessions and the live checks connect.
+
+`--add-game "<game>"` does the same from a shell, without opening the window.
 
 ## Reference and source reuse
 
@@ -440,7 +512,7 @@ Install the Linux desktop handler:
 ```sh
 python3 frontend/tools/install_nxm_handler.py \
   --dotnet .tools/dotnet/dotnet \
-  --app frontend/MockHost/bin/Release/net9.0/MockHost.dll
+  --app frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll
 ```
 
 Restore the prior handler with `python3 frontend/tools/install_nxm_handler.py

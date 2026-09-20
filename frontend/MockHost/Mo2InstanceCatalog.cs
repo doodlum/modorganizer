@@ -13,19 +13,21 @@ internal sealed class Mo2InstanceCatalog
     private readonly List<Mo2Registration> _registrations = [];
     public Mo2InstanceCatalog(string activeEndpoint)
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        _config = Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Path.Combine(home, ".config"), "mo2-nexus-frontend", "instances.json");
+        _config = Mo2ConfigPaths.Combine("instances.json");
         try {
             if (File.Exists(_config)) _registrations.AddRange(JsonSerializer.Deserialize<Mo2Registration[]>(File.ReadAllText(_config)) ?? []);
         } catch (Exception error) { LoadError = "Unable to read saved instance connections: " + error.Message; }
+        // The frontend creates and owns its instances, so the catalogue is what it
+        // has written rather than whatever MO2 setups happen to be on the machine.
+        // It used to scan ~/ModOrganizer2 and ~/Games/*/modorganizer2 and adopt
+        // them; that is no longer how a game gets here.
+        //
+        // A bridge directory passed in is different: it names one running host
+        // explicitly, which is how a live session and the live checks attach.
         if (activeEndpoint.Length > 0) {
             var activeRoot = Path.GetFullPath(Path.Combine(activeEndpoint, "..", "..", ".."));
             Discover(activeRoot, activeEndpoint);
         }
-        Discover(Path.Combine(home, "ModOrganizer2"));
-        var games = Path.Combine(home, "Games");
-        if (Directory.Exists(games))
-            foreach (var game in Directory.EnumerateDirectories(games)) Discover(Path.Combine(game, "modorganizer2"));
     }
     private void Discover(string root, string? endpoint = null)
     {
@@ -73,6 +75,26 @@ internal sealed class Mo2InstanceCatalog
     {
         path = path.Replace('\\', '/');
         if (!OperatingSystem.IsWindows() && path.StartsWith("Z:/", StringComparison.OrdinalIgnoreCase)) path = path[2..];
+        if (OperatingSystem.IsWindows()) path = WithoutPackageRedirection(path);
         return Path.GetFullPath(path);
+    }
+
+    // Windows gives a packaged application its own view of the per-user local data
+    // directory, so a write to AppData/Local/X lands in
+    // AppData/Local/Packages/<package>/LocalCache/Local/X. A process reports the
+    // real location of its files while a process outside that view reports the
+    // virtual one, and the two spellings name the same directory. MO2 and this
+    // frontend compare instance and profile directories as strings, so one side
+    // seeing through the redirection and the other not made a host disown its own
+    // profile. Both spellings are collapsed to the virtual one.
+    private static string WithoutPackageRedirection(string path)
+    {
+        const string marker = "/AppData/Local/Packages/";
+        var start = path.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return path;
+        const string tail = "/LocalCache/Local/";
+        var cache = path.IndexOf(tail, start, StringComparison.OrdinalIgnoreCase);
+        if (cache < 0) return path;
+        return path[..(start + "/AppData/Local/".Length)] + path[(cache + tail.Length)..];
     }
 }

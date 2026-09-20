@@ -79,7 +79,7 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
         OpenDiscordCommand = ReactiveCommand.Create(() => shell.DesktopInterop.OpenUri(new Uri("https://discord.gg/ewUVAqyrQX")));
         OpenStatusPageCommand = ReactiveCommand.Create(() => shell.DesktopInterop.OpenUri(NexusMods.App.UI.ConstantLinks.StatusPageUri));
         OpenSettingsCommand = ReactiveCommand.Create<NavigationInformation>(info =>
-            controller.OpenPage(controller.ActiveWorkspaceId, shell.ConnectionsPage, controller.GetOpenPageBehavior(shell.ConnectionsPage, info)));
+            controller.OpenPage(controller.ActiveWorkspaceId, shell.SettingsPage, controller.GetOpenPageBehavior(shell.SettingsPage, info)));
         ActiveWorkspaceSubtitle = "";
         _account = new(() => Mo2SharedNexusLogin.ReadStatus(shell.Catalog.Registrations), ApplyAccount);
         async Task Account(bool logout) {

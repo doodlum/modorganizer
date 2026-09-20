@@ -88,9 +88,7 @@ internal static class Mo2ColumnToggleCheck
         } finally {
             window.Close();
             foreach (var leftover in new[] { "columns-column-check-fixture.json" }) {
-                var path = Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
-                    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"),
-                    "mo2-nexus-frontend", leftover);
+                var path = Mo2ConfigPaths.Combine(leftover);
                 try { File.Delete(path); } catch (IOException) { }
             }
         }

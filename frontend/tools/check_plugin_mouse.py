@@ -24,7 +24,7 @@ with open('/tmp/mo2-panel-drag.log' if panel else '/tmp/mo2-plugin-drag.log' if 
  # PLUGIN_MULTI, the only ones that press a real pointer — could not be started at
  # all, and nothing said so, because nothing ran them.
  configuration=os.environ.get('MO2_BUILD_CONFIGURATION','Release')
- binary=f'frontend/MockHost/bin/{configuration}/net9.0/MockHost.dll'
+ binary=f'frontend/MockHost/bin/{configuration}/net9.0/NexusModsApp.dll'
  if not os.path.exists(binary): raise SystemExit(f'No {configuration} build at {binary}; build it first')
  process=subprocess.Popen(['.tools/dotnet/dotnet',binary],env=env,stdout=output,stderr=subprocess.STDOUT)
  try:

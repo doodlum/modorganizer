@@ -36,13 +36,14 @@ internal static class Mo2SharedNexusLogoutCheck
                 await Wait(() => !top.IsLoggedIn);
                 var partial = await Mo2SharedNexusLogin.ReadStatus(targets);
                 if (partial.Connected != partial.Total - 1) throw new InvalidOperationException("Partial native account state was not confirmed");
-                shell.OpenConnections();
-                await Wait(() => desktop.MainWindow!.GetVisualDescendants().OfType<Mo2ProfilesView>().Any());
-                var connections = desktop.MainWindow!.GetVisualDescendants().OfType<Mo2ProfilesView>().Single();
-                var button = connections.GetVisualDescendants().OfType<NexusMods.App.UI.Controls.StandardButton>().Single(x => x.Name == "DisconnectNexusInstances");
-                if (!button.IsEffectivelyVisible || !button.IsEnabled || !ReferenceEquals(button.Command, connections.ViewModel!.ManageNexusCommand)) throw new InvalidOperationException("Partial account recovery control unavailable");
-                operation = connections.ViewModel.ManageNexusCommand.Execute(true).ToTask();
-                Console.WriteLine("PASS Connections sign out control remains available with one disconnected native account");
+                // The Connections page carried a dedicated recovery control for this
+                // state; with that page removed the header's own sign out is the
+                // route, and what matters is that it stays usable when one native
+                // account has already been disconnected.
+                if (!((System.Windows.Input.ICommand)top.LogoutCommand).CanExecute(null))
+                    throw new InvalidOperationException("Partial account recovery unavailable: sign out cannot execute");
+                operation = top.LogoutCommand.Execute().ToTask();
+                Console.WriteLine("PASS sign out remains available with one disconnected native account");
             } else operation = top.LogoutCommand.Execute().ToTask();
             await Wait(() => {
                 var popup = desktop.Windows.FirstOrDefault(x => x.Title == "Nexus logout");

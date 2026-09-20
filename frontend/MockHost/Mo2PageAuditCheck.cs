@@ -43,7 +43,7 @@ internal static class Mo2PageAuditCheck
             ("logs", x => x is Mo2LogsPage, () => Navigate(menu.LogsItem)),
             ("my-games", x => x is Mo2GamesPage, () => { live.OpenGames(); return Task.CompletedTask; }),
             ("my-loadouts", x => x is Mo2LoadoutsPage { GameScoped: false }, () => { live.OpenProfiles(); return Task.CompletedTask; }),
-            ("instances", x => x is Mo2ProfilesPage, () => { live.OpenConnections(); return Task.CompletedTask; }),
+            ("settings", x => x is NexusMods.App.UI.Pages.Settings.SettingsPageViewModel, () => { live.OpenSettings(); return Task.CompletedTask; }),
         };
 
         if (Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_PAGES") is { } requested) {
@@ -71,7 +71,7 @@ internal static class Mo2PageAuditCheck
             // Pages rendered by a native NMA view adopt the shared chrome on a later
             // layout pass than the one that first shows them, so reading immediately
             // reports a page as unchromed that is about to be chromed.
-            var home = name is "my-games" or "my-loadouts" or "instances";
+            var home = name is "my-games" or "my-loadouts" or "settings";
             await Task.Delay(450);
             window.UpdateLayout();
             // The page that is up mid-navigation is the previous one, and a native
@@ -126,14 +126,17 @@ internal static class Mo2PageAuditCheck
             // Game icons show the artwork whole. The badge control draws a filled
             // strip across their top right corner carrying a profile number that
             // means nothing here, and it is only ever hidden by the frontend.
-            // A game icon must read as artwork on a light plate. The Steam icon for
-            // Skyrim is opaque black, so plating it changed nothing and the icon in
-            // the spine and on every profile card stayed a black square.
+            // A game icon must read as artwork, not as a featureless block. This
+            // used to be checked as "does it sit on a white plate", because the only
+            // icon source was Steam's desktop icon and Skyrim's is opaque black, so
+            // plating it changed nothing. Icons now come from the game executable or
+            // Steam's own client icon and carry their own alpha, so the plate is
+            // gone and what matters is that the artwork actually varies.
             if (name == "my-loadouts") {
                 foreach (var art in live.CatalogEntries.Where(x => x.Instance is not null)
                              .Select(x => x.Instance!.Game).Distinct()) {
-                    var corner = Corner(Mo2GameArt.PlatedIcon(art));
-                    if (corner < 140) faults.Add($"{art}'s icon sits on a plate at brightness {corner}, not on white");
+                    var spread = Variation(Mo2GameArt.SquareIcon(art));
+                    if (spread < 12) faults.Add($"{art}'s icon is a flat block, varying by only {spread} across its pixels");
                 }
             }
 
@@ -177,18 +180,24 @@ internal static class Mo2PageAuditCheck
     private static StackPanel? Chrome(Mo2LiveWorkspace live, Window window) =>
         Body(live, window)?.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(x => x.Name == "PanelHeaderStack");
 
-    // Average brightness of the icon's four corners, which is its plate wherever the
-    // artwork does not reach.
-    private static int Corner(Avalonia.Media.Imaging.Bitmap icon)
+    // How much the icon's visible pixels differ from each other. A real icon has
+    // artwork in it; the failure this guards against is a solid square.
+    private static int Variation(Avalonia.Media.Imaging.Bitmap icon)
     {
         var size = icon.PixelSize;
         var buffer = new byte[size.Width * size.Height * 4];
         var handle = System.Runtime.InteropServices.GCHandle.Alloc(buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
         try { icon.CopyPixels(new PixelRect(size), handle.AddrOfPinnedObject(), buffer.Length, size.Width * 4); }
         finally { handle.Free(); }
-        int At(int x, int y) { var i = (y * size.Width + x) * 4; return (buffer[i] + buffer[i + 1] + buffer[i + 2]) / 3; }
-        return (At(1, 1) + At(size.Width - 2, 1) + At(1, size.Height - 2) + At(size.Width - 2, size.Height - 2)) / 4;
+        int low = 255, high = 0;
+        for (var index = 0; index < buffer.Length; index += 4) {
+            if (buffer[index + 3] < 128) continue;                 // transparent, not artwork
+            var brightness = (buffer[index] + buffer[index + 1] + buffer[index + 2]) / 3;
+            low = Math.Min(low, brightness); high = Math.Max(high, brightness);
+        }
+        return high < low ? 0 : high - low;
     }
+
 
     private static IPanelViewModel? Selected(Mo2LiveWorkspace live)
     {

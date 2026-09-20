@@ -16,6 +16,22 @@ internal static class Mo2HostStartup
             if (!process.HasExited) return true;
             process.Dispose(); Started.Remove(registration.Directory);
         }
+        // The bridge records the host's own process id, which settles this without
+        // comparing paths at all. Path comparison is not always enough: a process
+        // reports the real location of its image, and a redirected file system —
+        // a packaged app's local-data redirection, for one — gives that a different
+        // spelling from the path the instance is registered under.
+        try {
+            var endpoint = Path.Combine(registration.Endpoint, "endpoint.json");
+            if (File.Exists(endpoint)) {
+                using var document = JsonDocument.Parse(File.ReadAllText(endpoint));
+                if (document.RootElement.TryGetProperty("pid", out var recorded) && recorded.TryGetInt32(out var id)) {
+                    try { using var host = Process.GetProcessById(id); if (!host.HasExited) return true; }
+                    catch (ArgumentException) { /* the recorded host is gone */ }
+                }
+            }
+        } catch (IOException) { } catch (JsonException) { }
+
         var executable = Path.Combine(registration.Directory, "ModOrganizer.exe");
         if (OperatingSystem.IsLinux()) {
             foreach (var directory in Directory.EnumerateDirectories("/proc")) {
@@ -48,7 +64,18 @@ internal static class Mo2HostStartup
             var running = IsRunning(registration);
             if (!running && registration.Launcher is { } launcher) {
                 if (!File.Exists(launcher)) throw new FileNotFoundException("The configured MO2 launcher no longer exists");
-                report("Starting MO2; complete any setup dialogs in its window");
+                report("Starting MO2");
+                // MO2_FRONTEND_HOST tells the bridge to keep MO2's own window, splash
+                // and toasts off screen. The Proton launcher script sets it; a
+                // frontend-owned instance is started directly, so it is set here.
+                //
+                // Set on this process rather than on the child, because a child that
+                // carries its own environment block cannot be started through the
+                // shell, and MO2 started without the shell fails to resolve its
+                // side-by-side manifest ("the application has failed to start because
+                // its side-by-side configuration is incorrect"). The shell-started
+                // child inherits this, and nothing here reads the variable itself.
+                Environment.SetEnvironmentVariable("MO2_FRONTEND_HOST", "1");
                 var info = new ProcessStartInfo(launcher) { WorkingDirectory = registration.Directory, UseShellExecute = OperatingSystem.IsWindows() };
                 if (!info.UseShellExecute) { info.RedirectStandardOutput = true; info.RedirectStandardError = true; }
                 var started = Process.Start(info) ?? throw new InvalidOperationException("MO2 launcher did not start");

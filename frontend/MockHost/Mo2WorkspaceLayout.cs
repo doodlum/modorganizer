@@ -28,7 +28,7 @@ internal sealed class Mo2WorkspaceLayout
         _pages = pages.ToDictionary(x => x.FactoryId.ToString()); _detailsFactory = detailsFactory;
         _path = Environment.GetEnvironmentVariable("MO2_FRONTEND_LAYOUT");
         if (_path is null && Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is null)
-            _path = Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mo2-nexus-frontend", "workspace-layout.json");
+            _path = Mo2ConfigPaths.Combine("workspace-layout.json");
         if (_path is null || !File.Exists(_path)) return;
         try {
             var json = File.ReadAllText(_path);

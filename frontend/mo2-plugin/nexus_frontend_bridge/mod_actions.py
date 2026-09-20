@@ -1,6 +1,28 @@
 """Use the original mod model's confirmed uninstall and profile cleanup."""
 
 
+def _cell_text(value):
+    """A model cell as MO2 draws it.
+
+    Qt hands some columns a typed value rather than a string -- Installation is a
+    QDateTime -- and str() on one of those gives its Python repr, which is what
+    the frontend showed where a date belonged. Anything Qt can render itself is
+    asked to render itself.
+    """
+    if value is None:
+        return ''
+    render = getattr(value, 'toString', None)
+    if callable(render):
+        try:
+            return render('yyyy-MM-dd HH:mm')
+        except TypeError:
+            try:
+                return render()
+            except TypeError:
+                pass
+    return str(value)
+
+
 def conflict_neighbors(name, origins):
     """Split MO2's winner-first, ascending-alternatives origin sequence.
 
@@ -597,19 +619,88 @@ class ModActions:
         action.trigger()
         return {'opened': True}
 
+    # The files MO2 backs up for each list, in the order it restores them.
+    ORDER_FILES = {'mods': ('modlist.txt',),
+                   'plugins': ('plugins.txt', 'loadorder.txt', 'lockedorder.txt')}
+
+    def _order_paths(self, target):
+        import os
+        if target not in self.ORDER_FILES:
+            raise ValueError('Choose the mod list or the plugin order')
+        profile = self.organizer.profile()
+        if profile is None:
+            raise ValueError('No MO2 profile is selected')
+        root = profile.absolutePath()
+        return [os.path.join(root, name) for name in self.ORDER_FILES[target]]
+
     def order_backup(self, target, operation):
         from PyQt6.QtWidgets import QPushButton
-        buttons = {('mods', 'backup'): 'saveModsButton', ('mods', 'restore'): 'restoreModsButton',
-                   ('plugins', 'backup'): 'saveButton', ('plugins', 'restore'): 'restoreButton'}
-        if not isinstance(target, str) or not isinstance(operation, str) or (target, operation) not in buttons:
+        buttons = {('mods', 'backup'): 'saveModsButton', ('plugins', 'backup'): 'saveButton'}
+        if not isinstance(target, str) or not isinstance(operation, str):
+            raise ValueError('Choose mod-list or plugin-order backup or restore')
+        if operation == 'restore':
+            # Restoring used to click MO2's own restore button, which opens MO2's
+            # picker. A frontend-hosted MO2 has no window on screen, so that dialog
+            # could never be answered and blocked MO2's event loop for good. The
+            # frontend lists and chooses instead; see list_order_backups.
+            raise ValueError('Restore is chosen in the frontend; call listOrderBackups then restoreOrderBackup')
+        if (target, operation) not in buttons:
             raise ValueError('Choose mod-list or plugin-order backup or restore')
         button = self.window.findChild(QPushButton, buttons[target, operation])
         if not self.window.isEnabled() or button is None or not button.isEnabled():
-            raise ValueError('MO2 backup or restore is unavailable; close its current dialog first')
-        # Native slots flush current state, keep the original retention policy,
-        # and own the restore picker, cancellation, writes and refresh.
+            raise ValueError('MO2 backup is unavailable; close its current dialog first')
+        # Creating a backup opens nothing: the native slot flushes current state and
+        # keeps MO2's own retention policy.
         button.click()
         return {'opened': True}
+
+    def refresh_host(self):
+        # MO2 holds its mod list in memory. A mod written into the instance folder
+        # by the frontend installer is not there until MO2 reads the folder again.
+        self.organizer.refresh()
+        return {'refreshed': True}
+
+    def list_order_backups(self, target):
+        # MO2 writes "<file>.<timestamp>" beside the list and keeps the last ten.
+        # The first file is the one that decides which backups exist; the others
+        # are written at the same moment under the same suffix.
+        import os
+        paths = self._order_paths(target)
+        primary = paths[0]
+        directory, name = os.path.dirname(primary), os.path.basename(primary)
+        found = []
+        for entry in os.listdir(directory) if os.path.isdir(directory) else []:
+            if not entry.startswith(name + '.'):
+                continue
+            suffix = entry[len(name) + 1:]
+            if not suffix or suffix.endswith('.tmp'):
+                continue
+            full = os.path.join(directory, entry)
+            if os.path.isfile(full):
+                found.append({'id': suffix, 'time': os.path.getmtime(full)})
+        found.sort(key=lambda backup: backup['time'], reverse=True)
+        return {'backups': found}
+
+    def restore_order_backup(self, target, backup):
+        import os, shutil
+        if not isinstance(backup, str) or not backup or os.path.basename(backup) != backup:
+            raise ValueError('Choose one of the listed backups')
+        paths = self._order_paths(target)
+        sources = [(path + '.' + backup, path) for path in paths]
+        if not os.path.isfile(sources[0][0]):
+            raise ValueError('That backup no longer exists')
+        restored = []
+        for source, destination in sources:
+            # Plugin backups carry three files, but an older backup may predate one
+            # of them; restoring what is there matches MO2, which copies each in turn.
+            if not os.path.isfile(source):
+                continue
+            shutil.copyfile(source, destination)
+            restored.append(os.path.basename(destination))
+        # MO2 holds the lists in memory, so it has to read them again for the
+        # restore to be what the user sees.
+        self.organizer.refresh()
+        return {'restored': restored, 'backup': backup}
 
     def can_sort_plugins(self):
         from PyQt6.QtWidgets import QPushButton
@@ -756,7 +847,7 @@ class ModActions:
         columns = model_columns(model)
         def cell(row, header, role=Qt.ItemDataRole.DisplayRole):
             column = columns.get(header)
-            return '' if column is None else str(model.index(row, column).data(role) or '')
+            return '' if column is None else _cell_text(model.index(row, column).data(role))
         notes_column = columns.get('Notes')
         result = []
         rows = {name: index for index, name in enumerate(names)}
@@ -818,7 +909,7 @@ class ModActions:
         columns = model_columns(model)
         def cell(row, header, role=Qt.ItemDataRole.DisplayRole):
             column = columns.get(header)
-            return '' if column is None else str(model.index(row, column).data(role) or '')
+            return '' if column is None else _cell_text(model.index(row, column).data(role))
         result = []
         for row in range(model.rowCount()):
             index = model.index(row, 0)

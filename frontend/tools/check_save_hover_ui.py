@@ -34,7 +34,7 @@ def running_processes():
 
 
 def frontend_running():
-    return any(any(arg.endswith('MockHost.dll') or 'MockHost.csproj' in arg for arg in args)
+    return any(any(arg.endswith('NexusModsApp.dll') or 'MockHost.csproj' in arg for arg in args)
                for _, args in running_processes())
 
 
@@ -71,7 +71,7 @@ def main():
     screen = re.search(r'current\s+(\d+)\s+x\s+(\d+)', command('xrandr', '--current'))
     if not screen or tuple(map(int, screen.groups())) != (1280, 800):
         raise RuntimeError('This pointer mapping is verified only for a 1280x800 desktop')
-    binary = ROOT / 'frontend/MockHost/bin/Release/net9.0/MockHost.dll'
+    binary = ROOT / 'frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll'
     if not binary.is_file():
         raise RuntimeError('Build Release first')
     args.output.mkdir(parents=True, exist_ok=False)

@@ -473,7 +473,7 @@ internal sealed class Mo2ModsView : ReactiveUserControl<ScenarioInstalledPage>
         // keeps beside the list, which this frontend already reaches through MO2's own
         // buttons.
         var restoreMods = Mo2QtWidgets.Icon("RestoreModsButton", Mo2QtWidgets.RestoreModsTip, "mdi-backup-restore",
-            async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("mods", "restore", live.CurrentTarget); });
+            async () => { if (ViewModel?.LiveProfile is { ChooseOrderBackup: { } choose }) await choose("mods"); });
         var saveMods = Mo2QtWidgets.Icon("SaveModsButton", Mo2QtWidgets.SaveModsTip, "mdi-content-save-outline",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("mods", "backup", live.CurrentTarget); });
         barActions.Add(restoreMods); barActions.Add(saveMods);

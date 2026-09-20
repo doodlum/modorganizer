@@ -192,7 +192,7 @@ internal static class Mo2QtWidgetCheck
             ["downloads"] = () => Navigate(menu.LeftMenuItemLibrary),
             // The home workspace's own page, for the widgets this frontend offers
             // there rather than beside MO2's list.
-            ["connections"] = () => { live.OpenConnections(); return Task.CompletedTask; },
+            ["connections"] = () => { live.OpenSettings(); return Task.CompletedTask; },
         };
 
         using var turn = await Mo2CheckTurn.Take();

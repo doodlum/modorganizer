@@ -166,7 +166,7 @@ internal static class Mo2TabDragDropCheck
         // Distinct pages, because opening the same one twice reuses its tab and the
         // splits below would run out of tabs to move before the workspace filled.
         live.OpenGames(); await Task.Delay(200);
-        live.OpenConnections(); await Task.Delay(200);
+        live.OpenSettings(); await Task.Delay(200);
         live.OpenComponents(); await Task.Delay(200);
         live.OpenProfiles(); await Task.Delay(600);
 

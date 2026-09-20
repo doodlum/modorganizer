@@ -137,6 +137,15 @@ class Bridge:
         if action == 'orderBackup':
             if self.mod_actions is None: raise ValueError('MO2 backup integration is unavailable')
             return self.mod_actions.order_backup(request.get('list'), request.get('operation'))
+        if action == 'refreshHost':
+            if self.mod_actions is None: raise ValueError('MO2 refresh is unavailable')
+            return self.mod_actions.refresh_host()
+        if action == 'listOrderBackups':
+            if self.mod_actions is None: raise ValueError('MO2 backup integration is unavailable')
+            return self.mod_actions.list_order_backups(request.get('list'))
+        if action == 'restoreOrderBackup':
+            if self.mod_actions is None: raise ValueError('MO2 backup integration is unavailable')
+            return self.mod_actions.restore_order_backup(request.get('list'), request.get('backup'))
         if action == 'setPluginLocked':
             if self.mod_actions is None: raise ValueError('MO2 plugin locking is unavailable')
             return self.mod_actions.set_plugin_locked(request.get('name'), request.get('locked'))

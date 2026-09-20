@@ -18,6 +18,8 @@ using NexusMods.App.UI.Pages.Sorting;
 using NexusMods.App.UI.Windows;
 using NexusMods.App.UI.WorkspaceAttachments;
 using NexusMods.App.UI.WorkspaceSystem;
+using System.Reactive.Threading.Tasks;
+using NexusMods.Games.FOMOD.UI;
 using NexusMods.Sdk.Settings;
 using NexusMods.UI.Sdk.Icons;
 using ReactiveUI;
@@ -52,7 +54,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _modsPage;
     private readonly PageData _gamesPage;
     private readonly PageData _gameLoadoutsPage;
-    private readonly PageData _connectionsPage;
+    private readonly PageData _settingsPage;
     private readonly PageData _componentsPage;
     private Mo2TopBar? _topBar;
     internal System.Reactive.Subjects.BehaviorSubject<string> NexusAccountStatus { get; } = new("Checking Nexus account…");
@@ -60,7 +62,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly Mo2WorkspaceLayout _layout;
     public string? LayoutError => _layout.Error;
     public void SaveLayouts() => _layout.Save(WorkspaceController.AllWorkspaces);
-    public PageData ConnectionsPage => _connectionsPage;
+    public PageData SettingsPage => _settingsPage;
     private readonly WorkspaceId _homeWorkspace;
     private WorkspaceId _profileWorkspace;
     private readonly PageData _pluginsPage;
@@ -110,6 +112,15 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         if (snapshot == _catalogSnapshot) return;
         _catalogSnapshot = snapshot; CatalogChanged?.Invoke();
     }
+    // MO2 keeps a mod as a folder under the instance mods directory, and the
+    // profile sits at <instance>/profiles/<name>, so the instance is two up.
+    private string ModsRoot()
+    {
+        var profile = Mo2InstanceCatalog.LocalPath(Profile.ProfilePath);
+        var instance = Path.GetDirectoryName(Path.GetDirectoryName(profile));
+        return Path.Combine(instance ?? profile, "mods");
+    }
+
     public string GameName => Profile.GameName;
     public Mo2LiveProfile Profile { get; }
     private readonly Task _firstRead;
@@ -135,8 +146,17 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         Profile.ConfirmRemoval = mods => Mo2SeparatorDialog.ConfirmRemoval(windows, mods);
+        Profile.ChooseOrderBackup = list => Mo2RestoreBackupDialog.Show(windows, Profile, list);
+        Profile.ShowModInformation = id => Mo2ModInformationDialog.Show(windows, Profile, id);
+        // NMA guided-installer window and the FOMOD engine behind it, in their own
+        // provider: the installer resolves its view models from a scope, which this
+        // shell own fixture container does not provide.
+        var installerServices = new ServiceCollection().AddLogging()
+            .AddGuidedInstallerUi().BuildServiceProvider();
+        Profile.InstallLocally = archive => Mo2FomodInstaller.Install(installerServices, archive, ModsRoot());
         services.Add<IWindowManager>(windows);
-        services.Add<ISettingsManager>(new MemorySettings(services, new Mo2AlertPreferences(Mo2AlertPreferences.DefaultPath)));
+        var memorySettings = new MemorySettings(services, new Mo2AlertPreferences(Mo2AlertPreferences.DefaultPath));
+        services.Add<ISettingsManager>(memorySettings);
         services.Add<ILoggerFactory>(NullLoggerFactory.Instance);
         services.Add<IWorkspaceAttachmentsFactoryManager>(new FixtureAttachments());
         using (Mo2StartupCheck.Phase("desktop services"))
@@ -172,10 +192,12 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var components = new FixturePageFactory("3f2b6c41-9d7a-45e2-9c0f-6d1f2a7c8b34", "Components", Mo2ComponentsPage.ComponentsIcon,
             () => new Mo2ComponentsPage(windows, services.GetRequiredService<ISettingsManager>()));
         _componentsPage = components.Data;
-        var connections = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82106", "Connections", IconValues.Folder,
-            () => new Mo2ProfilesPage(windows, Catalog, Profile, ShowProfile, logout => _topBar?.ManageAccount(logout) ?? Task.CompletedTask,
-                NexusAccountStatus));
-        _connectionsPage = connections.Data;
+        // NMA's own settings page, the same one the fixtures use, rather than the
+        // instance-management page the gear used to open. The frontend creates and
+        // owns its MO2 instances now, so there is nothing left for the user to
+        // register by hand and no Connections page to register it on.
+        var settings = ScenarioSettings.Register(services, memorySettings, windows);
+        _settingsPage = settings.Data;
         _profilesPage = profiles.Data;
         var health = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82108", "Health Check", IconValues.Cardiology,
             () => new Mo2HealthPage(windows, this));
@@ -197,10 +219,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var saves = new FixturePageFactory("c0896704-91ec-4246-8651-85998f4a15b1", "Saves", IconValues.Save, () => new Mo2SavesPage(windows, Profile));
         _savesPage = saves.Data;
         foreach (var factory in new[] { mods, plugins, downloads, health, tools, overwrite, externalFiles, logs, archives, data, saves }) factory.IsAvailable = context => context is Mo2WorkspaceContext;
-        foreach (var factory in new[] { games, profiles, connections, components }) factory.IsAvailable = context => context is HomeContext;
+        foreach (var factory in new[] { games, profiles, settings, components }) factory.IsAvailable = context => context is HomeContext;
         _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
-        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, connections.Data, components.Data, health.Data, tools.Data, overwrite.Data, externalFiles.Data, logs.Data, archives.Data, data.Data, saves.Data], _healthDetailsFactory.Id);
-        services.Add(new PageFactoryController([collections, saves, data, archives, logs, overwrite, externalFiles, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, connections, components, new NewTabPageFactory(services)]));
+        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, settings.Data, components.Data, health.Data, tools.Data, overwrite.Data, externalFiles.Data, logs.Data, archives.Data, data.Data, saves.Data], _healthDetailsFactory.Id);
+        services.Add(new PageFactoryController([collections, saves, data, archives, logs, overwrite, externalFiles, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, settings, components, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         void ReplaceCollection(string instance, string oldName, PageData replacement) {
@@ -272,7 +294,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
                 _layout.Restore(restored, WorkspaceController);
                 foreach (var panel in restored.Panels.ToArray())
                     foreach (var tab in panel.Tabs.ToArray())
-                        if (tab.Contents.ViewModel is Mo2GamesPage or Mo2ProfilesPage or Mo2LoadoutsPage { Game: null })
+                        if (tab.Contents.ViewModel is Mo2GamesPage or Mo2LoadoutsPage { Game: null })
                             WorkspaceController.OpenPage(id, GameProfilesPage(context), new OpenPageBehavior.ReplaceTab(panel.Id,tab.Id));
             }
         }
@@ -308,7 +330,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     }
     public void ShowHome() => WorkspaceController.ChangeActiveWorkspace(_homeWorkspace);
     public void OpenGames() => OpenHomePage(_gamesPage);
-    public void OpenConnections() => OpenHomePage(_connectionsPage);
+    public void OpenSettings() => OpenHomePage(_settingsPage);
     public void OpenComponents() => OpenHomePage(_componentsPage);
     public void OpenProfiles() => OpenLoadouts(null);
     public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
@@ -325,6 +347,69 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
             WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
     }
     private Window? _window;
+    internal Mo2TopBar? TopBar => _topBar;
+
+    // Installing MO2 and building an instance takes long enough that the status bar
+    // has to say what is happening, so this rides alongside the profile status.
+    internal string? Notice { get; private set; }
+    internal event Action? NoticeChanged;
+    private bool _addingGame;
+
+    // Opening a game means the same thing wherever it is opened from: connect to
+    // that game's MO2 and leave the app in that game's own workspace, with the game
+    // selected in the spine. Pages belong either to Home or to a game, so a game's
+    // profiles are shown inside that game rather than on a Home page beside it.
+    public async Task<bool> SelectGame(string game, bool openProfiles = false)
+    {
+        var wanted = Mo2SupportedGames.Find(game)?.Name ?? game;
+        var available = CatalogEntries.Where(entry => entry.Instance is { Profiles.Length: > 0 } instance &&
+            (Mo2SupportedGames.Find(instance.Game)?.Name ?? instance.Game) == wanted).ToArray();
+        if (available.Length == 0) { OpenLoadouts(game); return false; }
+        // Prefer a host that is already running over starting an older one merely
+        // because it was registered first, as the spine does.
+        var chosen = available.OrderByDescending(entry => Mo2HostStartup.IsRunning(entry.Registration))
+            .ThenByDescending(entry => entry.Registration.Launcher is not null).First();
+        var profile = chosen.Instance!.Profiles.FirstOrDefault(x => x.Name == chosen.Instance.SelectedProfile)
+            ?? chosen.Instance.Profiles[0];
+
+        var connected = Profile.IsConnected && Profile.CurrentTarget.Endpoint == chosen.Registration.Endpoint &&
+            Mo2InstanceCatalog.LocalPath(Profile.ProfilePath) == Mo2InstanceCatalog.LocalPath(profile.Directory);
+        if (!connected && !await Profile.SelectProfile(chosen.Registration, profile)) return false;
+        ShowProfile();
+        if (openProfiles)
+            await ProfileMenu.ProfilesItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default)).ToTask();
+        return true;
+    }
+
+    // Takes a game that is on disk but unmanaged and gives it an MO2 instance the
+    // frontend owns, installing MO2 itself first if this is the first game added.
+    // Registering it is what puts it in the spine, as NMA does the moment a game is
+    // added, and navigation follows so the game is where the click left off.
+    public async Task AddGame(string game)
+    {
+        if (_addingGame) return;
+        _addingGame = true;
+        void Report(string? text) => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+            Notice = text; NoticeChanged?.Invoke();
+        });
+        try {
+            await Mo2OwnedInstances.Install(Report);
+            Report($"Creating the {game} instance…");
+            var instance = await Task.Run(() => Mo2OwnedInstances.CreateInstance(game, Report));
+            Catalog.Add(instance);
+            // The instance carries its own MO2, so the frontend can start the host
+            // itself when a profile is selected rather than asking for a launcher.
+            var registration = Catalog.Read().Single(x => x.Registration.Directory == instance).Registration;
+            Catalog.SetLauncher(registration, Mo2OwnedInstances.InstanceExecutable(game));
+            RefreshCatalog();
+            Report(null);
+            await SelectGame(game, openProfiles: true);
+        } catch (Exception error) {
+            Report($"Could not add {game}: {error.Message}");
+        } finally { _addingGame = false; }
+    }
+    // NMA hosts login and welcome as in-window overlays; this is that layer.
+    internal Mo2OverlayHost? Overlays { get; private set; }
     private bool _loggingIn;
     public async Task<Mo2LoginResult?> LoginToNexus(bool logout = false)
     {
@@ -385,7 +470,35 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         // text blocks themselves puts the glyphs on the icons' line.
         foreach (var name in new[] { "ActiveWorkspaceTitleTextBlock", "ActiveWorkspaceSubtitleTextBlock" })
             topBar.FindControl<TextBlock>(name)!.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-        topBar.FindControl<MenuItem>("ViewAppLogsMenuItem")!.Header = "View MO2 logs";
+        var appLogsItem = topBar.FindControl<MenuItem>("ViewAppLogsMenuItem")!;
+        appLogsItem.Header = "View MO2 logs";
+        // Revealing MO2's own window was only ever offered from the Connections
+        // page. That page is gone, so the toggle moves in beside the other MO2 host
+        // actions rather than disappearing with it.
+        var originalUiItem = new MenuItem { Name = "OriginalMo2UiMenuItem" };
+        originalUiItem.Click += async (_, _) => {
+            if (!Profile.CanChangeOriginalUi) return;
+            await Profile.SetOriginalUiVisible(Profile.OriginalUiVisible != true);
+        };
+        void SyncOriginalUi() {
+            originalUiItem.Header = Profile.OriginalUiVisible == true ? "Hide original MO2" : "Show original MO2";
+            originalUiItem.IsEnabled = Profile.CanChangeOriginalUi;
+        }
+        Profile.Changed += SyncOriginalUi;
+        SyncOriginalUi();
+        object? menuOwner = appLogsItem.Parent;
+        switch (menuOwner) {
+            case MenuItem owner: {
+                var items = owner.Items.Cast<object?>().ToList();
+                owner.Items.Insert(Math.Min(items.IndexOf(appLogsItem) + 1, items.Count), originalUiItem);
+                break;
+            }
+            case MenuFlyout flyout: {
+                var items = flyout.Items.Cast<object?>().ToList();
+                flyout.Items.Insert(Math.Min(items.IndexOf(appLogsItem) + 1, items.Count), originalUiItem);
+                break;
+            }
+        }
         topBar.FindControl<MenuItem>("OpenNexusModsAccountSettingsMenuItem")!.Header = "Connect MO2 instances…";
         // The entries this frontend has nothing behind. They were bound to commands
         // that answer "no" for good, so they were drawn greyed in the two top-bar
@@ -522,7 +635,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         }
         Profile.Changed += SyncMenu;
         Grid.SetRow(status, 2); Grid.SetColumnSpan(status, 3); grid.Children.Add(status);
-        var window = new Window { Title = "Nexus Mods", Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://MockHost/Assets/AppIcon.png"))), SystemDecorations = SystemDecorations.None, Width = WindowSize().Width, Height = WindowSize().Height,
+        Overlays = new Mo2OverlayHost(grid);
+        // NMA hides the system chrome by extending the client area rather than
+        // switching decorations off, which keeps a native drag strip the height of
+        // the top bar. SystemDecorations.None has no such strip, so the window
+        // could not be moved by dragging its top bar at all.
+        var window = new Window { Title = "Nexus Mods", Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusModsApp/Assets/AppIcon.png"))),
+            ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.NoChrome,
+            ExtendClientAreaToDecorationsHint = true,
+            ExtendClientAreaTitleBarHeightHint = 44,
+            Width = WindowSize().Width, Height = WindowSize().Height,
             Background = (IBrush)Application.Current!.FindResource("SurfaceBaseBrush")!, Content = grid };
         _window = window;
         Mo2TabDragDrop.Attach(window, WorkspaceController);
@@ -539,8 +661,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         spineFoot.Children.Insert(spineFoot.Children.IndexOf(downloadBorder), notifications.Button);
         window.Closed += (_,_) => notifications.Dispose();
         Mo2ResponsiveHeaders.Attach(window);
-        void UpdateStatus() => status.Text = Profile.Status + (LayoutError is { } error ? " · " + error : "");
+        void UpdateStatus() => status.Text = (Notice ?? Profile.Status) + (LayoutError is { } error ? " · " + error : "");
         Profile.Changed += UpdateStatus;
+        NoticeChanged += UpdateStatus;
         UpdateStatus();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         timer.Tick += async (_, _) => { await Profile.RefreshIfChanged(); RefreshCatalog(); SaveLayouts(); UpdateStatus(); };

@@ -7,7 +7,10 @@ internal static class Mo2ExternalFilesCheck
         var root = Path.Combine(Path.GetTempPath(), "mo2-external-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try {
-            var game = Path.Combine(root, "steamapps/common/Test Game");
+            // Full path with native separators: the copy records GetFullPath of the
+            // game directory, and Path.Combine leaves an embedded "a/b" segment alone,
+            // so a mixed-separator fixture path only compares equal on Linux.
+            var game = Path.GetFullPath(Path.Combine(root, "steamapps", "common", "Test Game"));
             Directory.CreateDirectory(Path.Combine(game, "Data"));
             File.WriteAllText(Path.Combine(game, "Data/Base.esm"), "vanilla");
             File.WriteAllText(Path.Combine(game, "Data/DLC.esm"), "dlc");

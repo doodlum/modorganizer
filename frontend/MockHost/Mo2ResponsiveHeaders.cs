@@ -210,10 +210,15 @@ internal static class Mo2ResponsiveHeaders
     {
         foreach (var child in root.GetVisualChildren()) {
             if (child is PageHeader header) yield return header;
-            // Hidden page headers must still be found so resizing can restore
-            // them. Hidden ancestor branches cannot display a header, however.
+            // Hidden branches are walked too. A header stood down for a panel that
+            // shares the workspace is hidden by its wrapper, not by itself, so
+            // skipping hidden branches lost it — and losing it meant nothing ran to
+            // put it back when that panel became the only one and the header was due
+            // again. The pass below still skips a header whose page is genuinely off
+            // screen, which is the case skipping these was standing in for.
+            //
             // List cells never contain page headers.
-            else if (child.IsVisible && child is not TreeDataGrid)
+            else if (child is not TreeDataGrid)
                 foreach (var nested in FindHeaders(child)) yield return nested;
         }
     }

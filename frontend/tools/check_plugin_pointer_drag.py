@@ -18,7 +18,7 @@ MOD = 'MCM Author Examples'
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--app', type=Path, default=ROOT / 'frontend/MockHost/bin/Release/net9.0/MockHost.dll', help='Frontend DLL to test')
+    parser.add_argument('--app', type=Path, default=ROOT / 'frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll', help='Frontend DLL to test')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     app = args.app.resolve()

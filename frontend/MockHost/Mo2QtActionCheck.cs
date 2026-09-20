@@ -37,7 +37,7 @@ internal static class Mo2QtActionCheck
             // MO2's own host actions live on Connections, which is the home
             // workspace's page rather than one of the profile sidebar's: the profile
             // sidebar's Profiles item opens this instance's loadouts.
-            ["connections"] = () => { live.OpenConnections(); return Task.CompletedTask; },
+            ["connections"] = () => { live.OpenSettings(); return Task.CompletedTask; },
         };
 
         using var turn = await Mo2CheckTurn.Take();

@@ -11,9 +11,7 @@ internal static class Mo2HostStartupLease
         var directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(registration.Directory));
         if (OperatingSystem.IsWindows()) directory = directory.ToUpperInvariant();
         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(directory)));
-        var config = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
-        return Path.Combine(config, "mo2-nexus-frontend", "host-startup", id + ".lock");
+        return Mo2ConfigPaths.Combine("host-startup", id + ".lock");
     }
 
     internal static async Task<FileStream> Acquire(string path, TimeSpan timeout)

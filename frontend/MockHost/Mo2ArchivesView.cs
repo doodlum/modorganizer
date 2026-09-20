@@ -52,7 +52,7 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
             if (ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2Archive archive) return;
             await model.Profile.ExtractArchive(archive,target); await Refresh();
         });
-        var header = new PageHeader { Title = "Archives", Description = "Browse BSA and BA2 archives in this profile.", Icon = new AvaloniaSvg("avares://MockHost/Assets/archives-3d.svg") };
+        var header = new PageHeader { Title = "Archives", Description = "Browse BSA and BA2 archives in this profile.", Icon = new AvaloniaSvg("avares://NexusModsApp/Assets/archives-3d.svg") };
         root.Children.Add(header);
         _browse.Name = "BrowseArchive"; _extract.Name = "ExtractArchive";
         _browse.IsEnabled = _extract.IsEnabled = false;

@@ -503,6 +503,43 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
+    internal sealed record Mo2OrderBackup(string Id, DateTime Taken);
+
+    // The backups MO2 has kept for a list. Restoring used to click MO2's own
+    // restore button, which opens MO2's picker; a frontend-hosted MO2 draws no
+    // window, so that dialog could never be answered and held MO2's event loop
+    // for good. The frontend lists them and chooses instead.
+    public async Task<IReadOnlyList<Mo2OrderBackup>> ListOrderBackups(string list, Mo2ProfileTarget target)
+    {
+        if (!IsConnected || target != CurrentTarget) return [];
+        var response = await Client.SendAsync("listOrderBackups", new() { ["profilePath"] = target.ProfilePath, ["list"] = list });
+        var backups = new List<Mo2OrderBackup>();
+        if (response.TryGetProperty("backups", out var found))
+            foreach (var backup in found.EnumerateArray()) {
+                var id = backup.GetProperty("id").GetString();
+                if (string.IsNullOrEmpty(id)) continue;
+                var taken = backup.TryGetProperty("time", out var time) && time.TryGetDouble(out var seconds)
+                    ? DateTimeOffset.FromUnixTimeMilliseconds((long)(seconds * 1000)).LocalDateTime
+                    : DateTime.MinValue;
+                backups.Add(new Mo2OrderBackup(id, taken));
+            }
+        return backups;
+    }
+
+    public async Task RestoreOrderBackup(string list, string backup, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = "Restoring the MO2 " + (list == "mods" ? "mod list" : "plugin order") + "…"; Changed?.Invoke();
+            await Client.SendAsync("restoreOrderBackup", new() { ["profilePath"] = target.ProfilePath, ["list"] = list, ["backup"] = backup },
+                timeout: TimeSpan.FromMinutes(5));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
     public async Task OrderBackup(string list, string operation, Mo2ProfileTarget target)
     {
         if (!CanStartHostAction || target != CurrentTarget) return;
@@ -849,6 +886,19 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             if (!CheckDownloadTarget(target)) return null;
+            // The frontend installs the archive itself where it can. Handing it to
+            // MO2 means MO2 picks one of its installer plugins and shows that
+            // plugin's own window, which a host drawing nothing on screen can never
+            // have answered — it simply stops until it is killed.
+            if (InstallLocally is { } install) {
+                Installing = true; Status = "Installing " + Path.GetFileName(path); Changed?.Invoke();
+                var local = await install(path);
+                await Client.SendAsync("refreshHost", new() { ["profilePath"] = profile }, timeout: TimeSpan.FromMinutes(5));
+                _lastSnapshot = null;
+                Apply(await Client.SendAsync("snapshot"));
+                Status = $"Installed {local.ModName} ({local.Files} files)";
+                return new Mo2ArchiveInstallResult(local.ModName, local.Directory);
+            }
             Installing = true; Status = "Complete installation in MO2"; Changed?.Invoke();
             var hostPath = path.StartsWith('/') ? "Z:" + path : path;
             var result = await Client.SendAsync("installArchive", new() { ["profilePath"] = profile, ["path"] = hostPath }, timeout: TimeSpan.FromMinutes(30));
@@ -1360,6 +1410,15 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
     internal Func<IReadOnlyList<Mo2LiveMod>, Task<bool>>? ConfirmRemoval { get; set; }
+    // Restoring a list asks the frontend which backup, rather than opening MO2 own
+    // picker in a host that draws no windows. Set by the shell, which owns the
+    // window manager the dialog needs.
+    internal Func<string, Task>? ChooseOrderBackup { get; set; }
+    // A mod info shown by the frontend, rather than MO2 own details dialog.
+    internal Func<EntityId, Task>? ShowModInformation { get; set; }
+    // Installs an archive in the frontend, returning the mod it wrote. Set by the
+    // shell, which owns the services the guided installer needs.
+    internal Func<string, Task<Mo2FomodInstallResult>>? InstallLocally { get; set; }
     private bool _confirmingRemoval;
     public void Remove(IEnumerable<LoadoutItemId> ids)
     {

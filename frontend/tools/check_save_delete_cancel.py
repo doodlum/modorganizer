@@ -48,7 +48,7 @@ if report.exists():raise RuntimeError('Choose new report')
 env=os.environ.copy();env.update(MO2_BRIDGE_DIRECTORY=str(endpoint),MO2_VERIFY_SAVE_DELETE_CANCEL='1',MO2_SAVE_CHECK_DIRECTORY=str(save_directory),MO2_SAVE_CANCEL_REPORT=str(report),MO2_FRONTEND_LAYOUT=str(layout))
 log=root/'frontend/artifacts'/('save-delete-cancel-'+mode+'.log')
 with log.open('w') as output:
- p=subprocess.Popen([str(root/'.tools/dotnet/dotnet'),str(root/'frontend/MockHost/bin/Release/net9.0/MockHost.dll')],env=env,stdout=output,stderr=subprocess.STDOUT)
+ p=subprocess.Popen([str(root/'.tools/dotnet/dotnet'),str(root/'frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll')],env=env,stdout=output,stderr=subprocess.STDOUT)
  observed=False
  try:
   deadline=time.monotonic()+120

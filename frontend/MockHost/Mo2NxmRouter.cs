@@ -5,8 +5,7 @@ namespace Mo2.Frontend;
 // Routing preferences contain instance paths only, never NXM authorization data.
 internal static class Mo2NxmRouter
 {
-    private static string Preferences => Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ??
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"), "mo2-nexus-frontend", "nxm-routes.json");
+    private static string Preferences => Mo2ConfigPaths.Combine("nxm-routes.json");
     private static string? Domain(string game) => game switch {
         "Fallout: New Vegas" or "New Vegas" => "newvegas",
         "Skyrim Special Edition" => "skyrimspecialedition",

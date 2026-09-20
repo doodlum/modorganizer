@@ -89,7 +89,7 @@ internal static class Mo2QtShortcuts
                 // Connections, Ctrl+I and F5 reached nothing at all.
                 case "my-mods": live.ShowProfile(); await Task.Delay(400); await Navigate(menu.LeftMenuItemLoadout); break;
                 case "tools": live.ShowProfile(); await Task.Delay(400); await Navigate(menu.ToolsItem); break;
-                case "connections": live.OpenConnections(); await Task.Delay(400); break;
+                case "connections": live.OpenSettings(); await Task.Delay(400); break;
                 default: throw new Exception($"no way to open {answer.Page}");
             }
         }

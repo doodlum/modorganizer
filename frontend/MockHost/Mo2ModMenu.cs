@@ -152,7 +152,7 @@ internal static class Mo2ModMenu
             new Separator(),
             // MO2 makes this the default action of the menu, which is also what this
             // frontend's rows open on a double-click.
-            mod.IsForeign ? null : Entry("Information...", () => run(() => profile.ShowModDetails(current().Id))),
+            mod.IsForeign ? null : Entry("Information...", () => run(() => profile.ShowModInformation is { } show ? show(current().Id) : profile.ShowModDetails(current().Id))),
         ];
         return Mo2RowMenu.Tidy(items).ToArray();
     }

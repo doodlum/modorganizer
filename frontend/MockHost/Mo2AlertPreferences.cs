@@ -6,9 +6,7 @@ namespace Mo2.Frontend;
 // Persist NMA's own alert preferences, without persisting fixture/game settings.
 internal sealed class Mo2AlertPreferences(string path)
 {
-    public static string DefaultPath => Path.Combine(
-        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "mo2-nexus-frontend", "alerts.json");
+    public static string DefaultPath => Mo2ConfigPaths.Combine("alerts.json");
 
     public AlertSettings Read()
     {

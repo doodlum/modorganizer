@@ -24,7 +24,7 @@ internal static class Mo2CollapsibleSidebar
         "M16.5 16v-8L12.5 12l4 4ZM5 21q-0.825 0-1.4125-0.5875T3 19v-14q0-0.825 0.5875-1.4125T5 3h14q0.825 0 1.4125 0.5875T21 5v14q0 0.825-0.5875 1.4125T19 21H5Zm3-2v-14H5v14h3Zm2 0h9v-14H10v14Zm-2 0H5h3Z");
     internal static readonly IconValue OpenIcon = new AvaloniaPathIcon(PanelOpen);
     internal static readonly IconValue CloseIcon = new AvaloniaPathIcon(PanelClose);
-    internal static string StatePath => Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"), "mo2-nexus-frontend", "sidebar-collapsed.json");
+    internal static string StatePath => Mo2ConfigPaths.Combine("sidebar-collapsed.json");
     internal static void Attach(Grid layout, ContentControl sidebar, Control gameMenu, Control homeMenu, Mo2LaunchPanel launcher, Mo2LiveProfile profile, Panel toggleHost)
     {
         var collapsed = false;

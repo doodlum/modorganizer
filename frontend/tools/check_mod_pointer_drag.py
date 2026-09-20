@@ -52,7 +52,7 @@ def order(snapshot):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--app', type=Path, default=ROOT / 'frontend/MockHost/bin/Release/net9.0/MockHost.dll', help='Frontend DLL to test')
+    parser.add_argument('--app', type=Path, default=ROOT / 'frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll', help='Frontend DLL to test')
     parser.add_argument('--output', type=Path, required=True, help='New evidence directory')
     parser.add_argument('--select-first', action='store_true', help='Select the source with a pointer click before dragging')
     args = parser.parse_args()

@@ -38,7 +38,7 @@ def main():
     prepared = cleaned = False
     with log.open('w') as output:
         process = subprocess.Popen([str(root / '.tools/dotnet/dotnet'),
-                                    str(root / 'frontend/MockHost/bin/Release/net9.0/MockHost.dll')],
+                                    str(root / 'frontend/MockHost/bin/Release/net9.0/NexusModsApp.dll')],
                                    env=env, stdout=output, stderr=subprocess.STDOUT)
         try:
             end = time.monotonic() + 180

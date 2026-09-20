@@ -9,10 +9,10 @@ import subprocess
 frontend = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--configuration', choices=['Release', 'Debug'], default='Release')
-parser.add_argument('--app', type=Path, help='Published MockHost.dll to launch instead of the development build')
+parser.add_argument('--app', type=Path, help='Published NexusModsApp.dll to launch instead of the development build')
 args = parser.parse_args()
 app = (args.app.expanduser().resolve() if args.app else
-       frontend / f'MockHost/bin/{args.configuration}/net9.0/MockHost.dll')
+       frontend / f'MockHost/bin/{args.configuration}/net9.0/NexusModsApp.dll')
 dotnet = frontend.parent / '.tools/dotnet/dotnet'
 if not app.is_file() or not dotnet.is_file():
     parser.error(f'App DLL and repository-local SDK must exist: {app}, {dotnet}')

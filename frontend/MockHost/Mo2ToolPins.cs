@@ -8,7 +8,7 @@ namespace Mo2.Frontend;
 
 internal static class Mo2ToolPins
 {
-    public static string Path => System.IO.Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mo2-nexus-frontend", "tool-pins.json");
+    public static string Path => Mo2ConfigPaths.Combine("tool-pins.json");
     public static event Action? Changed;
     public static string[] Read() => File.Exists(Path) ? JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path)) ?? [] : [];
     public static void Save(IEnumerable<string> pins) {

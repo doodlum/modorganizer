@@ -24,7 +24,7 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
         _shell = shell;
         LeftMenuViewModel = shell.HomeMenu;
         Home = new IconButtonViewModel { Name = "Home", Click = ReactiveCommand.Create(shell.OpenGames) };
-        AddLoadout = new IconButtonViewModel { Name = "Manage MO2 instances", Click = ReactiveCommand.Create(shell.OpenConnections) };
+        AddLoadout = new IconButtonViewModel { Name = "Add a game", Click = ReactiveCommand.Create(shell.OpenGames) };
         Downloads = new SpineDownloadButtonDesignerViewModel { Number = 0, Units = "", Click = ReactiveCommand.Create(shell.OpenDownloads) };
         var games = new ObservableCollection<IImageButtonViewModel>();
         LoadoutSpineItems = new(games);
@@ -42,7 +42,7 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             foreach (var group in entries.GroupBy(x => x.Instance!.Game)) {
                 var game = group.Key;
                 var item = new ImageButtonViewModel {
-                    Name = game, Image = Mo2GameArt.PlatedIcon(game),
+                    Name = game, Image = Mo2GameArt.SquareIcon(game),
                     Click = ReactiveCommand.CreateFromTask(async () => {
                         var available = shell.CatalogEntries.Where(x => x.Instance?.Game == game && x.Instance.Profiles.Length > 0).ToArray();
                         if (available.Length == 0) { shell.OpenLoadouts(game); return; }

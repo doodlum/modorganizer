@@ -78,7 +78,6 @@ internal static class Mo2PanelChrome
         // A DockPanel gives its last child the remaining space, so the header has to
         // go back where it was rather than at the front.
         root.Children.Insert(root is DockPanel ? Math.Max(0, index) : 0, stack);
-        Mo2Physicality.AttachOverscrollToPage(view);
 
         root.Margin = Inset(root, view.Bounds.Height);
         root.Transitions = new Transitions { new ThicknessTransition {
@@ -118,7 +117,6 @@ internal static class Mo2PanelChrome
             var wanted = PaddingFor(view.Bounds.Height);
             if (layout.Margin != wanted) layout.Margin = wanted;
         };
-        Mo2Physicality.AttachOverscrollToPage(view);
     }
 
     // Pages the frontend renders with a native NMA view — Downloads, Profiles and

@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- A desktop app, so no console window opens behind it. Program.Main attaches
+         to the parent console when it is given arguments, so the check commands
+         still print into the shell that started them. -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>NexusModsApp</AssemblyName>
+    <Product>Nexus Mods App</Product>
+    <AssemblyTitle>Nexus Mods App</AssemblyTitle>
+    <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -10,15 +17,27 @@
     <!-- Debug inherits Avalonia.Diagnostics from the pinned NMA UI project.
          Its inspector cannot coexist with DiagnosticsSupport in one build. -->
     <PackageReference Condition="'$(Configuration)' != 'Debug'" Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
+    <!-- The FOMOD engine Vortex and NMA both use: a plain library, independent of
+         NMA loadout model, so the frontend can run a script and be told which
+         files to install without standing up a loadout to install them into. -->
+    <PackageReference Include="FomodInstaller.Interface" Version="1.2.0" />
+    <PackageReference Include="FomodInstaller.Scripting.XmlScript" Version="1.0.0" />
     <PackageReference Include="SteamKit2" Version="3.3.1" />
     <!-- Security backport for the 0.21.x dependency used by Avalonia and XDG portals.
          https://github.com/tmds/Tmds.DBus/releases/tag/rel%2F0.21.3 -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <AvaloniaResource Include="Assets/**/*.svg" />
     <AvaloniaResource Include="Assets/AppIcon.png" />
+    <AvaloniaResource Include="Assets/GameIcons/*.png" />
     <Compile Include="../upstream/src/NexusMods.Backend/Settings/SettingsBuilder.cs" Link="Upstream/SettingsBuilder.cs" />
     <ProjectReference Include="../upstream/src/NexusMods.Backend/NexusMods.Backend.csproj" />
     <ProjectReference Include="../upstream/src/NexusMods.App.UI/NexusMods.App.UI.csproj" />
+    <!-- NMA FOMOD core delegates, which bridge the engine callbacks to a guided
+         installer; they take a logger factory and an IGuidedInstaller and nothing
+         from NMA loadout model. -->
+    <ProjectReference Include="../upstream/src/NexusMods.Games.FOMOD/NexusMods.Games.FOMOD.csproj" />
+    <!-- NMA own guided-installer window, steps, groups and options. -->
+    <ProjectReference Include="../upstream/src/NexusMods.Games.FOMOD.UI/NexusMods.Games.FOMOD.UI.csproj" />
     <ProjectReference Include="../upstream/src/NexusMods.Themes.NexusFluentDark/NexusMods.Themes.NexusFluentDark.csproj" />
   </ItemGroup>
 </Project>

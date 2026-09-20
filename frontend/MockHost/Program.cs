@@ -38,13 +38,26 @@ namespace Mo2.Frontend;
 internal static class Program
 {
     [STAThread]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(uint processId);
+    private const uint ParentProcess = 0xFFFFFFFF;
+
     public static void Main(string[] args)
     {
+        // A windowed application gets no console of its own, which is what keeps an
+        // ordinary launch from flashing one up. The check and tool commands still
+        // have to print somewhere, so when there are arguments this attaches to the
+        // console that started it. Done before anything writes, because Console
+        // binds its streams on first use.
+        if (args.Length > 0 && OperatingSystem.IsWindows()) {
+            try { AttachConsole(ParentProcess); } catch (DllNotFoundException) { }
+        }
         if (args.FirstOrDefault() == "--check-category-membership") { Mo2CategoryMembershipCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-host-startup-lease") { Mo2HostStartupLeaseCheck.Run().GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--hold-host-startup-lease") { Mo2HostStartupLeaseCheck.Hold(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-original-actions") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2OriginalActionCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-fomod-scripts") { Mo2FomodScriptCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-data-filters") { Mo2DataFiltersCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-row-padding") { Mo2RowPaddingCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-view-locator") { Mo2ViewLocatorCheck.Run(); return; }
@@ -53,6 +66,19 @@ internal static class Program
         if (args.FirstOrDefault() == "--check-download-status") { Mo2DownloadStatusCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-external-columns") { Mo2ExternalColumnsCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-external-files") { Mo2ExternalFilesCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-game-icons") { Mo2GameIconCheck.Run(args); return; }
+        if (args.FirstOrDefault() == "--fetch-game-icons") { Mo2GameIconLibrary.Fetch(args).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--add-game") {
+            var game = args.Skip(1).FirstOrDefault() ?? throw new ArgumentException("Expected a game name");
+            Mo2OwnedInstances.Install(Console.WriteLine).GetAwaiter().GetResult();
+            var instance = Mo2OwnedInstances.CreateInstance(game, Console.WriteLine);
+            var catalog = new Mo2InstanceCatalog("");
+            catalog.Add(instance);
+            catalog.SetLauncher(catalog.Read().Single(x => x.Registration.Directory == instance).Registration,
+                Mo2OwnedInstances.InstanceExecutable(game));
+            Console.WriteLine("Instance: " + instance);
+            return;
+        }
         if (args.FirstOrDefault() == "--scan-external-files") {
             if (args.Length != 3) throw new ArgumentException("Expected game folder and Steam app ID");
             var scan = Mo2ExternalFiles.Scan(args[1], args[2]);
@@ -78,19 +104,6 @@ internal static class Program
                 if (args.Length != 2) throw new ArgumentException("Expected one NXM file link");
                 Mo2NxmRouter.Forward(args[1]).GetAwaiter().GetResult();
                 Console.WriteLine("NXM link handed to MO2");
-            } catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
-            return;
-        }
-        if (args.FirstOrDefault() == "--register-mo2") {
-            try {
-                if (args.Length is < 2 or > 3) throw new ArgumentException("Expected MO2 instance directory and optional launcher path");
-                var directory = Path.GetFullPath(args[1]);
-                var launcher = args.Length == 3 ? Path.GetFullPath(args[2]) : null;
-                if (launcher is not null && !File.Exists(launcher)) throw new FileNotFoundException("MO2 launcher not found");
-                var catalog = new Mo2InstanceCatalog("");
-                catalog.Add(directory);
-                if (launcher is not null) catalog.SetLauncher(catalog.Read().Single(x => x.Registration.Directory == directory).Registration, launcher);
-                Console.WriteLine("Registered MO2 instance: " + directory);
             } catch (Exception error) { Console.Error.WriteLine(error.Message); Environment.ExitCode = 1; }
             return;
         }
@@ -150,17 +163,10 @@ internal sealed class FixtureViewLocator : IViewLocator
     public IViewFor? ResolveView<T>(T? viewModel, string? contract = null)
     {
         if (viewModel is Mo2GamesPage games) {
+            // My Games keeps NMA's own onboarding presentation: its "Add games to
+            // get started" header, its "No games found" empty state, and its second
+            // section, which Mo2GamesPage now fills from MO2's bundled game plugins.
             var gamesView = new MyGamesView { ViewModel = games };
-            gamesView.GetLogicalDescendants().OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single().Description =
-                "Games from your registered MO2 instances.";
-            if (gamesView.FindControl<EmptyState>("DetectedGamesEmptyState")!.Subtitle is TextBlock emptyGames)
-                emptyGames.Text = "Add an MO2 instance from Settings to see its games here.";
-            // This page represents registered MO2 games; it has no independent
-            // NMA game-support catalog to populate the secondary section.
-            var otherGames = gamesView.FindControl<Border>("AllCurrentlySupportedGames")!;
-            otherGames.IsVisible = false;
-            if (otherGames.Parent is Panel parent && parent.Children.IndexOf(otherGames) is var index && index > 0 && parent.Children[index - 1] is Separator separator)
-                separator.IsVisible = false;
             // Home's pages sit in a workspace panel like every other page, so they
             // take the same chrome. Leaving them on NMA's own header treatment made
             // Home the one place where a page had no separator and no compaction.
@@ -210,8 +216,9 @@ internal sealed class FixtureViewLocator : IViewLocator
             cardView.LayoutUpdated += (_, _) => HideBadges();
             return cardView;
         }
+        // The login flow builds and drives its own copy of the native overlay view.
+        if (viewModel is Mo2NexusLoginPopupModel { View: not null } login) return login.View;
         if (viewModel is Mo2DiagnosticText diagnosticText) return new Mo2DiagnosticTextView { ViewModel = diagnosticText };
-        if (viewModel is Mo2ProfilesPage profiles) return new Mo2ProfilesView { ViewModel = profiles };
         if (viewModel is Mo2LogsPage logs) return new Mo2LogsView { ViewModel = logs };
         if (viewModel is Mo2SavesPage saves) return new Mo2SavesView { ViewModel = saves };
         if (viewModel is Mo2DataPage data) return new Mo2DataView { ViewModel = data };
@@ -271,6 +278,75 @@ public partial class MockApp : Application
                         try { await Mo2SaveHoverCheck.Run(live, liveWindow, hoverPhase); }
                         catch (Exception error) { Console.WriteLine("FAIL save hover UI: " + error); }
                     };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_INSTALL_MOD") is { Length: > 0 } archivePath) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2InstallModCheck.Run(live, liveWindow, archivePath); }
+                        catch (Exception error) { Console.WriteLine("FAIL install mod: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MOD_INFO") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ModInfoCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL mod information: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_CLOSE") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2TabCloseCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL tab close: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LIST_BUTTONS") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ListButtonsCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL list buttons: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SELECT_GAME") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2SelectGameCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL select game: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SETTINGS_PAGE") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2SettingsPageCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL settings page: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ADD_GAME") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2AddGameCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL add game: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_GAME_WIDGET") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
+                        try { await Mo2GameWidgetCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL game widget: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_RENDER") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2PluginRenderCheck.Run(live, liveWindow); }
@@ -280,6 +356,7 @@ public partial class MockApp : Application
                 if (Environment.GetEnvironmentVariable("MO2_DEVELOPER_TOOLS") == "1") liveWindow.AttachDevTools();
 #endif
                 if (endpoint.Length == 0) live.ShowHome();
+                liveWindow.Opened += (_, _) => Mo2WelcomeOverlay.ShowIfFirstRun(live);
                 desktop.Exit += (_, _) => live.Dispose();
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_FILE_PAGE_LIFECYCLE") == "1")
                     liveWindow.Opened += async (_, _) => {
@@ -1908,20 +1985,22 @@ public partial class MockApp : Application
             return snapshot.GetProperty("profile").GetRawText() + snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
         }
         var before = await State();
-        live.OpenConnections();
-        await WaitFor(() => window.GetVisualDescendants().OfType<Mo2ProfilesView>().Any(), "MO2 instances did not render");
-        var button = window.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "OriginalMo2Ui");
+        // The toggle moved off the removed Connections page into the top bar's MO2
+        // menu, so this drives it where it now lives.
+        var item = window.GetVisualDescendants().OfType<MenuItem>().FirstOrDefault(x => x.Name == "OriginalMo2UiMenuItem")
+            ?? throw new InvalidOperationException("No Show original MO2 entry in the MO2 menu");
+        void Click() => item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
         try {
-            if (!button.IsEnabled || !Equals(button.Content, "Show original MO2")) throw new InvalidOperationException("Original UI action is unavailable");
-            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-            await WaitFor(() => profile.OriginalUiVisible == true && !profile.ManagingMod && Equals(button.Content, "Hide original MO2"), "Original MO2 did not become visible");
+            if (!item.IsEnabled || !Equals(item.Header, "Show original MO2")) throw new InvalidOperationException("Original UI action is unavailable");
+            Click();
+            await WaitFor(() => profile.OriginalUiVisible == true && !profile.ManagingMod && Equals(item.Header, "Hide original MO2"), "Original MO2 did not become visible");
             Console.WriteLine("ORIGINAL_UI_VISIBLE");
             await Task.Delay(15000);
             if (before != await State()) throw new InvalidOperationException("Showing original MO2 changed the profile state");
-            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-            await WaitFor(() => profile.OriginalUiVisible == false && !profile.ManagingMod && Equals(button.Content, "Show original MO2"), "Original MO2 did not hide");
+            Click();
+            await WaitFor(() => profile.OriginalUiVisible == false && !profile.ManagingMod && Equals(item.Header, "Show original MO2"), "Original MO2 did not hide");
             if (before != await State()) throw new InvalidOperationException("Hiding original MO2 changed the profile state");
-            Console.WriteLine("PASS: original MO2 starts hidden; rendered instance-page button shows and hides the same host; profile, mods and plugins unchanged");
+            Console.WriteLine("PASS: original MO2 starts hidden; the MO2 menu entry shows and hides the same host; profile, mods and plugins unchanged");
         } finally { if (profile.OriginalUiVisible == true) await profile.SetOriginalUiVisible(false); }
     }
 

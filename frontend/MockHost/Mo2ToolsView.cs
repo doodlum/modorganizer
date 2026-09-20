@@ -48,7 +48,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
     {
         _read = read;
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
-        var header = new PageHeader { Title = "Tools", Description = "Programs and extension tools for the selected game.", Icon = new AvaloniaSvg("avares://MockHost/Assets/Vortex/tools.svg") };
+        var header = new PageHeader { Title = "Tools", Description = "Programs and extension tools for the selected game.", Icon = new AvaloniaSvg("avares://NexusModsApp/Assets/Vortex/tools.svg") };
         root.Children.Add(header);
         var filter = Mo2QtWidgets.Filter("ToolsSearch", "Search tools", _ => Render(), out _search);
         var search = new Mo2ToolbarSearch(this, "ToolsToolbarSearch", filter, _search, "Search tools");

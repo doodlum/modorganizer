@@ -106,7 +106,7 @@ internal sealed class Mo2DataView : ReactiveUserControl<Mo2DataPage>
         _read = read;
         Mo2TableRow.InstallRowStyles(_table);
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
-        var header = new PageHeader { Title = "Data", Description = "Browse merged game files and their winning source mods.", Icon = new AvaloniaSvg("avares://MockHost/Assets/data-3d.svg") };
+        var header = new PageHeader { Title = "Data", Description = "Browse merged game files and their winning source mods.", Icon = new AvaloniaSvg("avares://NexusModsApp/Assets/data-3d.svg") };
         root.Children.Add(header);
         var searchField = Mo2QtWidgets.Filter("DataSearch", "Search files and source mods", text => {
             if (ViewModel is { } model) model.SearchText = text;

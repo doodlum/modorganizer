@@ -12,9 +12,7 @@ namespace Mo2.Frontend;
 // re-applied to each fresh column list.
 internal sealed class Mo2ColumnToggle
 {
-    private static string PathFor(string panel) => Path.Combine(
-        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"),
-        "mo2-nexus-frontend", "columns-" + panel + ".json");
+    private static string PathFor(string panel) => Mo2ConfigPaths.Combine("columns-" + panel + ".json");
 
     private readonly string _panel;
     private readonly Action _rerender;

@@ -39,7 +39,7 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
         _read = read;
         Mo2TableRow.InstallRowStyles(_table);
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
-        var header = new PageHeader { Title = "Overwrite", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/overwrite.svg"),
+        var header = new PageHeader { Title = "Overwrite", Icon = new AvaloniaSvg("avares://NexusModsApp/Assets/Pictograms/overwrite.svg"),
             Description = "Generated files that take priority over installed mods." };
         root.Children.Add(header);
         // These were labelled buttons in a row of their own under the header, the

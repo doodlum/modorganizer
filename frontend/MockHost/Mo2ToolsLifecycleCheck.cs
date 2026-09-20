@@ -71,7 +71,7 @@ internal static class Mo2ToolsLifecycleCheck
             Set(nameof(profile.PinnedExecutables), new[] { "Secondary" }); Notify();
             if (!Equals(Pin().Content, "Unpin") || !presentation.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == "Pinned tools"))
                 faults.Add("native pin changes are not reflected");
-            using (var iconStream = Avalonia.Platform.AssetLoader.Open(new Uri("avares://MockHost/Assets/AppIcon.png"))) {
+            using (var iconStream = Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusModsApp/Assets/AppIcon.png"))) {
                 using var bytes = new MemoryStream(); iconStream.CopyTo(bytes);
                 var encoded = Convert.ToBase64String(bytes.ToArray());
                 Set(nameof(profile.ExecutableIcons), new Dictionary<string,string> { ["Secondary"] = encoded }); Notify();

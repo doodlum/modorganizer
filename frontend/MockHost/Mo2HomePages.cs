@@ -23,17 +23,46 @@ internal sealed class Mo2GamesPage : APageViewModel<IMyGamesViewModel>, IMyGames
 {
     public ReactiveCommand<Unit, Unit> OpenRoadmapCommand { get; } = ReactiveCommand.Create(() => { }, Observable.Return(false));
     public ReadOnlyObservableCollection<IGameWidgetViewModel> InstalledGames { get; }
-    public ReadOnlyObservableCollection<IViewModelInterface> SupportedGames { get; } = new(new());
+    public ReadOnlyObservableCollection<IViewModelInterface> SupportedGames { get; }
     public Mo2GamesPage(IWindowManager windows, Mo2LiveWorkspace shell) : base(windows)
     {
         TabTitle = "My Games"; TabIcon = IconValues.GamepadOutline;
         var games = new ObservableCollection<IGameWidgetViewModel>();
         InstalledGames = new(games);
+        var supported = new ObservableCollection<IViewModelInterface>();
+        SupportedGames = new(supported);
         void Refresh() {
-            var names = shell.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
-            if (names.SequenceEqual(games.Select(x => x.Name))) return;
-            games.Clear();
-            foreach (var name in names) games.Add(new Mo2GameCard(name, () => shell.OpenLoadouts(name)));
+            var managed = shell.CatalogEntries.Where(x => x.Instance is not null).Select(x => x.Instance!.Game).Distinct().ToArray();
+            // MO2 reports its own plugin name for a game ("New Vegas"), which is not
+            // the name this catalogue lists it under ("Fallout: New Vegas"), so both
+            // sides are resolved to the same entry before being compared. Matching
+            // the raw strings listed the same game as managed and as detected at once.
+            var managedKeys = managed.Select(Mo2SupportedGames.Find).Where(entry => entry is not null)
+                .Select(entry => entry!.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // A supported game sitting on disk has been found, whether or not MO2
+            // manages it yet. It belongs in the detected list with NMA's Add game
+            // button, not in the "not found" list below.
+            var detected = Mo2SupportedGames.Installed().Select(entry => entry.Name)
+                .Where(name => !managedKeys.Contains(name)).ToArray();
+            var names = managed.Concat(detected).ToArray();
+            if (!names.SequenceEqual(games.Select(x => x.Name))) {
+                games.Clear();
+                foreach (var name in managed) games.Add(new Mo2GameCard(name, () => _ = shell.SelectGame(name, openProfiles: true)));
+                foreach (var name in detected) games.Add(Mo2GameCard.Detected(name, () => shell.AddGame(name)));
+            }
+            // NMA fills its second section with the games it supports but has not
+            // found. For MO2 those are its bundled game plugins with no registered
+            // instance. NMA also ends the list with a "more coming" tile; MO2 makes
+            // no such promise, so nothing stands in for it.
+            //
+            // Rebuilt on its own terms rather than behind the installed-games guard:
+            // the first refresh of an unregistered host leaves that list empty and
+            // unchanged, which would otherwise skip this list too.
+            var missing = Mo2SupportedGames.Missing(names);
+            if (missing.Select(game => game.Name).SequenceEqual(supported.OfType<Mo2MiniGameCard>().Select(card => card.Name))) return;
+            supported.Clear();
+            foreach (var game in missing)
+                supported.Add(new Mo2MiniGameCard(game, uri => shell.DesktopInterop.OpenUri(uri)));
         }
         Refresh();
         this.WhenActivated(d => {
@@ -46,7 +75,10 @@ internal sealed class Mo2GameCard : AViewModel<IGameWidgetViewModel>, IGameWidge
 {
     public GameInstallation Installation { get; set; } = new() { Store = GameStore.Steam };
     public string Name { get; }
-    public string Version => "Mod Organizer 2";
+    // NMA puts the game version in this slot, not the name — the name is the
+    // image's tooltip. We have no version for a game MO2 is not managing yet, and
+    // NMA says so in that case rather than leaving it blank.
+    public string Version { get; init; } = "Version: Unknown";
     public string Store => "Steam";
     public IconValue GameStoreIcon => IconValues.Steam;
     public Bitmap Image { get; }
@@ -54,9 +86,30 @@ internal sealed class Mo2GameCard : AViewModel<IGameWidgetViewModel>, IGameWidge
     public ReactiveCommand<Unit, Unit> ViewGameCommand { get; set; }
     public ReactiveCommand<Unit, Unit> RemoveAllLoadoutsCommand { get; set; } = ReactiveCommand.Create(() => { }, Observable.Return(false));
     public IObservable<bool> IsManagedObservable { get; set; } = Observable.Return(true);
-    public GameWidgetState State { get; set; } = GameWidgetState.ManagedGame;
+    // The widget watches this to swap between its Add, Adding and View rows, so it
+    // has to raise: a plain property left the card on Add while the work ran.
+    private GameWidgetState _state = GameWidgetState.ManagedGame;
+    public GameWidgetState State { get => _state; set => this.RaiseAndSetIfChanged(ref _state, value); }
     public Mo2GameCard(string name, Action visit)
     { Name = name; Image = Mo2GameArt.Cover(name); ViewGameCommand = ReactiveCommand.Create(visit); AddGameCommand = ViewGameCommand; }
+
+    // A game found on disk with no MO2 instance behind it yet. NMA's widget shows
+    // its Add game button in this state, its spinner while the game is being added,
+    // and its View row once it is managed — which is what the card reports here.
+    internal static Mo2GameCard Detected(string name, Func<Task> add)
+    {
+        var card = new Mo2GameCard(name, () => { }) {
+            State = GameWidgetState.DetectedGame,
+            IsManagedObservable = Observable.Return(false),
+        };
+        card.AddGameCommand = ReactiveCommand.CreateFromTask(async () => {
+            card.State = GameWidgetState.AddingGame;
+            // On success the catalog refresh rebuilds this list and replaces the
+            // card with a managed one; on failure it has to go back to offering Add.
+            try { await add(); } finally { card.State = GameWidgetState.DetectedGame; }
+        });
+        return card;
+    }
 }
 internal static class Mo2GameArt
 {
@@ -99,49 +152,115 @@ internal static class Mo2GameArt
         using var bytes = encoded.AsStream();
         return new Bitmap(bytes);
     }
+    // A square icon, taken from the game's own executable wherever we can find it.
+    // That is the only source that is square on both platforms and present for
+    // every game: Steam installs desktop icons on Linux alone, and its library art
+    // is portrait cover artwork. It also supersedes the black-square problem
+    // described below, since the extracted icons carry their own alpha.
     public static Bitmap Icon(string game)
     {
-        var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830"
-            : game.Contains("Vegas", StringComparison.OrdinalIgnoreCase) ? "22380" : null;
-        if (id is not null) {
-            var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-            foreach (var size in new[] { 256, 128, 96, 64, 48, 32 }) {
-                var path = Path.Combine(root, "icons", "hicolor", $"{size}x{size}", "apps", $"steam_icon_{id}.png");
-                if (File.Exists(path)) return new Bitmap(path);
+        // A game with its own declared artwork keeps it, ahead of any executable:
+        // Tale of Two Wastelands runs on the New Vegas binary and would otherwise
+        // take New Vegas's icon.
+        if (Mo2SupportedGames.Find(game)?.IconUrl is not null && Mo2GameIconLibrary.Open(game) is { } declared) {
+            using (declared) return new Bitmap(declared);
+        }
+        if (Mo2SupportedGames.ExecutablePath(game) is { } executable) {
+            using var extracted = Mo2ExeIcon.Extract(executable);
+            if (extracted is not null) {
+                using var image = SkiaSharp.SKImage.FromBitmap(extracted);
+                using var encoded = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+                using var bytes = encoded.AsStream();
+                return new Bitmap(bytes);
             }
         }
+        // Then the icons baked from Steam's own client icons, for games this
+        // machine does not have installed.
+        if (Mo2GameIconLibrary.Open(game) is { } bundled) {
+            using (bundled) return new Bitmap(bundled);
+        }
+        if (!OperatingSystem.IsWindows() && Mo2SupportedGames.Find(game) is { } entry) {
+            var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+            foreach (var id in entry.SteamAppIds)
+                foreach (var size in new[] { 256, 128, 96, 64, 48, 32 }) {
+                    var path = Path.Combine(root, "icons", "hicolor", $"{size}x{size}", "apps", $"steam_icon_{id}.png");
+                    if (File.Exists(path)) return new Bitmap(path);
+                }
+        }
+        // Steam's library art is portrait cover artwork. Take its centre square, so
+        // a game we cannot open still gets a square tile instead of a tall sliver
+        // letterboxed onto the plate.
+        if (Mo2SupportedGames.LibraryArt(game) is { } cover && SquareCrop(cover) is { } square) return square;
         return new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusMods.App.UI/Assets/mod-thumbnail-fallback.png")));
     }
-    // Game icons sit on white, never on black. A transparent Steam icon only needed
-    // a white plate behind it — that is the Fallout one, and it fills the plate.
-    // Skyrim's is opaque artwork with the black baked in, so a plate behind it was
-    // never visible and the icon stayed a black square. Keying the black out would
-    // erase a logo that is white on black, and every piece of Steam art for that
-    // game is dark (its cover averages 31 of 255), so there is no lighter source to
-    // switch to. Opaque artwork is inset instead: the plate reads as the icon's
-    // background, the artwork as a tile on it.
+
+    // A superellipse rather than a rounded rectangle: the corners stay continuous
+    // instead of meeting the straight edges at a visible join, which is what makes
+    // a squircle read as an icon shape at tile size.
+    private static SkiaSharp.SKPath Squircle(float size)
+    {
+        const double Exponent = 4.0;
+        var path = new SkiaSharp.SKPath();
+        var radius = size / 2.0;
+        for (var step = 0; step <= 240; step++) {
+            var angle = step / 240.0 * Math.PI * 2;
+            var cos = Math.Cos(angle); var sin = Math.Sin(angle);
+            var x = radius + radius * Math.Sign(cos) * Math.Pow(Math.Abs(cos), 2.0 / Exponent);
+            var y = radius + radius * Math.Sign(sin) * Math.Pow(Math.Abs(sin), 2.0 / Exponent);
+            if (step == 0) path.MoveTo((float)x, (float)y); else path.LineTo((float)x, (float)y);
+        }
+        path.Close();
+        return path;
+    }
+
+    private static Bitmap? SquareCrop(string path)
+    {
+        try {
+            using var source = SkiaSharp.SKBitmap.Decode(path);
+            if (source is null || source.Width == 0 || source.Height == 0) return null;
+            var side = Math.Min(source.Width, source.Height);
+            using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(side, side));
+            using var paint = new SkiaSharp.SKPaint { IsAntialias = true };
+            var from = SkiaSharp.SKRect.Create((source.Width - side) / 2f, (source.Height - side) / 2f, side, side);
+            surface.Canvas.DrawBitmap(source, from, SkiaSharp.SKRect.Create(0, 0, side, side), paint);
+            using var composed = surface.Snapshot();
+            using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            using var bytes = encoded.AsStream();
+            return new Bitmap(bytes);
+        } catch { return null; }
+    }
+    // A square icon at one size, transparent wherever the artwork is.
+    //
+    // This used to composite onto a white plate, because the only icon source was
+    // Steam's desktop icon and Skyrim's is opaque artwork with black baked in,
+    // which read as a black square. Icons now come from the game executable and
+    // carry their own alpha, so there is nothing left for a plate to rescue — and
+    // NMA's widgets already clip the image to a rounded square and draw their own
+    // weak border, so a plate only showed up as a white ring around the artwork.
     private const int PlateSize = 96;
-    private const float OpaqueInset = .78f;
     private static readonly Dictionary<string,Bitmap> Plated = new();
-    public static Bitmap PlatedIcon(string game)
+    public static Bitmap SquareIcon(string game)
     {
         if (Plated.TryGetValue(game, out var ready)) return ready;
         using var art = Icon(game);
         using var png = new MemoryStream(); art.Save(png); png.Position = 0;
         using var source = SkiaSharp.SKBitmap.Decode(png);
         using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(PlateSize, PlateSize));
-        surface.Canvas.Clear(SkiaSharp.SKColors.White);
+        surface.Canvas.Clear(SkiaSharp.SKColors.Transparent);
         using var paint = new SkiaSharp.SKPaint { IsAntialias = true };
-        var span = Opaque(source) ? PlateSize * OpaqueInset : PlateSize;
-        var fit = Math.Min(span / source.Width, span / source.Height);
+        var fit = Math.Min((float)PlateSize / source.Width, (float)PlateSize / source.Height);
         var width = source.Width * fit; var height = source.Height * fit;
         var target = SkiaSharp.SKRect.Create((PlateSize-width)/2, (PlateSize-height)/2, width, height);
-        surface.Canvas.Save();
-        // Rounded, so an inset tile reads as part of the icon rather than a photo
-        // dropped on it. Harmless for artwork that already has its own silhouette.
-        surface.Canvas.ClipRoundRect(new SkiaSharp.SKRoundRect(target, 12, 12), antialias: true);
-        surface.Canvas.DrawBitmap(source, target, paint);
-        surface.Canvas.Restore();
+        // Artwork that fills its square — a cropped cover, or a full-bleed icon —
+        // is masked to a squircle so it reads as an icon rather than a photo.
+        // Extracted icons already carry their own silhouette and are left alone.
+        if (Opaque(source)) {
+            using var squircle = Squircle(PlateSize);
+            surface.Canvas.Save();
+            surface.Canvas.ClipPath(squircle, antialias: true);
+            surface.Canvas.DrawBitmap(source, target, paint);
+            surface.Canvas.Restore();
+        } else surface.Canvas.DrawBitmap(source, target, paint);
         using var composed = surface.Snapshot();
         using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
         using var bytes = encoded.AsStream();
@@ -160,11 +279,21 @@ internal static class Mo2GameArt
                 if (bitmap.GetPixel(x, y).Alpha < 200) return false;
         return true;
     }
+    // Cover artwork keeps using Steam's library art, which is what it is for. The
+    // app id now comes from the supported-game catalogue rather than a guess
+    // between two hardcoded titles, and the cache is found on either platform.
+    // NMA decodes its game tiles to the tile width rather than handing the widget a
+    // full-resolution bitmap, so the card scales the same way here.
     public static Bitmap Cover(string game)
     {
-        var id = game.Contains("Skyrim", StringComparison.OrdinalIgnoreCase) ? "489830" : "22380";
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), $".local/share/Steam/appcache/librarycache/{id}/library_600x900.jpg");
-        return File.Exists(path) ? new Bitmap(path) : new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusMods.App.UI/Assets/mod-thumbnail-fallback.png")));
+        var width = (int)NexusMods.App.UI.ImageSizes.GameTile.Width;
+        var path = Mo2SupportedGames.LibraryArt(game);
+        if (path is not null) {
+            using var file = File.OpenRead(path);
+            return Bitmap.DecodeToWidth(file, width);
+        }
+        using var fallback = Avalonia.Platform.AssetLoader.Open(new Uri("avares://NexusMods.App.UI/Assets/mod-thumbnail-fallback.png"));
+        return Bitmap.DecodeToWidth(fallback, width);
     }
 }
 internal sealed class Mo2LoadoutsPage : APageViewModel<IMyLoadoutsViewModel>, IMyLoadoutsViewModel
@@ -246,7 +375,7 @@ internal sealed class Mo2LoadoutCard : AViewModel<ILoadoutCardViewModel>, ILoado
             Observable.Return(!IsLastLoadout && entry.Instance.SelectedProfile != profile.Name));
         // Plated, like the spine: the Steam icons are transparent, and the card's
         // image section is otherwise the panel's own dark surface behind them.
-        LoadoutImage = Mo2GameArt.PlatedIcon(entry.Instance!.Game);
+        LoadoutImage = Mo2GameArt.SquareIcon(entry.Instance!.Game);
         LoadoutBadgeViewModel = new LoadoutBadgeDesignViewModel { LoadoutShortName = number.ToString() };
         VisitLoadoutCommand = ReactiveCommand.CreateFromTask(async () => {
             if (await shell.Profile.SelectProfile(Registration, profile)) shell.ShowProfile();

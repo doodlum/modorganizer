@@ -31,7 +31,7 @@ internal sealed class ScenarioLoadOrderPage(IServiceProvider services, NexusMods
         ? profile.SetPluginsActive(profile.Order.Plugins.Where(plugin => plugin.CanToggle && plugin.IsActive != enabled && Adapter.SelectedModels.Any(row => plugin.Key.Equals(row.Key))).Select(plugin => plugin.DisplayName), enabled)
         : Task.CompletedTask;
     public static readonly IconValue PluginIcon = new ProjektankerIcon("mdi-power-plug-outline");
-    public static readonly IconValue HeaderIcon = new AvaloniaSvg("avares://MockHost/Assets/power-plug-3d.svg");
+    public static readonly IconValue HeaderIcon = new AvaloniaSvg("avares://NexusModsApp/Assets/power-plug-3d.svg");
     public IconValue TabIcon => PluginIcon;
     public string TabTitle => "Plugins";
     public WindowId WindowId { get; set; }

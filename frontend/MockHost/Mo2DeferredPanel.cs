@@ -69,10 +69,37 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
     private StandardButton? _stripClose;
 
     private bool _adopted;
+    private Border? _floatingClose;
     private void AdoptChrome()
     {
+        // A panel carries no close button of its own, in the strip or floating over
+        // its corner. Closing is the tab strip's job, so there is one X and it is
+        // always in the same place. Upstream sets both from its own view model on
+        // every change, so both are put back down on each layout pass rather than
+        // once.
         _stripClose ??= this.GetVisualDescendants().OfType<StandardButton>().FirstOrDefault(x => x.Name == "ClosePanelButton");
         if (_stripClose is { IsVisible: true }) _stripClose.IsVisible = false;
+        _floatingClose ??= this.GetVisualDescendants().OfType<Border>().FirstOrDefault(x => x.Name == "FloatingClosePanelBorder");
+        if (_floatingClose is { IsVisible: true }) _floatingClose.IsVisible = false;
+
+        // Upstream takes the X off a tab as soon as its panel is down to one, because
+        // there the panel's own floating close is what closes it. That button is gone
+        // here, so a single-tab panel would have nothing left to close it with and a
+        // panel could never be dismissed. The tab keeps its X instead, and closing the
+        // last tab closes the panel, which is what upstream's floating close did.
+        //
+        // The one X that does go is the last tab of a panel filling the workspace:
+        // there is nothing behind it to close back to.
+        //
+        // Set on the tab rather than on the button, so the command that button runs
+        // agrees with whether it is shown. Upstream writes this whenever the tab count
+        // reaches one, so it is written here on each layout pass rather than once.
+        if (ViewModel is { } panel) {
+            var closable = panel.Tabs.Count > 1 || !panel.IsAlone;
+            foreach (var tab in panel.Tabs)
+                if (tab.Header.CanClose != closable) tab.Header.CanClose = closable;
+        }
+
         if (_adopted) return;
 
         var closers = this.GetVisualDescendants().OfType<StandardButton>()

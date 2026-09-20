@@ -44,7 +44,7 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
     {
         _read = read;
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
-        var header = new PageHeader { Title = "Saves", Description = "Saved games available to the selected MO2 profile.", Icon = new AvaloniaSvg("avares://MockHost/Assets/saves-3d.svg") };
+        var header = new PageHeader { Title = "Saves", Description = "Saved games available to the selected MO2 profile.", Icon = new AvaloniaSvg("avares://NexusModsApp/Assets/saves-3d.svg") };
         root.Children.Add(header);
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"), Margin = new Thickness(0,8) };
         bar.Children.Add(_search);

@@ -79,7 +79,7 @@ internal static class Mo2QtShortcutCheck
         // pressed from a workspace chosen to be awkward for it, both ways.
         var starts = new (string Name, Func<Task> Go)[] {
             ("the profile workspace", async () => { live.ShowProfile(); await Task.Delay(600); }),
-            ("Connections", async () => { live.OpenConnections(); await Task.Delay(600); }),
+            ("Settings", async () => { live.OpenSettings(); await Task.Delay(600); }),
         };
 
         // Names disagreeing is reported above; pressing keys for actions MO2 has

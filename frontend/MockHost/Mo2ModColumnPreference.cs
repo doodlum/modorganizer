@@ -7,10 +7,7 @@ namespace Mo2.Frontend;
 // source rebuilt per render, while Mods draws its own column grid.
 internal static class Mo2ModColumnPreference
 {
-    private static string Path => System.IO.Path.Combine(
-        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"),
-        "mo2-nexus-frontend", "columns-mods.json");
+    private static string Path => Mo2ConfigPaths.Combine("columns-mods.json");
 
     internal static void Load()
     {
