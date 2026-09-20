@@ -64,6 +64,26 @@ internal static class Mo2InstanceSettings
         } catch (Exception) { return Mo2NexusIntegration.Default; }
     }
 
+    // The categories MO2 assigns from, which it keeps in the instance as
+    // "id|name|parent". Not the tree the filter sidebar uses: that one is MO2's own
+    // filters — <Active>, <Contains Meshes> — which describe a mod rather than being
+    // given to one.
+    internal static (int Id, string Name, int Parent)[] Categories(string instance)
+    {
+        try {
+            var file = Path.Combine(Mo2InstanceCatalog.LocalPath(instance), "categories.dat");
+            if (!File.Exists(file)) return [];
+            var rows = new List<(int, string, int)>();
+            foreach (var line in File.ReadAllLines(file)) {
+                var parts = line.Split('|');
+                if (parts.Length < 3 || !int.TryParse(parts[0], out var id) || !int.TryParse(parts[^1], out var parent)) continue;
+                var name = string.Join('|', parts[1..^1]).Trim();
+                if (name.Length > 0) rows.Add((id, name, parent));
+            }
+            return rows.ToArray();
+        } catch (Exception) { return []; }
+    }
+
     internal static bool OverwriteHasContent(string instance)
     {
         try {

@@ -1355,6 +1355,75 @@ class ModActions:
             raise ValueError('Mod no longer exists')
         return {'name': name, 'path': mods.getMod(name).absolutePath()}
 
+    def set_mod_categories(self, name, categories):
+        """Give a mod the categories the frontend's information panel ticked.
+
+        MO2's own "Change Categories" is a submenu of tick boxes applied when the
+        submenu closes, and a hosted MO2 can neither show it nor be driven through
+        it — it reports the menu with nothing inside to trigger. Its underlying
+        action does not ask anything, so the categories are set on the mod itself
+        and MO2 writes them to meta.ini and tells the list, as it would have.
+        """
+        mods = self.organizer.modList()
+        if not isinstance(name, str) or name not in mods.allMods():
+            raise ValueError('Mod no longer exists')
+        if not isinstance(categories, list) or any(not isinstance(c, str) for c in categories):
+            raise ValueError('Choose the categories as a list of names')
+        mod = mods.getMod(name)
+        if not hasattr(mod, 'addCategory') or not hasattr(mod, 'removeCategory'):
+            raise ValueError('This Mod Organizer build does not let a plugin set categories')
+        current = [str(c) for c in (mod.categories() if hasattr(mod, 'categories') else [])]
+        wanted = [c for c in categories if c]
+        for gone in [c for c in current if c not in wanted]:
+            mod.removeCategory(gone)
+        for added in [c for c in wanted if c not in current]:
+            mod.addCategory(added)
+        after = [str(c) for c in (mod.categories() if hasattr(mod, 'categories') else wanted)]
+        return {'name': name, 'categories': after}
+
+    def set_mod_notes(self, name, notes):
+        """The note the information panel's Notes tab keeps.
+
+        Written through MO2's own mod list model, on the Notes column, which is
+        the one route MO2 itself edits a note by (ModList::setData handles
+        COL_NOTES under EditRole). The extension API this build exposes has no
+        setter for it, and writing meta.ini underneath MO2 would be a note MO2
+        neither knew about nor kept.
+        """
+        from PyQt6.QtCore import QAbstractProxyModel, Qt
+        from PyQt6.QtWidgets import QTreeView
+        mods = self.organizer.modList()
+        names = list(mods.allMods())
+        if not isinstance(name, str) or name not in names:
+            raise ValueError('Mod no longer exists')
+        if not isinstance(notes, str) or len(notes) > 8192:
+            raise ValueError('Notes must be text of at most 8192 characters')
+        if not self.window.isEnabled(): raise ValueError('MO2 is busy')
+        view = self.window.findChild(QTreeView, 'modList')
+        if view is None: raise ValueError('MO2 mod list is unavailable')
+        model = view.model()
+        while isinstance(model, QAbstractProxyModel): model = model.sourceModel()
+        if model is None or model.metaObject().className() != 'ModList':
+            raise ValueError('Unsupported MO2 mod list model')
+        column = self._column(model, 'Notes')
+        row = names.index(name)
+        index = model.index(row, column)
+        if not index.isValid() or index.data(int(Qt.ItemDataRole.UserRole) + 1) != row:
+            raise ValueError('MO2 mod row changed; refresh before saving notes')
+        if not model.setData(index, notes, Qt.ItemDataRole.EditRole):
+            raise ValueError('MO2 did not accept the note')
+        return {'name': name, 'notes': notes}
+
+    @staticmethod
+    def _column(model, header):
+        """Which column of MO2's list carries that heading. Found by name rather
+        than by number: MO2 has reordered these columns before now."""
+        from PyQt6.QtCore import Qt
+        for column in range(model.columnCount()):
+            if str(model.headerData(column, Qt.Orientation.Horizontal) or '') == header:
+                return column
+        raise ValueError('MO2 has no ' + header + ' column')
+
     def rename_mod(self, name, new_name):
         """Rename a mod through the original list model's own editor.
 

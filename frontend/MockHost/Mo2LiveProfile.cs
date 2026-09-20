@@ -571,6 +571,39 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         } catch (Exception error) { Report(error); }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
+    // The two things about a mod the information panel lets the user change, which
+    // MO2 changes from the same panel. Its own Change Categories menu cannot be
+    // driven from here — MO2 hangs it on the menu as a submenu widget with nothing
+    // inside to trigger — but the work behind it asks nothing, so the categories are
+    // set on the mod and MO2 writes them where it keeps them.
+    public async Task SetModCategories(string name, string[] categories, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = "Setting categories on " + name + " in MO2"; Changed?.Invoke();
+            await Client.SendAsync("setModCategories", new() { ["profilePath"] = target.ProfilePath, ["name"] = name, ["categories"] = categories });
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = "Categories set on " + name; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
+    public async Task SetModNotes(string name, string notes, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            Status = "Saving notes on " + name + " in MO2"; Changed?.Invoke();
+            await Client.SendAsync("setModNotes", new() { ["profilePath"] = target.ProfilePath, ["name"] = name, ["notes"] = notes });
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+            Status = "Notes saved on " + name; Changed?.Invoke();
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
     public async Task SetPluginLocked(string name, bool locked, Mo2ProfileTarget target)
     {
         if (!CanStartHostAction || target != CurrentTarget) return;

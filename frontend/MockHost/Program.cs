@@ -59,6 +59,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-live") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModlistLiveCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-register") { Mo2ModlistRegisterCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-mod-info") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModInfoPanelCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-menu-run") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuRunCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-backup") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModBackupCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-menu") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuAuditCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
@@ -241,6 +242,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
         if (viewModel is Mo2ComponentsPage components) return new Mo2ComponentsView { ViewModel = components };
         if (viewModel is Mo2ModlistsPage modlists) return new Mo2ModlistsView { ViewModel = modlists };
+        if (viewModel is Mo2ModInfoPage modInfo) return new Mo2ModInfoView { ViewModel = modInfo };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return Mo2DeferredView<ScenarioInstalledPage>.For(liveMods, "My Mods", model => new Mo2ModsView { ViewModel = model }, reuseBody: true);
         if (viewModel is not IViewModel vm) return null;

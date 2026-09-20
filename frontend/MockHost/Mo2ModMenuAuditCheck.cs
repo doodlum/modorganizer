@@ -17,14 +17,14 @@ internal static class Mo2ModMenuAuditCheck
     // is an entry MO2 shows; leaving one out is a decision, not an oversight.
     private static readonly (string Caption, string Why)[] Excluded = [
         ("Change Categories",
-            "A gap, not a decision. MO2 hangs this on the menu as a submenu widget whose " +
-            "ticks are applied when the submenu closes, and the bridge works by triggering " +
-            "one of MO2's actions by name — MO2 reports this one with no entries inside it " +
-            "to trigger. Nothing else here assigns a category to a mod, so that cannot be " +
-            "done from the frontend at all."),
+            "Not as a menu entry: MO2 hangs this on the menu as a submenu widget whose ticks " +
+            "are applied when the submenu closes, and the bridge drives MO2 by triggering an " +
+            "action by name — MO2 reports this one with nothing inside it to trigger. The " +
+            "work it does asks nothing, so it is done from the information panel's Categories " +
+            "tab instead, which ticks the same categories and has MO2 write them."),
         ("Primary Category",
-            "The same submenu in a second form, unreachable for the same reason and leaving " +
-            "the same gap."),
+            "The same submenu in a second form. A mod's primary category is the first of the " +
+            "categories it has, which the Categories tab sets along with the rest."),
     ];
 
     public static async Task Run(string endpoint, string? wanted = null)
@@ -68,9 +68,21 @@ internal static class Mo2ModMenuAuditCheck
                 Console.WriteLine("    us : " + string.Join(" | ", ours));
             }
 
+            // The names inside MO2's two category submenus, which are the categories
+            // themselves. They belong to the entries excluded above rather than being
+            // entries of their own.
+            // Compared with the ampersand gone and runs of spaces collapsed: Qt takes
+            // "&" as the mnemonic marker, so MO2's own "Body, Face, & Hair" arrives as
+            // "Body, Face,  Hair".
+            static string Plain(string value) =>
+                string.Join(' ', value.Replace("&", "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            var categories = Mo2InstanceSettings.Categories(instance).Select(x => Plain(x.Name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             foreach (var caption in theirs) {
                 if (ours.Any(x => Canonical(x) == Canonical(caption))) continue;
                 if (Excluded.Any(x => Matches(caption, x.Caption))) continue;
+                if (categories.Contains(Plain(caption))) continue;
                 unclassified.Add($"{kind}: {caption}");
             }
             // The other direction: an entry offered here that MO2 would not build is an

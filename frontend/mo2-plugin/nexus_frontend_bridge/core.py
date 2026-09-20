@@ -251,6 +251,10 @@ class Bridge:
             if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.mod_path(request.get('name')) if action == 'modPath' \
                 else self.mod_actions.rename_mod(request.get('name'), request.get('newName'))
+        if action in ('setModCategories', 'setModNotes'):
+            if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
+            return self.mod_actions.set_mod_categories(request.get('name'), request.get('categories')) \
+                if action == 'setModCategories' else self.mod_actions.set_mod_notes(request.get('name'), request.get('notes'))
         if action == 'setModColor':
             if self.mod_actions is None: raise ValueError('MO2 mod management is unavailable')
             return self.mod_actions.set_mod_color(request.get('name'), request.get('color'))
