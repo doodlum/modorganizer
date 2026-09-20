@@ -12,15 +12,19 @@ internal static class Mo2PluginRow
     // Display metadata that helps identify a plugin. Its position in the list
     // conveys priority; numeric load-order details belong in the row tooltip and
     // diagnostics, where they remain available without crowding the name.
-    internal const int Name = 0, Flags = 1, FormVersion = 2, HeaderVersion = 3,
-        Author = 4, Description = 5;
+    //
+    // MO2 has an Author column here as well, and shows it. This list does not draw
+    // one: a plugin's author is a field almost nothing fills in, so the column was a
+    // heading over empty cells, taking width from the name and the description it
+    // sat between.
+    internal const int Name = 0, Flags = 1, FormVersion = 2, HeaderVersion = 3, Description = 4;
 
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        "*,24,76,84,92,*") };
+        "*,24,76,84,*") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         (Name, "Name"), (Flags, "Flags"), (FormVersion, "Form Version"),
-        (HeaderVersion, "Header Version"), (Author, "Author"), (Description, "Description")];
+        (HeaderVersion, "Header Version"), (Description, "Description")];
 
     internal static readonly HashSet<int> HiddenColumns = [];
     internal static readonly (int Column, string Name)[] OptionalColumns =
@@ -28,7 +32,7 @@ internal static class Mo2PluginRow
 
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
         (Flags, 24, 250),
-        (FormVersion, 76, 720), (HeaderVersion, 84, 860), (Author, 92, 560),
+        (FormVersion, 76, 720), (HeaderVersion, 84, 860),
         (Description, 180, 1010)];
 
     internal static void Fit(Grid row, double width) =>
@@ -134,11 +138,10 @@ internal static class Mo2PluginRow
 
         var formVersion = Mo2TableRow.Cell(plugin.FormVersion, .6);
         var headerVersion = Mo2TableRow.Cell(plugin.HeaderVersion, .6);
-        var author = Mo2TableRow.Cell(plugin.Author, .6);
         var description = Mo2TableRow.Cell(plugin.Description, .6);
         if (plugin.Description.Length > 0) ToolTip.SetTip(description, plugin.Description);
         Mo2TableRow.Add(row, formVersion, FormVersion); Mo2TableRow.Add(row, headerVersion, HeaderVersion);
-        Mo2TableRow.Add(row, author, Author); Mo2TableRow.Add(row, description, Description);
+        Mo2TableRow.Add(row, description, Description);
         void Refresh() {
             var ready = target == profile.CurrentTarget && profile.CanChangeOriginalUi;
             if (target == profile.CurrentTarget && profile.Order.FindPlugin(plugin.Key) is { } latest) plugin = latest;
