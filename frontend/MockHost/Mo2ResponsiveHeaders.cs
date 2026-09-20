@@ -14,71 +14,35 @@ namespace Mo2.Frontend;
 
 internal static class Mo2ResponsiveHeaders
 {
-    internal const double ScrollDistance = 160; // Four scroll lines at 40px per line.
     // The header's pictogram at rest and when collapsed. The one owner of header
     // collapse, so the checks and the panel chrome read these rather than each
     // carrying their own idea of the size.
     internal const double IconSize = 48;
     internal const double CompactIconSize = 28;
+
+    // A header used to shrink as the list under it was scrolled: the title dropped
+    // to 18px, the description faded out and the pictogram halved, over the first
+    // four scroll lines. That is gone. Scrolling a list is not a statement about
+    // the page it is on, and a header that moves while being read is a header that
+    // has to be scrolled back to in order to be read.
+    //
+    // The header still stands down when there is genuinely no room for it — a panel
+    // narrower than 360 or shorter than 400 — because that is a different thing: not
+    // enough space to draw it, rather than a reaction to the list being moved.
     private sealed class State
     {
-        private readonly PageHeader _header;
         public Thickness Margin;
         public Thickness? ContainerMargin;
-        public ScrollViewer? Viewer;
-        public double ScrollAmount;
 
         public State(PageHeader header)
         {
-            _header = header; Margin = header.Margin;
+            Margin = header.Margin;
             ContainerMargin = header.Name == "AllPageHeader" && header.Parent?.GetType() == typeof(Panel) ? ((Panel)header.Parent).Margin : null;
-            header.DetachedFromVisualTree += (_, _) => StopObserving();
-        }
-
-        private void StopObserving()
-        {
-            if (Viewer is not { } viewer) return;
-            viewer.ScrollChanged -= Scrolled;
-            viewer.RemoveHandler(InputElement.PointerWheelChangedEvent, Wheeled);
-            Viewer = null;
-        }
-
-        public void ObserveScroll(UserControl owner)
-        {
-            if (Viewer?.GetVisualRoot() is not null && Viewer.GetVisualAncestors().Contains(owner)) return;
-            var viewer = owner.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()?
-                .GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(v =>
-                    v.GetVisualDescendants().Any(c => c.GetType().Name == "TreeDataGridRowsPresenter"));
-            if (ReferenceEquals(Viewer, viewer)) return;
-            StopObserving();
-            if (viewer is null) return;
-            Viewer = viewer;
-            ScrollAmount = Math.Clamp(viewer.Offset.Y, 0, ScrollDistance);
-            viewer.ScrollChanged += Scrolled;
-            viewer.AddHandler(InputElement.PointerWheelChangedEvent, Wheeled, RoutingStrategies.Tunnel);
-        }
-
-        private void Scrolled(object? sender, ScrollChangedEventArgs e)
-        {
-            // Header resizing can clamp the offset; only scroll motion contributes.
-            if (Viewer is { } viewer && ReferenceEquals(sender, viewer) && Math.Abs(e.ViewportDelta.Y) < .1 && Math.Abs(e.OffsetDelta.Y) > .1) {
-                ScrollAmount = viewer.Offset.Y <= .1 ? 0 : Math.Clamp(ScrollAmount + e.OffsetDelta.Y, 0, ScrollDistance);
-                _header.InvalidateMeasure();
-            }
-        }
-
-        private void Wheeled(object? sender, PointerWheelEventArgs e)
-        {
-            if (Viewer is { } viewer && ReferenceEquals(sender, viewer) && e.Delta.Y > 0 && viewer.Offset.Y <= .1 && ScrollAmount > 0) {
-                ScrollAmount = Math.Max(0, ScrollAmount - e.Delta.Y * 40);
-                _header.InvalidateMeasure();
-            }
         }
     }
     // Header state follows the control across windows; detached viewers are
     // unsubscribed so they cannot retain or drive a header that has moved away.
     private static readonly ConditionalWeakTable<PageHeader, State> States = new();
-    internal static double? ObservedScrollForTesting(PageHeader header) => States.TryGetValue(header, out var state) ? state.ScrollAmount : null;
     // A panel holding one tab hides its tab strip, which keeps the page clean but
     // also takes away the only thing a tab can be dragged by — and with the default
     // Mods/Plugins layout that is every panel. The strip comes back when the pointer
@@ -89,21 +53,6 @@ internal static class Mo2ResponsiveHeaders
     private static readonly ConditionalWeakTable<PanelView, object> Watched = new();
 
     internal static bool IsRevealed(PanelView panel) => Revealed.TryGetValue(panel, out _);
-
-    // Drives the collapse from a check without a scroll viewer to scroll. The
-    // header's two faults both showed up part-way through a collapse, which is a
-    // state no fixed window size reaches on its own.
-    private static readonly ConditionalWeakTable<PageHeader, object> Forced = new();
-    internal static void SetScrollForTesting(Control page, double amount)
-    {
-        foreach (var header in FindHeaders(page)) {
-            Forced.Remove(header);
-            Forced.Add(header, amount);
-            header.InvalidateMeasure();
-        }
-    }
-    private static double? ForcedScroll(PageHeader header) =>
-        Forced.TryGetValue(header, out var value) ? (double)value : null;
 
     internal static void Reveal(PanelView panel, bool wanted)
     {
@@ -131,7 +80,6 @@ internal static class Mo2ResponsiveHeaders
                 if (owner is null || !owner.IsEffectivelyVisible || owner.Bounds.Width <= 0 || owner.Bounds.Height <= 0) continue;
                 if (!header.IsVisible && !States.TryGetValue(header, out _)) continue;
                 var state = States.GetValue(header, h => new State(h));
-                state.ObserveScroll(owner);
                 var panel = header.GetVisualAncestors().OfType<PanelView>().FirstOrDefault();
                 var availableWidth = Math.Min(owner.Bounds.Width, panel?.Bounds.Width ?? owner.Bounds.Width);
                 var availableHeight = Math.Min(owner.Bounds.Height, panel?.Bounds.Height ?? owner.Bounds.Height);
@@ -140,15 +88,12 @@ internal static class Mo2ResponsiveHeaders
                 // need — and it expresses that by arranging the header at nothing
                 // rather than by setting a property this handler would then react to.
                 var hidden = header.Bounds.Width <= 0;
-                // Running out of room collapses the header outright; scrolling walks
-                // it there frame by frame. Easing the constrained case from inside
-                // this handler produced different values on every layout pass, each
-                // invalidating the next, which Avalonia ends as an infinite layout
-                // loop — so the constraint stays a state change, not an animation.
-                var scroll = ForcedScroll(header) ?? state.ScrollAmount;
-                var progress = availableWidth < 360 || availableHeight < 400 ? 1 : scroll / ScrollDistance;
-                var compact = progress >= 1;
-                double Blend(double full, double small) => full + (small - full) * progress;
+                // Either the header has room or it does not. It used to walk between
+                // the two as the list was scrolled; now the only thing that collapses
+                // it is running out of space, which is a state rather than a motion.
+                var compact = availableWidth < 360 || availableHeight < 400;
+                var progress = compact ? 1d : 0d;
+                double Blend(double full, double small) => compact ? small : full;
                 Thickness ShrinkMargin(Thickness margin) => new(margin.Left, Blend(margin.Top, Math.Min(8, margin.Top)), margin.Right, Blend(margin.Bottom, 0));
                 if (panel is not null) WatchReveal(panel);
                 var alone = panel?.ViewModel?.IsAlone != false;

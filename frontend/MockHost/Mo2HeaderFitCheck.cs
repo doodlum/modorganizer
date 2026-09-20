@@ -21,7 +21,6 @@ internal static class Mo2HeaderFitCheck
 
     internal static async Task Run(string? directory = null)
     {
-        await Mo2HeaderScrollCheck.Run();
         var host = new ContentControl();
         var window = new Window { Width = 1000, Height = 700, Content = host, ShowInTaskbar = false };
         Mo2ResponsiveHeaders.Attach(window);
@@ -38,16 +37,14 @@ internal static class Mo2HeaderFitCheck
                 foreach (var (width, height) in Sizes) {
                     window.Width = width; window.Height = height;
                     await Settle(window, 8);
-                    // Part-way through a collapse is where both of these went wrong,
-                    // so every size is also checked mid-scroll rather than only at the
-                    // two ends.
-                    foreach (var scrolled in new[] { 0d, Mo2ResponsiveHeaders.ScrollDistance / 2, Mo2ResponsiveHeaders.ScrollDistance }) {
-                    Mo2ResponsiveHeaders.SetScrollForTesting(page, scrolled);
-                    await Settle(window, 4);
+                    // This used to walk each size through three scroll positions as
+                    // well, because the header collapsed as the list was scrolled and
+                    // part-way through that collapse was where it broke. Scrolling no
+                    // longer changes the header, so the size is the whole of it.
                     var header = page.GetVisualDescendants().OfType<PageHeader>().FirstOrDefault();
-                    if (header is null) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no header at all"); continue; }
+                    if (header is null) { faults.Add($"{name} {width}x{height}@: no header at all"); continue; }
                     var row = page.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderRow");
-                    if (row is null) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no header row"); continue; }
+                    if (row is null) { faults.Add($"{name} {width}x{height}@: no header row"); continue; }
                     var stage = (row as Mo2HeaderLine)?.Shows ?? Mo2HeaderLine.Showing.Words;
                     // One picture per stage, so the fallbacks can be looked at rather
                     // than only measured.
@@ -70,12 +67,12 @@ internal static class Mo2HeaderFitCheck
                         .FirstOrDefault(x => x.Name == "TitleTextBlock");
                     if (stage == Mo2HeaderLine.Showing.Pictogram) {
                         if (plateNow is null || plateNow.Bounds.Width <= 0)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage draws no pictogram");
+                            faults.Add($"{name} {width}x{height}@: pictogram stage draws no pictogram");
                         // And it has to be drawn where the header is, not half of it
                         // hanging off the page into the panel's own padding.
                         if (plateNow is not null && plateNow.TranslatePoint(default, page) is { } platePoint) {
                             if (platePoint.X < -0.5)
-                                faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram sits {-platePoint.X:F0}px left of the page");
+                                faults.Add($"{name} {width}x{height}@: pictogram sits {-platePoint.X:F0}px left of the page");
                             if (plateNow.TranslatePoint(default, row) is { } inRow &&
                                 (inRow.X < -0.5 || inRow.X + plateNow.Bounds.Width > row.Bounds.Width + 0.5)) {
                                 // With the boxes each ancestor was given, because the
@@ -86,39 +83,39 @@ internal static class Mo2HeaderFitCheck
                                 var chain = new List<string>();
                                 for (Visual? n = plateNow; n is not null && !ReferenceEquals(n, row); n = n.GetVisualParent())
                                     if (n is Control c) chain.Add($"{c.GetType().Name}#{c.Name} b{c.Bounds} m{c.Margin.Left:F0}");
-                                faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram runs outside its header row " +
+                                faults.Add($"{name} {width}x{height}@: pictogram runs outside its header row " +
                                     $"({inRow.X:F0}..{inRow.X + plateNow.Bounds.Width:F0} of {row.Bounds.Width:F0}) :: " +
                                     string.Join(" < ", chain));
                             }
                         }
                         if (words is not null && words.IsEffectivelyVisible && words.Bounds.Width > 0)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage still draws the title");
+                            faults.Add($"{name} {width}x{height}@: pictogram stage still draws the title");
                         if (header.Bounds.Width <= 0)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram stage has no header on the line");
+                            faults.Add($"{name} {width}x{height}@: pictogram stage has no header on the line");
                         continue;
                     }
                     if (stage == Mo2HeaderLine.Showing.Nothing) {
                         if (header.Bounds.Width > 0)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: header stood down but still takes {header.Bounds.Width:F0}px");
+                            faults.Add($"{name} {width}x{height}@: header stood down but still takes {header.Bounds.Width:F0}px");
                         continue;
                     }
 
                     var title = header.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(x => x.Name == "TitleTextBlock");
-                    if (title is null || !title.IsVisible) { faults.Add($"{name} {width}x{height}@{scrolled:F0}: no visible title"); continue; }
+                    if (title is null || !title.IsVisible) { faults.Add($"{name} {width}x{height}@: no visible title"); continue; }
 
                     // The row must give the header everything it asked for. A row that
                     // clips is a row that is shorter than its own content.
                     if (row.Bounds.Height + .5 < row.DesiredSize.Height)
-                        faults.Add($"{name} {width}x{height}@{scrolled:F0}: header row is {row.Bounds.Height:F0}px for {row.DesiredSize.Height:F0}px of content");
+                        faults.Add($"{name} {width}x{height}@: header row is {row.Bounds.Height:F0}px for {row.DesiredSize.Height:F0}px of content");
 
                     // And the title must be whole: its arranged height has to cover
                     // the text, and it has to sit inside the row that draws it.
                     if (title.Bounds.Height + .5 < title.DesiredSize.Height)
-                        faults.Add($"{name} {width}x{height}@{scrolled:F0}: title is {title.Bounds.Height:F0}px tall for {title.DesiredSize.Height:F0}px of text");
+                        faults.Add($"{name} {width}x{height}@: title is {title.Bounds.Height:F0}px tall for {title.DesiredSize.Height:F0}px of text");
                     if (title.TranslatePoint(new Point(0, title.Bounds.Height), row) is { } bottom && bottom.Y > row.Bounds.Height + .5)
-                        faults.Add($"{name} {width}x{height}@{scrolled:F0}: title runs {bottom.Y - row.Bounds.Height:F0}px past the bottom of its row");
+                        faults.Add($"{name} {width}x{height}@: title runs {bottom.Y - row.Bounds.Height:F0}px past the bottom of its row");
                     if (title.Text is { Length: > 0 } && title.Bounds.Height <= 0)
-                        faults.Add($"{name} {width}x{height}@{scrolled:F0}: title has no height at all");
+                        faults.Add($"{name} {width}x{height}@: title has no height at all");
 
                     // The description is shown whole or not at all. Clipping it to a
                     // remembered height cut through the middle of its last line once
@@ -127,7 +124,7 @@ internal static class Mo2HeaderFitCheck
                         .FirstOrDefault(x => x.Name == "DescriptionTextBlock");
                     if (description is { IsVisible: true, Opacity: > .05 } &&
                         description.Bounds.Height + .5 < description.DesiredSize.Height)
-                        faults.Add($"{name} {width}x{height}@{scrolled:F0}: description is {description.Bounds.Height:F0}px for " +
+                        faults.Add($"{name} {width}x{height}@: description is {description.Bounds.Height:F0}px for " +
                             $"{description.DesiredSize.Height:F0}px of text");
 
                     // This used to measure how the header line's actions wrapped as
@@ -156,8 +153,7 @@ internal static class Mo2HeaderFitCheck
                         // as being on the same line.
                         var allowed = Math.Max(8, title.Bounds.Height / 2);
                         if (drift > allowed)
-                            faults.Add($"{name} {width}x{height}@{scrolled:F0}: pictogram sits {drift:F0}px off the title (allowed {allowed:F0})");
-                    }
+                            faults.Add($"{name} {width}x{height}: pictogram sits {drift:F0}px off the title (allowed {allowed:F0})");
                     }
                 }
             }
