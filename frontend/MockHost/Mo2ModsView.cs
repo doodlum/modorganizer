@@ -63,6 +63,10 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     private readonly Mo2LiveProfile _profile;
     private int _filterChoice;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+    // The two questions MO2's Send to... asks, asked in a window of this
+    // application's own. Set by the page, which is what owns a window to ask in.
+    internal Func<Mo2LiveMod, Task<int?>>? AskPriority { get; set; }
+    internal Func<string[], Task<string?>>? AskSeparator { get; set; }
     private readonly System.Reactive.Subjects.BehaviorSubject<Func<Mo2LiveMod,bool>> _filter = new(_ => true);
     public static readonly ComponentKey StateKey = ComponentKey.From("MO2.State");
     public int VisibleRowCount => Roots.Count;

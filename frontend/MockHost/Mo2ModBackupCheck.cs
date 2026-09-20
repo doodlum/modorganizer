@@ -81,6 +81,16 @@ internal static class Mo2ModBackupCheck
                 throw new Exception($"{entry.Caption} would open MO2's own question box, which nobody could answer");
         Console.WriteLine("  both are answered in this application rather than in MO2");
 
+        // The backup this made is taken away again. MO2 numbers each new one, so a
+        // check that left them behind would grow a pile of them in a real profile.
+        if (mod is not null) {
+            var mods = Path.Combine(Mo2InstanceSettings.InstanceOf(profile.ProfilePath), "mods");
+            foreach (var folder in Directory.Exists(mods) ? Directory.GetDirectories(mods) : [])
+                if (Path.GetFileName(folder).StartsWith(mod.Name + "_backup", StringComparison.OrdinalIgnoreCase))
+                    try { Directory.Delete(folder, recursive: true); Console.WriteLine($"  removed {Path.GetFileName(folder)}, which this check created"); }
+                    catch (IOException) { }
+        }
+
         Console.WriteLine($"PASS mod backup: Create Backup made one, it gets MO2's backup menu and not an ordinary mod's, and neither entry opens an MO2 dialog");
     }
 }

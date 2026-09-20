@@ -88,6 +88,12 @@ internal sealed class ScenarioInstalledPage : APageViewModel<ILoadoutViewModel>,
         CreateSeparatorDialog = above => LiveProfile is { } profile ? Mo2SeparatorDialog.Create(windows, profile, above) : Task.CompletedTask;
         RenameSeparatorDialog = name => LiveProfile is { } profile ? Mo2SeparatorDialog.Rename(windows, profile, name) : Task.CompletedTask;
         RenameModDialog = name => LiveProfile is { } profile ? Mo2SeparatorDialog.RenameMod(windows, profile, name) : Task.CompletedTask;
+        // What MO2's Send to... asks for, asked here instead: a hosted MO2 draws
+        // nothing, so its own two windows are ones nobody could answer.
+        if (Adapter is Mo2ModsAdapter mo2Adapter) {
+            mo2Adapter.AskPriority = mod => Mo2SeparatorDialog.AskPriority(windows, mod);
+            mo2Adapter.AskSeparator = separators => Mo2SeparatorDialog.AskSeparator(windows, separators);
+        }
         IsMo2Profile = LiveProfile is not null;
         CollectionName = IsMo2Profile ? _mo2CollectionName : mods.CollectionName;
         CommandDeleteGroup = new(async (_, token) => {

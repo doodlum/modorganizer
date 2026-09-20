@@ -202,7 +202,11 @@ class Bridge:
             if self.mod_actions is None: raise ValueError('MO2 mod actions are unavailable')
             reading = action.startswith('read')
             menu = self.mod_actions.plugin_menu if 'Plugin' in action else self.mod_actions.mod_menu
-            return menu(request.get('names'), None if reading else request.get('path'))
+            if reading or 'Plugin' in action:
+                return menu(request.get('names'), None if reading else request.get('path'))
+            # A mod action may ask something before it acts; the answer comes from the
+            # frontend, which asked the user for it in a window they can actually see.
+            return menu(request.get('names'), request.get('path'), request.get('answer'))
         if action == 'activateDataFile':
             if self.mod_actions is None: raise ValueError('MO2 Data activation is unavailable')
             return self.mod_actions.activate_data_file(request.get('name'))

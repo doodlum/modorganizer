@@ -81,8 +81,11 @@ internal static class Mo2ModMenu
         // and the check for it already use.
         send.Items.Add(Entry("Lowest priority", () => run(() => adapter.Move(mod.Id, 0, absolute: true)), mod.CanManage));
         send.Items.Add(Entry("Highest priority", () => run(() => adapter.Move(mod.Id, int.MaxValue, absolute: true)), mod.CanManage));
-        foreach (var caption in Mo2ModMenuCaptions.SendToChildren(mod).Where(x => x is "Priority..." or "Separator..."))
-            send.Items.Add(Entry(caption, () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", caption]], target)), mod.CanManage));
+        // MO2 asks for the priority and for the separator in windows of its own, which
+        // a hosted MO2 cannot show — picking Separator... used to hang it outright.
+        // The question is asked here instead and the answer handed to MO2's action.
+        send.Items.Add(Entry("Priority...", () => run(() => SendToPriority(profile, adapter, mod, target)), mod.CanManage));
+        send.Items.Add(Entry("Separator...", () => run(() => SendToSeparator(profile, adapter, mod, target)), mod.CanManage));
         foreach (var caption in Mo2ModMenuCaptions.SendToChildren(mod).Where(x => x is "First conflict" or "Last conflict"))
             send.Items.Add(Entry(caption, () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", caption]], target)), mod.CanManage));
         return send;
@@ -127,6 +130,31 @@ internal static class Mo2ModMenu
             color => run(() => profile.SetModColor(current().Name, color, target)));
         item.Tag = true;
         return item;
+    }
+
+    // MO2's Send to... → Priority, which asks for a number. Asked here, in a window
+    // that can actually be seen, and MO2's own action is then given the answer.
+    private static async Task SendToPriority(Mo2LiveProfile profile, Mo2ModsAdapter adapter, Mo2LiveMod mod, Mo2ProfileTarget target)
+    {
+        if (adapter.AskPriority is not { } ask) return;
+        if (await ask(mod) is not { } priority) return;
+        await profile.RunModMenu([mod.Name], [["Send to... ", "Priority..."]], target,
+            new Mo2LiveProfile.Mo2MenuAnswer("int", priority.ToString()));
+    }
+
+    // The same for Send to... → Separator, which MO2 asks with a list of the
+    // separators in the profile. MO2 lists them without the "_separator" its folders
+    // carry, so the answer is spelled the way MO2 spells its own choices.
+    private static async Task SendToSeparator(Mo2LiveProfile profile, Mo2ModsAdapter adapter, Mo2LiveMod mod, Mo2ProfileTarget target)
+    {
+        if (adapter.AskSeparator is not { } ask) return;
+        var separators = profile.Mods.Where(x => x.IsSeparator).OrderBy(x => x.Priority)
+            .Select(x => x.Name.EndsWith("_separator", StringComparison.Ordinal) ? x.Name[..^10] : x.Name)
+            .ToArray();
+        if (separators.Length == 0) return;
+        if (await ask(separators) is not { } chosen) return;
+        await profile.RunModMenu([mod.Name], [["Send to... ", "Separator..."]], target,
+            new Mo2LiveProfile.Mo2MenuAnswer("choice", chosen));
     }
 
     // MO2 names a backup after the mod it was taken from, with _backup and an

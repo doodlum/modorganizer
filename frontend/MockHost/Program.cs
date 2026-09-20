@@ -59,6 +59,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-live") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModlistLiveCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-register") { Mo2ModlistRegisterCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-mod-menu-run") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuRunCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-backup") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModBackupCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-menu") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuAuditCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-columns") { Mo2ModColumnDefaultCheck.Run(); return; }

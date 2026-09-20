@@ -1020,7 +1020,13 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     // `paths` is one entry, spelled every way MO2 spells it: MO2 renames several of
     // its own by where the menu was opened and whether a filter is on, and the one it
     // built is the one taken.
-    public async Task RunModMenu(string[] names, string[][] paths, Mo2ProfileTarget target)
+    // What MO2 asks for before it acts, answered with what the frontend asked the user
+    // for in a window they can see. Half of MO2's mod actions ask something — a
+    // priority, a separator, a name, a yes or no — and a hosted MO2 draws nothing, so
+    // an unanswered one used to hold its event loop until MO2 was killed.
+    internal sealed record Mo2MenuAnswer(string Type, string Value);
+
+    public async Task RunModMenu(string[] names, string[][] paths, Mo2ProfileTarget target, Mo2MenuAnswer? answer = null)
     {
         if (!CanStartHostAction || target != CurrentTarget) return;
         var caption = paths[0][^1];
@@ -1028,8 +1034,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             if (!IsConnected || target != CurrentTarget) return;
-            await Client.SendAsync("modMenuAction", new() { ["profilePath"] = target.ProfilePath,
-                ["names"] = names, ["path"] = paths }, timeout: TimeSpan.FromMinutes(30));
+            var request = new Dictionary<string, object> { ["profilePath"] = target.ProfilePath,
+                ["names"] = names, ["path"] = paths };
+            if (answer is not null) request["answer"] = new Dictionary<string, object> { ["type"] = answer.Type, ["value"] = answer.Value };
+            await Client.SendAsync("modMenuAction", request, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             Status = caption + " closed in MO2"; Changed?.Invoke();
         } catch (Exception error) { Report(error); }

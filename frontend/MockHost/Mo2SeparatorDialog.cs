@@ -63,4 +63,33 @@ internal static class Mo2SeparatorDialog
         if (result.ButtonId == ButtonDefinitionId.Accept && !string.IsNullOrWhiteSpace(result.InputText) && target == profile.CurrentTarget)
             await profile.CreateSeparator(above, result.InputText.Trim());
     }
+
+    // MO2's Send to... asks for a priority and for a separator in windows of its own.
+    // A hosted MO2 draws nothing, so those questions are asked here and the answer is
+    // handed to MO2's own action — see Mo2ModMenu.
+    public static async Task<int?> AskPriority(IWindowManager windows, Mo2LiveMod mod)
+    {
+        var dialog = DialogFactory.CreateStandardDialog("Send to priority", new StandardDialogParameters {
+            Text = $"Where in the load order should {mod.DisplayName} go? Lower numbers load first.",
+            InputLabel = "Priority", InputText = mod.Priority.ToString(),
+        }, [DialogStandardButtons.Cancel, new DialogButtonDefinition("Send", ButtonDefinitionId.Accept, ButtonAction.Accept, ButtonStyling.Primary)], DialogWindowSize.Small);
+        var result = await windows.ShowDialog(dialog, DialogWindowType.Modal);
+        if (result.ButtonId != ButtonDefinitionId.Accept) return null;
+        return int.TryParse((result.InputText ?? "").Trim(), out var priority) && priority >= 0 ? priority : null;
+    }
+
+    // One button per separator, which is how this frontend already asks a question
+    // with a handful of answers — the backup picker is the same shape.
+    public static async Task<string?> AskSeparator(IWindowManager windows, string[] separators)
+    {
+        var choices = separators.Take(12)
+            .Select(name => new DialogButtonDefinition(name, ButtonDefinitionId.From(name), ButtonAction.Accept))
+            .Prepend(DialogStandardButtons.Cancel).ToArray();
+        var dialog = DialogFactory.CreateStandardDialog("Send to separator", new StandardDialogParameters {
+            Text = "The mod is moved to the end of the separator you choose.",
+        }, choices, DialogWindowSize.Medium);
+        var result = await windows.ShowDialog(dialog, DialogWindowType.Modal);
+        if (result.ButtonId == ButtonDefinitionId.Cancel) return null;
+        return separators.FirstOrDefault(name => ButtonDefinitionId.From(name) == result.ButtonId);
+    }
 }

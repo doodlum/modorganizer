@@ -219,7 +219,7 @@ class ModActions:
         """The same for MO2's plugin list, which carries its own menu."""
         return self._list_menu(self._select_plugins, names, path)
 
-    def mod_menu(self, names, path=None):
+    def mod_menu(self, names, path=None, answer=None):
         """Read, or trigger one entry of, MO2's own mod context menu.
 
         With no path this reports what MO2 would show for the selection, which is
@@ -227,7 +227,7 @@ class ModActions:
         action of that name — so the wording, the conditions and the work itself are
         all MO2's, and nothing about what those actions do is reimplemented here.
         """
-        return self._list_menu(self._select_mods, names, path)
+        return self._list_menu(self._select_mods, names, path, answer)
 
     # MO2's other four lists, by the name each is built under in mainwindow.ui and
     # the model behind it. Every one of them answers customContextMenuRequested the
@@ -423,9 +423,10 @@ class ModActions:
         finally:
             ModActions._restore_tab(self.window, previous)
 
-    def _list_menu(self, select, names, path=None):
+    def _list_menu(self, select, names, path=None, answer=None):
         from PyQt6.QtCore import QEvent, QObject, QPoint, QTimer, Qt
-        from PyQt6.QtWidgets import QApplication, QMenu
+        from PyQt6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QInputDialog,
+                                     QListWidget, QMenu, QMessageBox)
         # One entry, or a choice of spellings for the same entry: MO2 renames several
         # of its own depending on where the menu was opened and whether a filter is
         # on, so the frontend offers every name MO2 uses for one action and the one
@@ -448,9 +449,60 @@ class ModActions:
                 if child is not None: return find(child, steps[1:])
             return None
 
+        asked = []
+
+        def answer_dialog(dialog):
+            """Answer a dialog one of MO2's actions has raised, or close it.
+
+            Half of MO2's mod actions ask something before they act — a priority, a
+            separator to send to, a name, a yes or no. A hosted MO2 draws nothing on
+            screen, so such a dialog is one nobody can see or answer, and it holds
+            MO2's event loop with every later request queued behind it until MO2 is
+            killed. That is what "Send to... → Separator..." did.
+
+            So the question is answered here with what the frontend already asked the
+            user for. A dialog nothing was supplied for is rejected rather than left
+            standing: the action does nothing, which is what cancelling it does, and
+            the host stays answerable either way.
+            """
+            kind = (answer or {}).get('type')
+            value = (answer or {}).get('value')
+            asked.append(type(dialog).__name__)
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+            try:
+                if isinstance(dialog, QInputDialog) and kind in ('int', 'text'):
+                    if kind == 'int': dialog.setIntValue(int(value))
+                    else: dialog.setTextValue(str(value))
+                    dialog.accept(); return
+                if isinstance(dialog, QMessageBox) and kind == 'button':
+                    wanted = QMessageBox.StandardButton.Yes if str(value).lower() in ('yes', 'true', 'ok') \
+                        else QMessageBox.StandardButton.No
+                    button = dialog.button(wanted)
+                    if button is not None: button.click(); return
+                    dialog.reject(); return
+                if kind == 'choice':
+                    # MO2's own ListDialog, and anything else shaped like it: a list of
+                    # choices and a button box.
+                    listing = dialog.findChild(QListWidget)
+                    if listing is not None:
+                        for row in range(listing.count()):
+                            if listing.item(row).text() == str(value):
+                                listing.setCurrentRow(row)
+                                dialog.accept(); return
+                        errors.append('MO2 does not offer "' + str(value) + '" to choose')
+                        dialog.reject(); return
+            except Exception as error:
+                errors.append(str(error))
+            errors.append('MO2 asked something this action supplied no answer for (' + type(dialog).__name__ + ')')
+            dialog.reject()
+
         class Capture(QObject):
             armed = True
             def eventFilter(inner, watched, event):
+                # A dialog raised by the action that was triggered, at any depth.
+                if isinstance(watched, QDialog) and event.type() == QEvent.Type.Polish and not inner.armed:
+                    QTimer.singleShot(0, lambda dialog=watched: answer_dialog(dialog))
+                    return False
                 if not inner.armed or not isinstance(watched, QMenu) or event.type() != QEvent.Type.Polish:
                     return False
                 inner.armed = False
@@ -484,7 +536,10 @@ class ModActions:
             if not visible: self.window.hide()
         if errors: raise ValueError(errors[0])
         if not read: raise ValueError('MO2 did not open that list’s menu')
-        return {'entries': read[0]} if path is None else {'triggered': path[0]}
+        if path is None: return {'entries': read[0]}
+        # What MO2 asked on the way, so the frontend can tell an action that ran from
+        # one that only got as far as a question nobody answered.
+        return {'triggered': path[0], 'asked': asked}
 
     def selection_links(self, names):
         """Read native conflict models; resolve names through the virtual filesystem."""
