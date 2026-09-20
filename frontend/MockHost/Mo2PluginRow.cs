@@ -17,13 +17,13 @@ internal static class Mo2PluginRow
     // one: a plugin's author is a field almost nothing fills in, so the column was a
     // heading over empty cells, taking width from the name and the description it
     // sat between.
-    internal const int Name = 0, Flags = 1, FormVersion = 2, HeaderVersion = 3, Description = 4;
+    internal const int Name = 0, Flags = 1, ModIndex = 2, FormVersion = 3, HeaderVersion = 4, Description = 5;
 
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        "*,24,76,84,*") };
+        "*,24,56,76,84,*") };
 
     internal static readonly (int Column, string Name)[] Headers = [
-        (Name, "Name"), (Flags, "Flags"), (FormVersion, "Form Version"),
+        (Name, "Name"), (Flags, "Flags"), (ModIndex, "Mod Index"), (FormVersion, "Form Version"),
         (HeaderVersion, "Header Version"), (Description, "Description")];
 
     internal static readonly HashSet<int> HiddenColumns = [];
@@ -32,6 +32,10 @@ internal static class Mo2PluginRow
 
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
         (Flags, 24, 250),
+        // Kept early, and so surviving a narrow panel: the index is what the game
+        // itself calls this plugin, and it is what a form id in a crash log or
+        // another mod's notes has to be matched against.
+        (ModIndex, 56, 380),
         (FormVersion, 76, 720), (HeaderVersion, 84, 860),
         (Description, 180, 1010)];
 
@@ -138,8 +142,17 @@ internal static class Mo2PluginRow
 
         var formVersion = Mo2TableRow.Cell(plugin.FormVersion, .6);
         var headerVersion = Mo2TableRow.Cell(plugin.HeaderVersion, .6);
+        // MO2 draws this one as the game reads it: a hexadecimal index, and FE:xxx
+        // for a light plugin. It is a number to be matched rather than read, so it is
+        // set in the same fixed-width face the rest of the application uses for one.
+        var modIndex = Mo2TableRow.Cell(plugin.ModIndex, .6);
+        modIndex.FontFamily = FontFamily.Parse("monospace");
+        ToolTip.SetTip(modIndex, plugin.ModIndex.Length > 0
+            ? "The index the game gives this plugin, which its form ids begin with"
+            : "The game gives no index to a plugin it is not loading");
         var description = Mo2TableRow.Cell(plugin.Description, .6);
         if (plugin.Description.Length > 0) ToolTip.SetTip(description, plugin.Description);
+        Mo2TableRow.Add(row, modIndex, ModIndex);
         Mo2TableRow.Add(row, formVersion, FormVersion); Mo2TableRow.Add(row, headerVersion, HeaderVersion);
         Mo2TableRow.Add(row, description, Description);
         void Refresh() {

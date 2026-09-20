@@ -32,6 +32,14 @@ internal static class Mo2ModlistLiveCheck
         if (plugins == 0) throw new Exception("The instance reports no plugins");
         if (active == 0) throw new Exception("The instance has no active plugins, so nothing would load in game");
 
+        // The index the game gives each plugin it loads, which the plugin list draws
+        // as a column of its own. An empty one on an active plugin means MO2 stopped
+        // reporting it and the column would be a heading over nothing.
+        var indexed = profile.Order.Plugins.Where(x => x.IsActive && x.ModIndex.Length > 0).ToArray();
+        Console.WriteLine($"  mod indices on {indexed.Length}/{active} active plugins" +
+            (indexed.Length > 0 ? $", first {string.Join(", ", indexed.Take(4).Select(x => x.ModIndex))}" : ""));
+        if (indexed.Length == 0) throw new Exception("No active plugin reports the index the game gives it");
+
         // No MO2 window may be on screen while this is read. A hosted MO2 draws
         // nothing, and a modal it put up instead would be one nobody could answer.
         var shown = Mo2NativeWindows.Titles()

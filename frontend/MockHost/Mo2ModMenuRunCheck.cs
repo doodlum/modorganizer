@@ -132,7 +132,13 @@ internal static class Mo2ModMenuRunCheck
                 try {
                     await Task.Delay(500);
                     File.WriteAllText(order, before);
-                } catch (IOException) { }
+                    // And then told to read it. MO2 holds the profile in memory and
+                    // writes it back out later, so a file put right underneath a
+                    // running MO2 is one it has not seen and will overwrite — the
+                    // first run of this looked restored and was not.
+                    await profile.RunModMenu([mod.Name], [["All Mods", "Refresh"]], target);
+                    await profile.Refresh();
+                } catch (Exception) { }
             }
             foreach (var folder in Directory.Exists(Path.Combine(instance, "mods"))
                          ? Directory.GetDirectories(Path.Combine(instance, "mods")) : []) {
