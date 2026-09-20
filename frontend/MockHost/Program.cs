@@ -57,6 +57,14 @@ internal static class Program
         if (args.FirstOrDefault() == "--hold-host-startup-lease") { Mo2HostStartupLeaseCheck.Hold(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-original-actions") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2OriginalActionCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-modlist-live") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModlistLiveCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-modlist-register") { Mo2ModlistRegisterCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-separator-state") { Mo2SeparatorStateCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-modlist-sidebar") { Mo2ModlistSidebarCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-modlist-install") { Mo2ModlistInstallCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-nexus-credential") { Mo2NexusCredentialCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-wabbajack-tool") { Mo2WabbajackToolCheck.Run().GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-modlists") { Mo2ModlistCatalogCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-fomod-scripts") { Mo2FomodScriptCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-data-filters") { Mo2DataFiltersCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-row-padding") { Mo2RowPaddingCheck.Run(); return; }
@@ -227,6 +235,7 @@ internal sealed class FixtureViewLocator : IViewLocator
         if (viewModel is Mo2OverwritePage overwrite) return new Mo2OverwriteView { ViewModel = overwrite };
         if (viewModel is Mo2ToolsPage tools) return new Mo2ToolsView { ViewModel = tools };
         if (viewModel is Mo2ComponentsPage components) return new Mo2ComponentsView { ViewModel = components };
+        if (viewModel is Mo2ModlistsPage modlists) return new Mo2ModlistsView { ViewModel = modlists };
         if (viewModel is Mo2DownloadsPage downloads) return new Mo2DownloadsView { ViewModel = downloads };
         if (viewModel is ScenarioInstalledPage { IsMo2Profile: true } liveMods) return Mo2DeferredView<ScenarioInstalledPage>.For(liveMods, "My Mods", model => new Mo2ModsView { ViewModel = model }, reuseBody: true);
         if (viewModel is not IViewModel vm) return null;

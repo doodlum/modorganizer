@@ -103,6 +103,7 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     public void RefreshFilter() => SetFilter(_filterChoice);
     public void SetFilter(int choice) {
         _filterChoice = choice;
+        Seed();
         var hidden = new HashSet<EntityId>();
         var collapsed = false;
         foreach (var mod in _profile.Mods.OrderBy(x => x.Priority)) {
@@ -155,16 +156,36 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
     public static readonly ComponentKey ConflictsKey = ComponentKey.From("MO2.Conflicts");
     public static readonly ComponentKey FlagsKey = ComponentKey.From("MO2.Flags");
     internal bool IsCollapsed(string name) => _collapsed.Contains(name);
-    internal void ToggleSeparator(string name) { if (!_collapsed.Add(name)) _collapsed.Remove(name); RefreshFilter(); }
+    internal void ToggleSeparator(string name) { if (!_collapsed.Add(name)) _collapsed.Remove(name); Remember(); RefreshFilter(); }
+
+    // Seeded once the profile has answered, because what a first visit should show
+    // depends on which separators exist. A profile switch reseeds: the collapsed set
+    // belongs to the profile, as it does in MO2.
+    private string _seeded = "";
+    private void Seed()
+    {
+        var profile = _profile.ProfilePath;
+        if (profile.Length == 0 || profile == _seeded) return;
+        var separators = _profile.Mods.Where(x => x.IsSeparator).Select(x => x.Name).ToArray();
+        if (separators.Length == 0 && _profile.Mods.Count == 0) return;
+        _seeded = profile;
+        _collapsed.Clear();
+        foreach (var name in Mo2SeparatorState.Initial(profile, separators)) _collapsed.Add(name);
+    }
+    private void Remember()
+    {
+        if (_seeded.Length > 0) Mo2SeparatorState.Save(_seeded, _collapsed);
+    }
     // MO2's Collapse all and Expand all, which act on every separator at once rather
     // than on the one whose chevron was pressed.
     internal void SetAllSeparators(bool collapsed)
     {
         _collapsed.Clear();
         if (collapsed) foreach (var mod in _profile.Mods.Where(x => x.IsSeparator)) _collapsed.Add(mod.Name);
+        Remember();
         RefreshFilter();
     }
-    internal void RenameSeparator(string oldName, string newName) { if (_collapsed.Remove(oldName)) _collapsed.Add(newName); }
+    internal void RenameSeparator(string oldName, string newName) { if (_collapsed.Remove(oldName)) { _collapsed.Add(newName); Remember(); } }
     internal int SeparatorCount(Mo2LiveMod separator) => _profile.Mods.OrderBy(m => m.Priority).SkipWhile(m => m.Id != separator.Id).Skip(1).TakeWhile(m => !m.IsSeparator && !m.IsOverwrite).Count();
     public void SetColumnFilters(string name, string version, string category, int endorsed = 0) {
         _nameFilter = name; _versionFilter = version; _categoryFilter = category; _endorsementFilter = endorsed; RefreshFilter();

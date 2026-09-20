@@ -15,10 +15,14 @@ internal static class Mo2ProfileFiles
 {
     public static string ReadGameDirectory(string root)
     {
+        // Matched on the key rather than on "gamePath=", because an ini written with
+        // spaces around the "=" is the same format and Wabbajack writes one.
         var value = File.ReadLines(Path.Combine(root, "ModOrganizer.ini"))
-            .Select(line => line.Trim()).FirstOrDefault(line => line.StartsWith("gamePath=", StringComparison.OrdinalIgnoreCase));
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.IndexOf('=') > 0 &&
+                line[..line.IndexOf('=')].Trim().Equals("gamePath", StringComparison.OrdinalIgnoreCase));
         if (value is null) throw new InvalidOperationException("MO2 has no configured game folder.");
-        return Resolve(value[(value.IndexOf('=') + 1)..], root);
+        return Resolve(value[(value.IndexOf('=') + 1)..].Trim(), root);
     }
     public static Mo2InstanceSnapshot Read(string root)
     {
@@ -69,7 +73,13 @@ internal static class Mo2ProfileFiles
             if (line.Length == 0 || line.StartsWith(';') || line.StartsWith('#')) continue;
             if (line.StartsWith('[') && line.EndsWith(']')) { section = line[1..^1]; continue; }
             var split = line.IndexOf('=');
-            if (split > 0) result[section + "/" + line[..split].Trim()] = line[(split + 1)..];
+            // The value is trimmed as well as the key. MO2 writes "key=value" with no
+            // spaces, but an ini written by anything else may put them around the "="
+            // and both are the same file format. Wabbajack does: its instances came
+            // back with a game of " New Vegas", which matched nothing, and a selected
+            // profile still wrapped in @ByteArray because the wrapper no longer
+            // started the string.
+            if (split > 0) result[section + "/" + line[..split].Trim()] = line[(split + 1)..].Trim();
         }
         return result;
     }

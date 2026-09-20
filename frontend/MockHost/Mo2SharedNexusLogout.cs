@@ -30,6 +30,11 @@ internal static class Mo2SharedNexusLogout
             }
         }
         if (cancellation.IsCancellationRequested) failures.Add("Cancelled; remaining instances were not changed.");
+        // Signing out means signing out of everything this application signed in to,
+        // including the copy held for Wabbajack. Dropped even on a partial failure:
+        // a credential nobody asked to keep should not outlive the intent to stop
+        // using it.
+        Mo2NexusCredential.Clear();
         return new(disconnected, unique.Length, failures);
     }
 }

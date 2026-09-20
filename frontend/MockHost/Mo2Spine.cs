@@ -39,15 +39,22 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             if (next == fingerprint) return;
             fingerprint = next;
             games.Clear(); targets.Clear();
-            foreach (var group in entries.GroupBy(x => x.Instance!.Game)) {
-                var game = group.Key;
+            // Grouped by what the sidebar is showing rather than by game. A Wabbajack
+            // modlist is its own MO2 instance and the whole point of it is that it
+            // stands apart from the plain game it is built on — grouping by game put
+            // Viva New Vegas and a person's own New Vegas behind one button, where
+            // picking one of them was left to the tie-break below.
+            foreach (var group in entries.GroupBy(Mo2SpineKey.For)) {
+                var key = group.Key;
+                var game = group.First().Instance!.Game;
                 var item = new ImageButtonViewModel {
-                    Name = game, Image = Mo2GameArt.SquareIcon(game),
+                    Name = Mo2SpineKey.Name(group.First()), Image = Mo2SpineKey.Image(group.First()),
                     Click = ReactiveCommand.CreateFromTask(async () => {
-                        var available = shell.CatalogEntries.Where(x => x.Instance?.Game == game && x.Instance.Profiles.Length > 0).ToArray();
+                        var available = shell.CatalogEntries.Where(x => x.Instance is not null &&
+                            Mo2SpineKey.For(x) == key && x.Instance.Profiles.Length > 0).ToArray();
                         if (available.Length == 0) { shell.OpenLoadouts(game); return; }
                         (Mo2Registration, Mo2ProfileSnapshot) target;
-                        if (remembered.TryGetValue(game, out var previous) && available.Any(x => x.Registration == previous.Registration && x.Instance!.Profiles.Any(p => p.Directory == previous.Profile.Directory)))
+                        if (remembered.TryGetValue(key, out var previous) && available.Any(x => x.Registration == previous.Registration && x.Instance!.Profiles.Any(p => p.Directory == previous.Profile.Directory)))
                             target = previous;
                         else {
                             // Multiple installations may manage the same game.
@@ -63,7 +70,7 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
                         else if (await shell.Profile.SelectProfile(target.Item1, target.Item2)) shell.ShowProfile();
                     })
                 };
-                targets.Add(item, game); games.Add(item);
+                targets.Add(item, key); games.Add(item);
             }
             RefreshSelection();
         }
@@ -76,12 +83,42 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
             var selectedPath = shell.Profile.ProfilePath.Length == 0 ? null : Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath);
             var selected = shell.CatalogEntries.FirstOrDefault(x => x.Registration.Endpoint == shell.Profile.Endpoint);
             var profile = selected?.Instance?.Profiles.FirstOrDefault(x => x.Directory == selectedPath);
-            if (selected?.Instance is not null && profile is not null) remembered[selected.Instance.Game] = (selected.Registration, profile);
-            foreach (var (item, game) in targets)
-                item.IsActive = !home && selectedPath is not null && selected?.Instance?.Game == game;
+            if (selected?.Instance is not null && profile is not null) remembered[Mo2SpineKey.For(selected)] = (selected.Registration, profile);
+            var active = selected?.Instance is null ? null : Mo2SpineKey.For(selected);
+            foreach (var (item, key) in targets)
+                item.IsActive = !home && selectedPath is not null && active == key;
 
         }
         shell.WorkspaceController.WhenAnyValue(x => x.ActiveWorkspace).Subscribe(_ => RefreshSelection());
         shell.Profile.Changed += RefreshSelection;
+    }
+}
+
+// What the sidebar shows an instance as.
+//
+// A base-game instance is its game, which is how it has always been and how two
+// MO2 setups for one game still share a button. A Wabbajack modlist is itself: its
+// own button, its own name and its own artwork, sitting beside the plain game it
+// was built on rather than inside it. Keyed on the instance directory, because two
+// modlists for one game are also two separate things.
+internal static class Mo2SpineKey
+{
+    internal static string For(Mo2CatalogEntry entry) =>
+        Mo2ModlistInstances.Describe(entry.Registration.Directory) is not null
+            ? "modlist:" + Mo2InstanceCatalog.LocalPath(entry.Registration.Directory)
+            : entry.Instance!.Game;
+
+    internal static string Name(Mo2CatalogEntry entry) =>
+        Mo2ModlistInstances.Describe(entry.Registration.Directory)?.Title ?? entry.Instance!.Game;
+
+    internal static Avalonia.Media.Imaging.Bitmap Image(Mo2CatalogEntry entry)
+    {
+        var game = entry.Instance!.Game;
+        if (Mo2ModlistInstances.Describe(entry.Registration.Directory) is not { } modlist)
+            return Mo2GameArt.SquareIcon(game);
+        var art = Mo2ModlistInstances.ArtworkPath(entry.Registration.Directory);
+        return File.Exists(art)
+            ? Mo2GameArt.SquareIconFile(modlist.NamespacedName, art, game)
+            : Mo2GameArt.SquareIcon(game);
     }
 }

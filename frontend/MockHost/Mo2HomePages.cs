@@ -244,7 +244,27 @@ internal static class Mo2GameArt
         if (Plated.TryGetValue(game, out var ready)) return ready;
         using var art = Icon(game);
         using var png = new MemoryStream(); art.Save(png); png.Position = 0;
+        return Square(game, png);
+    }
+
+    // The same square, from artwork that is already a file. A Wabbajack modlist
+    // publishes its own picture and is its own entry in the sidebar, so it is drawn
+    // as itself rather than borrowing the icon of the game it is built on — which
+    // is the one thing that would make it indistinguishable from the base game it
+    // has to sit beside. Falls back to the game when the picture cannot be read.
+    public static Bitmap SquareIconFile(string key, string file, string game)
+    {
+        if (Plated.TryGetValue(key, out var ready)) return ready;
+        try {
+            using var source = File.OpenRead(file);
+            return Square(key, source);
+        } catch (Exception) { return SquareIcon(game); }
+    }
+
+    private static Bitmap Square(string key, Stream png)
+    {
         using var source = SkiaSharp.SKBitmap.Decode(png);
+        if (source is null) throw new InvalidOperationException("Unreadable artwork");
         using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(PlateSize, PlateSize));
         surface.Canvas.Clear(SkiaSharp.SKColors.Transparent);
         using var paint = new SkiaSharp.SKPaint { IsAntialias = true };
@@ -264,7 +284,7 @@ internal static class Mo2GameArt
         using var composed = surface.Snapshot();
         using var encoded = composed.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
         using var bytes = encoded.AsStream();
-        return Plated[game] = new Bitmap(bytes);
+        return Plated[key] = new Bitmap(bytes);
     }
 
     // Opaque here means "the plate behind it can never show", which is what decides

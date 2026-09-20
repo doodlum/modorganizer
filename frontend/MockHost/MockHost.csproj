@@ -20,7 +20,8 @@
     <!-- The FOMOD engine Vortex and NMA both use: a plain library, independent of
          NMA loadout model, so the frontend can run a script and be told which
          files to install without standing up a loadout to install them into. -->
-    <PackageReference Include="FomodInstaller.Interface" Version="1.2.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
+        <PackageReference Include="FomodInstaller.Interface" Version="1.2.0" />
     <PackageReference Include="FomodInstaller.Scripting.XmlScript" Version="1.0.0" />
     <PackageReference Include="SteamKit2" Version="3.3.1" />
     <!-- Security backport for the 0.21.x dependency used by Avalonia and XDG portals.

@@ -296,6 +296,61 @@ running host explicitly, which is how live sessions and the live checks connect.
 
 `--add-game "<game>"` does the same from a shell, without opening the window.
 
+## Wabbajack modlists
+
+The Home area has a **Modlists** page listing what Wabbajack publishes, filtered
+by default to the games found on this PC that MO2 can manage. Installing one
+produces a *separate* MO2 instance, which appears in the sidebar under the
+modlist's own name and artwork beside a plain instance of the same game rather
+than merging with it.
+
+Wabbajack's own window is never opened. The frontend downloads the published
+Wabbajack release, keeps it under its own data directory the same way it keeps
+MO2, and drives `cli/wabbajack-cli.exe`. That build is self-contained win-x64, so
+nothing has to be installed for it to run — including on ARM64, where it runs
+under the same emulation MO2 does.
+
+**The gallery** is read directly from the JSON Wabbajack publishes
+(`repositories.json`, one modlists file per repository, `featured_lists.json`)
+rather than through the CLI, which can only write names to a log. Around 220
+lists are on offer, of which around 195 are for games MO2 manages; the rest —
+Stardew Valley, Cyberpunk, Baldur's Gate 3 — are left out rather than guessed at.
+Wabbajack names a game by its own enum and MO2 names it its own way; Wabbajack
+publishes the pairing itself as `MO2Name`, and that pairing is what
+`Mo2ModlistCatalog` carries.
+
+**One sign-in.** Wabbajack would otherwise run a Nexus login of its own. Instead
+the credential this application already holds is handed to the run in its
+environment, and premium downloads are premium because the account is. Two
+variables are needed, not one: Wabbajack's Nexus API reads `NEXUS_API_KEY`, but
+its *downloader* asks the token store directly and falls back to
+`NEXUS_OAUTH_INFO`, throwing `No login data for nexus-oauth-info` before fetching
+a single file otherwise. The second is that store's own record with the OAuth half
+empty, which is how Wabbajack represents a login that is an API key.
+
+The credential is kept by `Mo2NexusCredential`: sealed with the user's own
+data-protection key on Windows, owner-only elsewhere, written only when a sign-in
+succeeds and deleted on sign-out. A sign-in that happened before this existed
+still counts — MO2 keeps the same credential in the Windows credential store under
+`ModOrganizer2_APIKEY`, and that entry is read as a fallback. Nothing writes to it.
+
+**The instance.** Wabbajack writes `ModOrganizer.ini` and `portable.txt` itself, so
+its output is already the shape the frontend creates for a base game. The bridge is
+installed beside them, which is what makes it drivable, along with a note of the
+list it came from (`nexus-modlist.json`) and its artwork. That note is what keeps it
+separate in the sidebar: `Mo2SpineKey` groups by it rather than by the game MO2
+reports, because Viva New Vegas and a person's own New Vegas both report New Vegas.
+
+Downloads are shared across modlists rather than kept per instance, since Wabbajack
+skips what it has already fetched and these run to tens of gigabytes.
+
+Checks: `--check-modlists` reads the live gallery, `--check-wabbajack-tool`
+downloads Wabbajack and proves it runs here, `--check-nexus-credential` proves the
+one sign-in reaches it without printing the credential, `--check-modlist-sidebar`
+proves a modlist stands apart from its base game, and `--check-modlist-install
+"<title>"` installs a real list end to end while watching that no Wabbajack window
+ever appears.
+
 ## Reference and source reuse
 
 `upstream` pins NexusMods.App release `v0.21.1`, commit

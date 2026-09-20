@@ -93,6 +93,10 @@ internal static class Mo2SharedNexusLogin
                     failures.Add(label + ": connection was not confirmed. Refresh before retrying.");
                 }
             }
+            // Kept only once a sign-in has actually worked somewhere, so a rejected
+            // credential is never stored. This is what Wabbajack is handed later,
+            // instead of it running a sign-in of its own.
+            if (connected > 0) Mo2NexusCredential.Save(key);
             if (cancellationToken.IsCancellationRequested) failures.Add("Cancelled; remaining instances were not changed.");
             return new(connected, registrations.Select(x => x.Endpoint).Distinct().Count(), username, failures, premium, supporter, Scope: AccountScope(registrations), UserId: identity);
         } finally {

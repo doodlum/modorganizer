@@ -319,4 +319,47 @@ internal static class Mo2OwnedInstances
             CopyTree(child, Path.Combine(destination, Path.GetFileName(child)));
         }
     }
+
+    // The same silence, written into an instance rather than into the machine.
+    //
+    // The flags above go to the shared Mod Organizer Team settings, which a portable
+    // instance does not read: it keeps its settings in its own ModOrganizer.ini. The
+    // instances this application writes are quiet because that ini says so — and an
+    // instance written by something else does not. A Wabbajack install came up on
+    // "Show tutorial?", a modal nobody could answer because a hosted MO2 draws
+    // nothing on screen, with every bridge request queued behind it for good.
+    //
+    // Only missing keys are added, and only in [General]. Everything the other
+    // program wrote is left exactly as it wrote it.
+    internal static void SuppressInstancePrompts(string instance)
+    {
+        var path = Path.Combine(instance, "ModOrganizer.ini");
+        if (!File.Exists(path)) return;
+        try {
+            var wanted = new Dictionary<string, string> {
+                // What makes MO2 ask about the tutorial at all.
+                ["first_start"] = "false",
+                // Without a version it treats the instance as pre-dating the current
+                // category system and offers to migrate it.
+                ["version"] = InstalledVersion ?? "2.5.2",
+            };
+            var lines = File.ReadAllLines(path).ToList();
+            var section = "General";
+            var general = -1;
+            for (var i = 0; i < lines.Count; i++) {
+                var line = lines[i].Trim();
+                if (line.StartsWith('[') && line.EndsWith(']')) { section = line[1..^1]; if (section == "General") general = i; continue; }
+                var split = line.IndexOf('=');
+                if (split <= 0 || section != "General") continue;
+                wanted.Remove(line[..split].Trim());
+            }
+            if (wanted.Count == 0) return;
+            if (general < 0) { lines.Insert(0, "[General]"); general = 0; }
+            foreach (var (key, value) in wanted) lines.Insert(general + 1, $"{key}={value}");
+            File.WriteAllLines(path, lines);
+        } catch (Exception) {
+            // An instance that cannot be quietened is still an instance; the failure
+            // shows up as MO2 asking something, not as a broken install.
+        }
+    }
 }

@@ -56,6 +56,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     private readonly PageData _gameLoadoutsPage;
     private readonly PageData _settingsPage;
     private readonly PageData _componentsPage;
+    private readonly PageData _modlistsPage;
     private Mo2TopBar? _topBar;
     internal System.Reactive.Subjects.BehaviorSubject<string> NexusAccountStatus { get; } = new("Checking Nexus account…");
     private readonly Mo2HealthDetailsFactory _healthDetailsFactory;
@@ -192,6 +193,9 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var components = new FixturePageFactory("3f2b6c41-9d7a-45e2-9c0f-6d1f2a7c8b34", "Components", Mo2ComponentsPage.ComponentsIcon,
             () => new Mo2ComponentsPage(windows, services.GetRequiredService<ISettingsManager>()));
         _componentsPage = components.Data;
+        var modlists = new FixturePageFactory("7c1d9a52-4e86-4f3b-9a21-0b5e6c7d8e91", "Modlists", Mo2ModlistsPage.ModlistsIcon,
+            () => new Mo2ModlistsPage(windows, this));
+        _modlistsPage = modlists.Data;
         // NMA's own settings page, the same one the fixtures use, rather than the
         // instance-management page the gear used to open. The frontend creates and
         // owns its MO2 instances now, so there is nothing left for the user to
@@ -219,10 +223,10 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var saves = new FixturePageFactory("c0896704-91ec-4246-8651-85998f4a15b1", "Saves", IconValues.Save, () => new Mo2SavesPage(windows, Profile));
         _savesPage = saves.Data;
         foreach (var factory in new[] { mods, plugins, downloads, health, tools, overwrite, externalFiles, logs, archives, data, saves }) factory.IsAvailable = context => context is Mo2WorkspaceContext;
-        foreach (var factory in new[] { games, profiles, settings, components }) factory.IsAvailable = context => context is HomeContext;
+        foreach (var factory in new[] { games, profiles, settings, components, modlists }) factory.IsAvailable = context => context is HomeContext;
         _healthDetailsFactory = new Mo2HealthDetailsFactory(windows, this);
-        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, settings.Data, components.Data, health.Data, tools.Data, overwrite.Data, externalFiles.Data, logs.Data, archives.Data, data.Data, saves.Data], _healthDetailsFactory.Id);
-        services.Add(new PageFactoryController([collections, saves, data, archives, logs, overwrite, externalFiles, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, settings, components, new NewTabPageFactory(services)]));
+        _layout = new Mo2WorkspaceLayout([mods.Data, plugins.Data, downloads.Data, profiles.Data, games.Data, gameLoadouts.Data, settings.Data, components.Data, modlists.Data, health.Data, tools.Data, overwrite.Data, externalFiles.Data, logs.Data, archives.Data, data.Data, saves.Data], _healthDetailsFactory.Id);
+        services.Add(new PageFactoryController([collections, saves, data, archives, logs, overwrite, externalFiles, tools, health, _healthDetailsFactory, mods, plugins, downloads, profiles, games, gameLoadouts, settings, components, modlists, new NewTabPageFactory(services)]));
         var controllerType = typeof(WorkspaceViewModel).Assembly.GetType("NexusMods.App.UI.WorkspaceSystem.WorkspaceController", true)!;
         WorkspaceController = (IWorkspaceController)Activator.CreateInstance(controllerType, this, services)!;
         void ReplaceCollection(string instance, string oldName, PageData replacement) {
@@ -255,7 +259,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         _homeWorkspace = home.Id;
         _layout.Restore(home, WorkspaceController);
         WorkspaceController.ChangeActiveWorkspace(home.Id);
-        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data, components.Data);
+        HomeMenu = new ScenarioHomeMenu(WorkspaceController, games.Data, profiles.Data, components.Data, modlists.Data);
         _profileWorkspace = CreateProfileWorkspace(new Mo2WorkspaceContext()).Id;
         WorkspaceController.ChangeActiveWorkspace(_profileWorkspace);
         Profile.Changed += () => {
@@ -332,6 +336,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
     public void OpenGames() => OpenHomePage(_gamesPage);
     public void OpenSettings() => OpenHomePage(_settingsPage);
     public void OpenComponents() => OpenHomePage(_componentsPage);
+    public void OpenModlists() => OpenHomePage(_modlistsPage);
     public void OpenProfiles() => OpenLoadouts(null);
     public void OpenLoadouts(string? game) => OpenHomePage(game is null ? _profilesPage : _gameLoadoutsPage with { Context = new Mo2GamePageContext(_gameLoadoutsPage.FactoryId, game) }, true);
     public void OpenHealthDetails(Mo2HealthDetailsContext context, NavigationInformation info)
@@ -407,6 +412,54 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         } catch (Exception error) {
             Report($"Could not add {game}: {error.Message}");
         } finally { _addingGame = false; }
+    }
+
+    // Installing a Wabbajack modlist, and then being in it.
+    //
+    // The same shape as adding a game, because the result is the same kind of thing:
+    // an MO2 instance this application owns, registered so the sidebar shows it and
+    // able to start its own host. What differs is where it came from and that it
+    // keeps its own name rather than the game's, so it stands beside a plain
+    // instance of that game instead of merging with it.
+    //
+    // The Nexus login already held here is handed to Wabbajack for the run. A person
+    // who signed in to this application is not asked to sign in again, and premium
+    // downloads are premium because the account is.
+    private bool _installingModlist;
+    public async Task InstallModlist(Mo2Modlist list)
+    {
+        if (_installingModlist) return;
+        _installingModlist = true;
+        void Report(string? text) => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+            Notice = text; NoticeChanged?.Invoke();
+        });
+        try {
+            var key = Mo2NexusCredential.Read();
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidOperationException("Sign in to Nexus Mods first: a modlist downloads from your account.");
+
+            var result = await Task.Run(() => Mo2WabbajackInstall.Run(list, key, Report));
+            Catalog.Add(result.Instance);
+            var registration = Catalog.Read().Single(x => x.Registration.Directory == result.Instance).Registration;
+            Catalog.SetLauncher(registration, Path.Combine(result.Instance, "ModOrganizer.exe"));
+            RefreshCatalog();
+            Report(null);
+            await SelectInstance(registration);
+        } catch (Exception error) {
+            Report($"Could not install {list.Title}: {error.Message}");
+        } finally { _installingModlist = false; }
+    }
+
+    // Going to an instance by the instance rather than by its game: two instances of
+    // one game are two places to be, and SelectGame can only name one of them.
+    public async Task<bool> SelectInstance(Mo2Registration registration)
+    {
+        var entry = Catalog.Read().FirstOrDefault(x => x.Registration.Directory == registration.Directory);
+        if (entry?.Instance is not { Profiles.Length: > 0 } instance) return false;
+        var profile = instance.Profiles.FirstOrDefault(x => x.Name == instance.SelectedProfile) ?? instance.Profiles[0];
+        if (!await Profile.SelectProfile(entry.Registration, profile)) return false;
+        ShowProfile();
+        return true;
     }
     // NMA hosts login and welcome as in-window overlays; this is that layer.
     internal Mo2OverlayHost? Overlays { get; private set; }
@@ -610,6 +663,12 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Grid.SetRow(launchPanel, 1);
         ((Grid)profileSidebar.Content!).Children.Add(launchPanel);
         var homeSidebar = new NexusMods.App.UI.LeftMenu.Home.HomeLeftMenuView { ViewModel = HomeMenu };
+        // Modlists sits with My Games and My Loadouts, above the control gallery:
+        // it is somewhere to go and find something, which is what the pages above it
+        // are, and the gallery is a developer's page that belongs last.
+        if (HomeMenu.LeftMenuItemModlists is { } modlistsItem)
+            homeSidebar.FindControl<StackPanel>("LeftMenuStack")!.Children.Add(
+                new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = modlistsItem });
         if (HomeMenu.LeftMenuItemComponents is { } componentsItem)
             homeSidebar.FindControl<StackPanel>("LeftMenuStack")!.Children.Add(
                 new NexusMods.App.UI.LeftMenu.Items.LeftMenuItemView { ViewModel = componentsItem });
