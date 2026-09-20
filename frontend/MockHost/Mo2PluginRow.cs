@@ -23,8 +23,15 @@ internal static class Mo2PluginRow
         "*,24,56,76,84,*") };
 
     internal static readonly (int Column, string Name)[] Headers = [
-        (Name, "Name"), (Flags, "Flags"), (ModIndex, "Mod Index"), (FormVersion, "Form Version"),
+        // MO2 spells this one out as "Mod Index". It is headed with the hash a number
+        // is written after, which is what the column holds and what the heading has
+        // room for — the words took more width than the two characters under them.
+        (Name, "Name"), (Flags, "Flags"), (ModIndex, "#"), (FormVersion, "Form Version"),
         (HeaderVersion, "Header Version"), (Description, "Description")];
+
+    // What the hash stands for, for the heading's tooltip and for anything reading
+    // the list out.
+    internal const string ModIndexName = "Mod Index";
 
     internal static readonly HashSet<int> HiddenColumns = [];
     internal static readonly (int Column, string Name)[] OptionalColumns =

@@ -90,10 +90,18 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // MO2's own headers, from the same table the row's columns come from. The
         // flags column takes the glyph it holds as its heading, as the mod list's
         // glyph columns do — a word in a column one icon wide is drawn as "…".
-        foreach (var (column, text) in Mo2PluginRow.Headers)
-            Mo2ModRow.Add(headings, column == Mo2PluginRow.Flags
+        foreach (var (column, text) in Mo2PluginRow.Headers) {
+            var heading = column == Mo2PluginRow.Flags
                 ? Mo2TableRow.GlyphHeading("mdi-flag", text) : column == Mo2PluginRow.Name
-                    ? Mo2TableRow.NameHeading(text) : Mo2TableRow.Heading(text), column);
+                    ? Mo2TableRow.NameHeading(text) : Mo2TableRow.Heading(text);
+            // A hash on its own says what shape the column is, not what it means.
+            if (column == Mo2PluginRow.ModIndex) {
+                ToolTip.SetTip(heading, Mo2PluginRow.ModIndexName +
+                    ": the index the game gives each plugin it loads, which its form ids begin with");
+                Avalonia.Automation.AutomationProperties.SetName(heading, Mo2PluginRow.ModIndexName);
+            }
+            Mo2ModRow.Add(headings, heading, column);
+        }
         mainGrid.Children.Add(headings);
         var pluginRail = editor.FindControl<Grid>("TrophyBarColumnGrid")!;
         Grid.SetRowSpan(pluginRail, 2);
