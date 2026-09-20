@@ -135,7 +135,16 @@ internal static class Mo2ModRow
                 foreach (var item in items.OfType<MenuItem>()) item.IsEnabled = ready && item.Tag is not false;
             return ready;
         }
-        var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions, ownContextMenu: mod.IsSeparator);
+        // Every row carries its menu on the row itself, not only separators.
+        //
+        // An ordinary mod used to get a ContextFlyout on the grid this row draws into,
+        // and a right-click only reached it when it landed on a part of that grid that
+        // did not swallow the press — the toggle, the drag handle, a glyph and the
+        // cells' own text each took some of them. That is why the menu came up on some
+        // clicks and not others. A separator was never affected, because a separator
+        // took the other route: a ContextMenu on the TreeDataGridRow, which is the one
+        // control the whole row is inside. That route is now what every row takes.
+        var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions);
         grip.Width = Mo2TableRow.GripWidth;
         if (mod.IsSeparator) {
             var group = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.GripWidth},{Mo2TableRow.ActionSize},18,Auto,*"),
@@ -231,7 +240,6 @@ internal static class Mo2ModRow
         ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
         var nameCell = Mo2TableRow.NameCell(grip, toggle, title);
         Add(row, nameCell, Name);
-        row.ContextFlyout = Mo2EntryMenu.Flyout(Actions);
 
         // Conflicts, Flags and Content are glyph columns in MO2, each summarising
         // what its tooltip spells out. Material icons stand in for MO2's own.
