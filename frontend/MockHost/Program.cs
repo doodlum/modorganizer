@@ -59,6 +59,8 @@ internal static class Program
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-live") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModlistLiveCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-modlist-register") { Mo2ModlistRegisterCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-mod-columns") { Mo2ModColumnDefaultCheck.Run(); return; }
+        if (args.FirstOrDefault() == "--check-mod-flags") { Mo2ModFlagsCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-separator-state") { Mo2SeparatorStateCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-modlist-sidebar") { Mo2ModlistSidebarCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-modlist-install") { Mo2ModlistInstallCheck.Run(args.ElementAtOrDefault(1)).GetAwaiter().GetResult(); return; }

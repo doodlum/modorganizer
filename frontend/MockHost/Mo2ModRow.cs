@@ -38,7 +38,14 @@ internal static class Mo2ModRow
     // Columns the user has switched off. The responsive widths below still apply: a
     // column shows only when it both fits and has not been hidden. Only the name is
     // not optional, matching MO2, which lets every other column be turned off.
-    internal static readonly HashSet<int> HiddenColumns = [];
+    //
+    // Starts where MO2 starts. MO2 has all of these columns and hides several until
+    // they are asked for — its mod list hides Content, Nexus ID, Uploader, Game,
+    // Install time and Notes on a first run. This list showed every column it had,
+    // so a fresh window carried three MO2 would not have drawn, and Notes showing
+    // where MO2 shows nothing reads as a column MO2 does not have.
+    internal static readonly int[] HiddenByDefault = [Content, Uploader, Notes];
+    internal static readonly HashSet<int> HiddenColumns = [.. HiddenByDefault];
     internal static readonly (int Column, string Name)[] OptionalColumns =
         Headers.Where(x => x.Column != Name).ToArray();
 
@@ -277,9 +284,14 @@ internal static class Mo2ModRow
         var isEndorsed = (mod.State & 0x10) != 0;
         // MO2 shows endorsement as one of the flag glyphs rather than a column, so it
         // rides along with the flags it belongs among.
-        var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline"), Size = 14,
-            Opacity = mod.NexusId <= 0 ? 0 : isEndorsed ? 1 : .45, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(endorsed, isEndorsed ? "Endorsed on Nexus Mods" : "MO2 does not report this mod as endorsed");
+        //
+        // Only when it is endorsed. A mod nobody has endorsed yet used to draw a faded
+        // thumb of its own, which is the ordinary state of almost every mod — on a
+        // modlist of a hundred and fifty that is a column of grey thumbs saying
+        // nothing. A flag is for something being true of a row, and "not yet" is not.
+        var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon("mdi-thumb-up"), Size = 14,
+            IsVisible = isEndorsed, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(endorsed, "Endorsed on Nexus Mods");
         // Distinct conditions share the Flags column, not the same pixels.
         var flagCell = new StackPanel { Name = "ModFlagCell", Orientation = Orientation.Horizontal,
             Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center,
@@ -294,13 +306,8 @@ internal static class Mo2ModRow
             uploader.Text = mod.Uploader;
             notes.Text = mod.Notes; PaintNotes();
             ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
-            var nextEndorsed = (mod.State & 0x10) != 0;
-            if (nextEndorsed != isEndorsed) {
-                isEndorsed = nextEndorsed;
-                endorsed.Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline");
-            }
-            endorsed.Opacity = mod.NexusId <= 0 ? 0 : (mod.State & 0x10) != 0 ? 1 : .45;
-            ToolTip.SetTip(endorsed, (mod.State & 0x10) != 0 ? "Endorsed on Nexus Mods" : "MO2 does not report this mod as endorsed");
+            isEndorsed = (mod.State & 0x10) != 0;
+            endorsed.IsVisible = isEndorsed;
         }
         row.AttachedToVisualTree += (_,_) => { profile.Changed += Refresh; Refresh(); };
         row.DetachedFromVisualTree += (_,_) => profile.Changed -= Refresh;

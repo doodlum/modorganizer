@@ -236,7 +236,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             return new Mo2LiveMod(id, name, mod.GetProperty("displayName").GetString()!, mod.GetProperty("state").GetInt32(), mod.GetProperty("priority").GetInt32(),
                 mod.TryGetProperty("priorityText", out var priorityText) ? priorityText.GetString() ?? "" : mod.GetProperty("priority").GetInt32().ToString(),
                 mod.TryGetProperty("conflicts", out var conflicts) ? conflicts.GetString() ?? "" : "",
-                mod.TryGetProperty("flags", out var flags) ? flags.GetString() ?? "" : "",
+                Mo2ModFlags.Shown(mod.TryGetProperty("flags", out var flags) ? flags.GetString() ?? "" : ""),
                 mod.TryGetProperty("overwrite", out var overwrite) && overwrite.GetBoolean(),
                 mod.TryGetProperty("nexusId", out var nexusId) ? nexusId.GetInt32() : 0,
                 mod.TryGetProperty("separator", out var separator) && separator.GetBoolean(),
