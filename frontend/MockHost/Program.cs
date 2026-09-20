@@ -63,6 +63,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--check-mod-menu-run") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuRunCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-backup") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2ModBackupCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-mod-menu") { if (args.Length < 2) throw new ArgumentException("Expected bridge directory"); Mo2ModMenuAuditCheck.Run(args[1], args.ElementAtOrDefault(2)).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-desktop-path") { Mo2DesktopPathCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-mod-columns") { Mo2ModColumnDefaultCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-mod-flags") { Mo2ModFlagsCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-separator-state") { Mo2SeparatorStateCheck.Run(); return; }
@@ -1138,7 +1139,8 @@ public partial class MockApp : Application
                             var folder = Mo2InstanceCatalog.LocalPath(snapshot.GetProperty("instance").GetProperty("downloadsPath").GetString()!);
                             var mounts = await live.DesktopInterop.GetFileSystemMounts();
                             if (mounts.Length == 0) throw new InvalidOperationException("Native desktop service returned no filesystem mounts");
-                            live.DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder));
+                            live.DesktopInterop.OpenDirectory(
+                                NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(Mo2InstanceCatalog.DesktopPath(folder)));
                             Console.WriteLine("DESKTOP: native Linux service reports " + mounts.Length + " mounts; requested opening MO2 downloads folder " + folder);
                             await Task.Delay(2000);
                         }

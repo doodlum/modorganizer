@@ -97,4 +97,50 @@ internal sealed class Mo2InstanceCatalog
         if (cache < 0) return path;
         return path[..(start + "/AppData/Local/".Length)] + path[(cache + tail.Length)..];
     }
+
+    // The other direction, for handing a path to something outside this application.
+    //
+    // Everything above collapses both spellings to the virtual one, because that is
+    // what comparing this application's idea of a folder with MO2's needs. Explorer
+    // is not comparing: it has to find the folder, and it is not inside the view that
+    // makes the virtual spelling mean anything. Handed one it cannot resolve, it
+    // opens on its own home instead of the folder — which is what "Open in Explorer"
+    // and "Reveal in Explorer" did.
+    //
+    // Outside a packaged application there is no redirection and nothing to undo, so
+    // this returns the path it was given.
+    internal static string DesktopPath(string path)
+    {
+        var full = LocalPath(path).Replace('\\', '/');
+        if (!OperatingSystem.IsWindows()) return Path.GetFullPath(full);
+
+        const string marker = "/AppData/Local/";
+        var start = full.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return Path.GetFullPath(full);
+        var rest = full[(start + marker.Length)..];
+        if (rest.Length == 0 || rest.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            return Path.GetFullPath(full);
+
+        // Found by looking rather than by asking. A redirected process is not told it
+        // is one: the folder APIs still answer with the plain per-user directory, and
+        // only the bytes go elsewhere. So the store this application's files are
+        // really in is the package whose cache holds them.
+        var packages = Path.Combine(full[..(start + marker.Length)].Replace('/', Path.DirectorySeparatorChar), "Packages");
+        if (_realRoot is null && Directory.Exists(packages)) {
+            try {
+                foreach (var package in Directory.EnumerateDirectories(packages)) {
+                    var candidate = Path.Combine(package, "LocalCache", "Local");
+                    if (!Directory.Exists(Path.Combine(candidate, rest.Replace('/', Path.DirectorySeparatorChar))) &&
+                        !File.Exists(Path.Combine(candidate, rest.Replace('/', Path.DirectorySeparatorChar)))) continue;
+                    _realRoot = candidate; break;
+                }
+            } catch (Exception) { }
+            _realRoot ??= "";
+        }
+        if (string.IsNullOrEmpty(_realRoot)) return Path.GetFullPath(full);
+        return Path.GetFullPath(Path.Combine(_realRoot, rest.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    // Empty once looked for and not found, so the look happens once.
+    private static string? _realRoot;
 }

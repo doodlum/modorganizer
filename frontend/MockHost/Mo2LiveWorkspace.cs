@@ -138,12 +138,16 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         Profile.Changed += RefreshCatalog;
         // MO2's Open in Explorer opens the folder in the prefix; the frontend opens it
         // on the desktop it is running on, which is what the interop here is for.
-        Profile.OpenLocalFolder = folder =>
-            DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder));
-        Profile.OpenLocalFile = file =>
-            DesktopInterop.OpenFile(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(file));
-        Profile.RevealLocalFile = file =>
-            DesktopInterop.OpenFileInDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(file));
+        //
+        // Spelled the way the desktop can resolve it. A packaged build of this
+        // application sees its own data under a path that only means anything inside
+        // that view, and the file manager is not inside it — handed one it opened on
+        // its own home rather than on the folder.
+        static NexusMods.Paths.AbsolutePath Desktop(string path) =>
+            NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(Mo2InstanceCatalog.DesktopPath(path));
+        Profile.OpenLocalFolder = folder => DesktopInterop.OpenDirectory(Desktop(folder));
+        Profile.OpenLocalFile = file => DesktopInterop.OpenFile(Desktop(file));
+        Profile.RevealLocalFile = file => DesktopInterop.OpenFileInDirectory(Desktop(file));
         var services = new FixtureServices();
         var windows = new FixtureWindows { ActiveWindow = this };
         Profile.ConfirmRemoval = mods => Mo2SeparatorDialog.ConfirmRemoval(windows, mods);
@@ -172,7 +176,7 @@ internal sealed class Mo2LiveWorkspace : IWorkspaceWindow
         var mods = new FixturePageFactory("bcde2778-955d-4b57-a14e-85a878b82101", "My Mods", IconValues.CollectionsOutline,
             () => new ScenarioInstalledPage(services, windows, Profile, Profile.Order, openDownloads: OpenDownloads) {
                 CreateCollection = () => Mo2Collections.Create(windows, Profile), Instances = () => CatalogEntries,
-                OpenFolder = folder => DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(folder)) });
+                OpenFolder = folder => DesktopInterop.OpenDirectory(Desktop(folder)) });
         var collections = new Mo2CollectionFactory(services, windows, Profile, OpenDownloads);
         _createCollection = () => Mo2Collections.Create(windows, Profile);
         _removeCollection = key => Mo2Collections.Remove(windows, Profile, key);

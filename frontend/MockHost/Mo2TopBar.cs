@@ -71,7 +71,8 @@ internal sealed class Mo2TopBar : AViewModel<ITopBarViewModel>, ITopBarViewModel
         }
         ViewAppLogsCommand = ReactiveCommand.Create(() => {
             UpdateLogs();
-            if (LogsDirectory is { } directory) shell.DesktopInterop.OpenDirectory(NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(directory));
+            if (LogsDirectory is { } directory) shell.DesktopInterop.OpenDirectory(
+                NexusMods.Paths.FileSystem.Shared.FromUnsanitizedFullPath(Mo2InstanceCatalog.DesktopPath(directory)));
         }, _canOpenLogs.DistinctUntilChanged());
         shell.Profile.Changed += UpdateLogs;
         UpdateLogs();
