@@ -17,17 +17,22 @@ internal static class Mo2PluginRow
     // one: a plugin's author is a field almost nothing fills in, so the column was a
     // heading over empty cells, taking width from the name and the description it
     // sat between.
-    internal const int Name = 0, Flags = 1, ModIndex = 2, FormVersion = 3, HeaderVersion = 4, Description = 5;
+    // MO2 has four more of these — Author, Form Version, Header Version and
+    // Description — and shows them. None is drawn: a plugin's author and description
+    // are fields almost nothing fills in, and its form and header versions are the
+    // file format's own numbers, which matter when something is wrong with a plugin
+    // rather than while reading a load order. All four are on the row's tooltip, so
+    // what is gone is the width they took from the name, not the information.
+    internal const int Name = 0, Flags = 1, ModIndex = 2;
 
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        "*,24,56,76,84,*") };
+        "*,24,56") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         // MO2 spells this one out as "Mod Index". It is headed with the hash a number
         // is written after, which is what the column holds and what the heading has
         // room for — the words took more width than the two characters under them.
-        (Name, "Name"), (Flags, "Flags"), (ModIndex, "#"), (FormVersion, "Form Version"),
-        (HeaderVersion, "Header Version"), (Description, "Description")];
+        (Name, "Name"), (Flags, "Flags"), (ModIndex, "#")];
 
     // What the hash stands for, for the heading's tooltip and for anything reading
     // the list out.
@@ -42,18 +47,23 @@ internal static class Mo2PluginRow
         // Kept early, and so surviving a narrow panel: the index is what the game
         // itself calls this plugin, and it is what a form id in a crash log or
         // another mod's notes has to be matched against.
-        (ModIndex, 56, 380),
-        (FormVersion, 76, 720), (HeaderVersion, 84, 860),
-        (Description, 180, 1010)];
+        (ModIndex, 56, 380)];
 
     internal static void Fit(Grid row, double width) =>
         Mo2TableRow.Fit(row, width, Optional, HiddenColumns.Contains,
             chrome: Mo2TableRow.RailWidth + Mo2TableRow.GripWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
+    // What the row does not have room to draw. The four columns MO2 has and this
+    // list does not are here, so dropping them cost the width they took rather than
+    // the information itself.
     internal static string Details(ScenarioPlugin plugin) => string.Join("\n", new[] {
         plugin.DisplayName,
         plugin.ModName.Length > 0 ? "Mod: " + plugin.ModName : "",
         plugin.PriorityText.Length > 0 ? "Priority: " + plugin.PriorityText : "",
-        plugin.ModIndex.Length > 0 ? "Mod index: " + plugin.ModIndex : "",
+        plugin.ModIndex.Length > 0 ? ModIndexName + ": " + plugin.ModIndex : "",
+        plugin.Author.Length > 0 ? "Author: " + plugin.Author : "",
+        plugin.FormVersion.Length > 0 ? "Form version: " + plugin.FormVersion : "",
+        plugin.HeaderVersion.Length > 0 ? "Header version: " + plugin.HeaderVersion : "",
+        plugin.Description.Length > 0 ? plugin.Description : "",
         plugin.Diagnostics,
     }.Where(text => text.Length > 0));
 
@@ -147,8 +157,6 @@ internal static class Mo2PluginRow
         if (flagDetail.Length > 0) ToolTip.SetTip(flags, flagDetail);
         Mo2TableRow.Add(row, flags, Flags);
 
-        var formVersion = Mo2TableRow.Cell(plugin.FormVersion, .6);
-        var headerVersion = Mo2TableRow.Cell(plugin.HeaderVersion, .6);
         // MO2 draws this one as the game reads it: a hexadecimal index, and FE:xxx
         // for a light plugin. It is a number to be matched rather than read, so it is
         // set in the same fixed-width face the rest of the application uses for one.
@@ -157,11 +165,7 @@ internal static class Mo2PluginRow
         ToolTip.SetTip(modIndex, plugin.ModIndex.Length > 0
             ? "The index the game gives this plugin, which its form ids begin with"
             : "The game gives no index to a plugin it is not loading");
-        var description = Mo2TableRow.Cell(plugin.Description, .6);
-        if (plugin.Description.Length > 0) ToolTip.SetTip(description, plugin.Description);
         Mo2TableRow.Add(row, modIndex, ModIndex);
-        Mo2TableRow.Add(row, formVersion, FormVersion); Mo2TableRow.Add(row, headerVersion, HeaderVersion);
-        Mo2TableRow.Add(row, description, Description);
         void Refresh() {
             var ready = target == profile.CurrentTarget && profile.CanChangeOriginalUi;
             if (target == profile.CurrentTarget && profile.Order.FindPlugin(plugin.Key) is { } latest) plugin = latest;
