@@ -77,8 +77,12 @@ internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, 
         : System.Text.Json.JsonSerializer.Deserialize<string[]>(CategoriesJson) ?? [];
     public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0);
     // A mod MO2 offers its ordinary actions on: not the overwrite folder, not a
-    // separator, and not a game's own data installed outside MO2.
-    public bool IsRegular => !IsOverwrite && !IsSeparator && !IsForeign;
+    // separator, not a backup, and not a game's own data installed outside MO2.
+    public bool IsRegular => !IsOverwrite && !IsSeparator && !IsForeign && !IsBackup;
+    // What Create Backup leaves behind. MO2 gives one of these a menu of its own —
+    // restoring or removing the backup and nothing else — rather than the actions of
+    // the mod it was taken from, which is why it is not regular.
+    public bool IsBackup => Flags.Split('\n').Any(line => line.Trim() == "Backup");
     // The flags MO2's own menu branches on, read from the text MO2 writes into the
     // tooltips of its Flags and Conflicts columns (modlist.cpp, getFlagText and
     // getConflictFlagText). Those two cells are how MO2 states these conditions; the

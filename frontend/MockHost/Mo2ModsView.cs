@@ -185,6 +185,19 @@ internal sealed class Mo2ModsAdapter : LoadoutTreeDataGridAdapter
         Remember();
         RefreshFilter();
     }
+    // MO2's Collapse others: everything folded but the one the menu was opened on,
+    // which is how a long list is read one section at a time. A row that is not a
+    // separator folds everything except the section it sits in.
+    internal void CollapseOthers(Mo2LiveMod row)
+    {
+        var ordered = _profile.Mods.OrderBy(x => x.Priority).ToArray();
+        var keep = row.IsSeparator ? row.Name
+            : ordered.TakeWhile(x => x.Id != row.Id).LastOrDefault(x => x.IsSeparator)?.Name;
+        _collapsed.Clear();
+        foreach (var mod in ordered.Where(x => x.IsSeparator && x.Name != keep)) _collapsed.Add(mod.Name);
+        Remember();
+        RefreshFilter();
+    }
     internal void RenameSeparator(string oldName, string newName) { if (_collapsed.Remove(oldName)) { _collapsed.Add(newName); Remember(); } }
     internal int SeparatorCount(Mo2LiveMod separator) => _profile.Mods.OrderBy(m => m.Priority).SkipWhile(m => m.Id != separator.Id).Skip(1).TakeWhile(m => !m.IsSeparator && !m.IsOverwrite).Count();
     public void SetColumnFilters(string name, string version, string category, int endorsed = 0) {

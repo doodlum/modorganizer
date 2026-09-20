@@ -32,9 +32,10 @@ internal static class Mo2ModMenu
         Mo2ProfileTarget target, Func<Func<Task>, Task> run)
     {
         var all = new MenuItem { Header = "All Mods" };
-        foreach (var caption in new[] { "Install mod above... ", "Create empty mod above", "Create separator above",
-                                        "Enable all", "Disable all", "Check for updates", "Auto assign categories",
-                                        "Refresh", "Export to csv..." }) {
+        // The same list the audit reads, so the menu drawn and the menu compared are
+        // one list. Collapse all and Expand all are in it and handled below.
+        foreach (var caption in Mo2ModMenuCaptions.AllModsChildren) {
+            if (caption is "Collapse all" or "Collapse others" or "Expand all") continue;
             var wanted = caption;
             // MO2 names the first three after where the new mod lands, which depends on
             // the row the menu was opened on and the order the list is sorted in, so
@@ -56,6 +57,11 @@ internal static class Mo2ModMenu
             // profile's.
             if (wanted == "Create separator above") {
                 all.Items.Add(Entry("Collapse all", () => { adapter.SetAllSeparators(true); return Task.CompletedTask; }));
+                // MO2 offers this beside the other two: everything folded except the one
+                // the menu was opened on, which is how a long list is read one section at
+                // a time. Folded here rather than in MO2 for the same reason the other
+                // two are — the collapsed state belongs to this list, not to MO2's window.
+                all.Items.Add(Entry("Collapse others", () => { adapter.CollapseOthers(current()); return Task.CompletedTask; }));
                 all.Items.Add(Entry("Expand all", () => { adapter.SetAllSeparators(false); return Task.CompletedTask; }));
             }
         }
@@ -75,15 +81,15 @@ internal static class Mo2ModMenu
         // and the check for it already use.
         send.Items.Add(Entry("Lowest priority", () => run(() => adapter.Move(mod.Id, 0, absolute: true)), mod.CanManage));
         send.Items.Add(Entry("Highest priority", () => run(() => adapter.Move(mod.Id, int.MaxValue, absolute: true)), mod.CanManage));
-        foreach (var caption in new[] { "Priority...", "Separator..." })
+        foreach (var caption in Mo2ModMenuCaptions.SendToChildren(mod).Where(x => x is "Priority..." or "Separator..."))
             send.Items.Add(Entry(caption, () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", caption]], target)), mod.CanManage));
-        if (mod.Overwrites)
-            send.Items.Add(Entry("First conflict", () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", "First conflict"]], target)), mod.CanManage));
-        if (mod.Overwritten)
-            send.Items.Add(Entry("Last conflict", () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", "Last conflict"]], target)), mod.CanManage));
+        foreach (var caption in Mo2ModMenuCaptions.SendToChildren(mod).Where(x => x is "First conflict" or "Last conflict"))
+            send.Items.Add(Entry(caption, () => run(() => profile.RunModMenu([mod.Name], [["Send to... ", caption]], target)), mod.CanManage));
         return send;
     }
 
+    // Built by walking the one statement of what this mod's menu holds, so what is
+    // drawn and what the audit against MO2 reads can never be two different lists.
     internal static object[] Build(Mo2LiveProfile profile, Mo2ModsAdapter adapter, Func<Mo2LiveMod> current,
         Mo2ProfileTarget target, Func<Func<Task>, Task> run, Func<Task> rename)
     {
@@ -91,71 +97,28 @@ internal static class Mo2ModMenu
         // MO2's own action, by the wording MO2 gives it.
         MenuItem Mo2(string caption, bool enabled = true) =>
             Entry(caption, () => run(() => profile.RunModMenu([current().Name], [[caption]], target)), enabled);
-        var nexus = mod.NexusId > 0;
-        object?[] items = [
-            AllMods(profile, adapter, current, target, run),
-            new Separator(),
-            // MO2 offers its overwrite folder four actions of its own and nothing else.
-            mod.IsOverwrite ? Mo2("Sync to Mods...") : null,
-            mod.IsOverwrite ? Mo2("Create Mod...") : null,
-            mod.IsOverwrite ? Mo2("Move content to Mod...") : null,
-            mod.IsOverwrite ? Mo2("Clear Overwrite...") : null,
-            // A separator is renamed and removed under its own wording.
-            mod.IsSeparator ? Entry("Rename Separator...", rename, mod.CanManage) : null,
-            mod.IsSeparator ? Entry("Remove Separator...", () => run(() => Remove(profile, current())), mod.CanManage) : null,
-            mod.IsSeparator || mod.IsOverwrite ? null : new Separator(),
-            // The update actions, which MO2 only offers for a mod it knows on Nexus.
-            mod.IsRegular && mod.HasUpdate ? Mo2("Change versioning scheme") : null,
-            mod.IsRegular && nexus ? Mo2("Force-check updates") : null,
-            mod.IsRegular && nexus && mod.IgnoredVersion.Length > 0 ? Mo2("Un-ignore update") : null,
-            mod.IsRegular && nexus && mod.IgnoredVersion.Length == 0 && mod.HasUpdate ? Mo2("Ignore update") : null,
-            mod.IsRegular ? new Separator() : null,
-            mod.IsRegular ? Mo2("Enable selected", mod.CanManage) : null,
-            mod.IsRegular ? Mo2("Disable selected", mod.CanManage) : null,
-            new Separator(),
-            // MO2 shows Send to... while its list is in priority order, which is the
-            // only order this frontend's list is in.
-            mod.IsOverwrite ? null : SendTo(profile, adapter, current, target, run),
-            mod.IsOverwrite ? null : new Separator(),
-            mod.IsRegular ? Entry("Rename Mod...", rename, mod.CanManage) : null,
-            mod.IsRegular ? Mo2("Reinstall Mod", mod.CanManage) : null,
-            mod.IsRegular ? Entry("Remove Mod...", () => run(() => Remove(profile, current())), mod.CanManage) : null,
-            mod.IsRegular ? Mo2("Create Backup", mod.CanManage) : null,
-            mod.IsRegular && mod.HasHiddenFiles ? Mo2("Restore hidden files", mod.CanManage) : null,
-            new Separator(),
-            // MO2's colour actions, which paint a separator's row. An ordinary mod's
-            // colour is on its Notes cell's own menu, which is where MO2 offers it.
-            // MO2's colour dialog cannot be drawn from here, so the colours it starts
-            // from are offered and MO2's own action writes whichever is picked.
-            mod.IsSeparator ? Colour(profile, current, target, run) : null,
-            new Separator(),
-            // Endorsement and tracking, as MO2 reports them for this mod.
-            mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_TRUE" ? Mo2("Un-Endorse") : null,
-            mod.IsRegular && nexus && mod.Endorsed is "ENDORSED_FALSE" or "ENDORSED_NEVER" ? Mo2("Endorse") : null,
-            mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_FALSE" ? Mo2("Won't endorse") : null,
-            mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_UNKNOWN" ? Entry("Endorsement state unknown", () => Task.CompletedTask, false) : null,
-            mod.IsRegular && nexus ? Mo2("Remap Category (From Nexus)") : null,
-            mod.IsRegular && nexus && mod.Tracked == "TRACKED_FALSE" ? Mo2("Start tracking") : null,
-            mod.IsRegular && nexus && mod.Tracked == "TRACKED_TRUE" ? Mo2("Stop tracking") : null,
-            new Separator(),
-            // The two MO2 offers for a mod it could not read, or one installed for
-            // another game.
-            mod.IsRegular && mod.NoValidData ? Mo2("Ignore missing data") : null,
-            mod.IsRegular && mod.ForAnotherGame ? Mo2("Mark as converted/working") : null,
-            new Separator(),
-            mod.IsRegular && nexus ? Mo2("Visit on Nexus") : null,
-            mod.IsRegular && mod.Uploader.Length > 0 ? Mo2("Visit the uploader's profile") : null,
-            mod.IsRegular && Host(mod.Url) is { } host ? Mo2("Visit on " + host) : null,
-            // Opened on this desktop rather than in MO2's prefix, which is the one
-            // difference from MO2 here and is why this one does not go through it.
-            Entry("Open in Explorer", () => run(() => profile.OpenModFolder(current().Name))),
-            new Separator(),
-            // MO2 makes this the default action of the menu, which is also what this
-            // frontend's rows open on a double-click.
-            mod.IsForeign ? null : Entry("Information...", () => run(() => profile.ShowModInformation is { } show ? show(current().Id) : profile.ShowModDetails(current().Id))),
-        ];
+
+        // The instance decides three of these as much as the mod does — whether it has
+        // Nexus endorsement, tracking and category mapping turned on — and whether its
+        // overwrite folder holds anything.
+        var instance = Mo2InstanceSettings.InstanceOf(profile.ProfilePath);
+        var items = Mo2ModMenuCaptions.For(mod, Mo2InstanceSettings.Nexus(instance),
+            Mo2InstanceSettings.OverwriteHasContent(instance)).Select(entry => (object?)(entry.Kind switch {
+            Mo2ModMenuCaptions.Kind.Divider => new Separator(),
+            Mo2ModMenuCaptions.Kind.AllMods => AllMods(profile, adapter, current, target, run),
+            Mo2ModMenuCaptions.Kind.SendTo => SendTo(profile, adapter, current, target, run),
+            Mo2ModMenuCaptions.Kind.Colour => Colour(profile, current, target, run),
+            Mo2ModMenuCaptions.Kind.Rename => Entry(entry.Caption, rename, entry.Enabled),
+            Mo2ModMenuCaptions.Kind.Remove => Entry(entry.Caption, () => run(() => Remove(profile, current())), entry.Enabled),
+            Mo2ModMenuCaptions.Kind.Explorer => Entry(entry.Caption, () => run(() => profile.OpenModFolder(current().Name))),
+            Mo2ModMenuCaptions.Kind.RestoreBackup => Entry(entry.Caption, () => run(() => RestoreBackup(profile, current(), target))),
+            Mo2ModMenuCaptions.Kind.Information => Entry(entry.Caption,
+                () => run(() => profile.ShowModInformation is { } show ? show(current().Id) : profile.ShowModDetails(current().Id))),
+            _ => Mo2(entry.Caption, entry.Enabled),
+        })).ToArray();
         return Mo2RowMenu.Tidy(items).ToArray();
     }
+
 
     private static MenuItem Colour(Mo2LiveProfile profile, Func<Mo2LiveMod> current, Mo2ProfileTarget target, Func<Func<Task>, Task> run)
     {
@@ -164,6 +127,37 @@ internal static class Mo2ModMenu
             color => run(() => profile.SetModColor(current().Name, color, target)));
         item.Tag = true;
         return item;
+    }
+
+    // MO2 names a backup after the mod it was taken from, with _backup and an
+    // optional number after it.
+    internal static string? BackedUp(string name)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(name, @"^(.*)_backup[0-9]*$");
+        return match.Success && match.Groups[1].Value.Length > 0 ? match.Groups[1].Value : null;
+    }
+
+    // Putting a backup back.
+    //
+    // MO2 does this itself and asks first — but only when the mod being restored over
+    // is still there, and that question is a modal a hosted MO2 can never show. So the
+    // question is asked here, and what it agrees to is done here too: the mod in the
+    // way is removed through this application's own removal, which leaves MO2 nothing
+    // to ask about, and MO2's own Restore Backup then does the actual work.
+    private static async Task RestoreBackup(Mo2LiveProfile profile, Mo2LiveMod backup, Mo2ProfileTarget target)
+    {
+        if (BackedUp(backup.Name) is { } original &&
+            profile.Mods.FirstOrDefault(x => x.Name == original) is { } inTheWay) {
+            if (profile.ConfirmRemoval is not { } confirm) return;
+            if (!await confirm([inTheWay])) return;
+            profile.Remove([NexusMods.Abstractions.Loadouts.LoadoutItemId.From(inTheWay.Id)]);
+            // MO2 has to have finished removing it before it is asked to restore over
+            // it, or it will find the mod still there and put its question up.
+            for (var attempt = 0; attempt < 40 && profile.Mods.Any(x => x.Name == original); attempt++)
+                await Task.Delay(250);
+            if (profile.Mods.Any(x => x.Name == original)) return;
+        }
+        await profile.RunModMenu([backup.Name], [["Restore Backup"]], target);
     }
 
     private static Task Remove(Mo2LiveProfile profile, Mo2LiveMod mod)
