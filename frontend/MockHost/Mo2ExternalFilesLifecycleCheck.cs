@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
 
 namespace Mo2.Frontend;
@@ -16,7 +18,9 @@ internal static class Mo2ExternalFilesLifecycleCheck
         }
         await Wait(() => shell.Profile.IsConnected && !shell.Profile.SelectingProfile);
         var root = (Grid)window.Content!;
-        var host = new Grid { Width = 600, Height = 400, IsHitTestVisible = false };
+        var host = new Grid { Width = 600, Height = 400, IsHitTestVisible = false, Background = window.Background };
+        Grid.SetColumnSpan(host, root.ColumnDefinitions.Count);
+        Grid.SetRowSpan(host, root.RowDefinitions.Count);
         root.Children.Add(host);
         Mo2ExternalScan Scan(string path) => new("/fixture", 1, 2, [new(path, 1, "External file")]);
         try {
@@ -77,7 +81,57 @@ internal static class Mo2ExternalFilesLifecycleCheck
             await treeView.Refresh();
             if (treeTable.RowSelection?.SelectedItem is not null)
                 throw new Exception("Removed file selection moved to an unrelated entry");
+            ((HierarchicalTreeDataGridSource<Mo2ExternalFileNode>)treeTable.Source!).ExpandAll();
+            foreach (var width in new[] { 550.0, 340.0, 250.0, 550.0 }) {
+                host.Width = width;
+                await Wait(() => Math.Abs(treeTable.Bounds.Width - (width - 2 * Mo2PanelChrome.PaddingFor(treeView.Bounds.Height).Left)) < 2,
+                    "Table did not reach requested panel width");
+                await Wait(() => treeTable.GetVisualDescendants().OfType<TreeDataGridColumnHeader>().Any(x =>
+                    x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == Mo2ExternalFilesView.ColumnHeaders[0]) &&
+                    Math.Abs(x.Bounds.Width - ((HierarchicalTreeDataGridSource<Mo2ExternalFileNode>)treeTable.Source!).Columns[0].ActualWidth) < 2),
+                    "Name header layout did not catch up to column sizing");
+                var name = treeTable.GetVisualDescendants().OfType<TreeDataGridColumnHeader>()
+                    .Single(x => x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == Mo2ExternalFilesView.ColumnHeaders[0]));
+                if (name.Bounds.Width < 120)
+                    throw new Exception($"External Files name column is only {name.Bounds.Width:F0}px at panel width {width}, table {treeTable.Bounds.Width}; " +
+                        string.Join("; ", treeTable.GetVisualDescendants().OfType<TreeDataGridColumnHeader>().Select(x =>
+                            $"{string.Join('/', x.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text))}: x={x.TranslatePoint(default, treeTable)?.X}, width={x.Bounds.Width}")));
+                if (width == 550) {
+                    foreach (var title in Mo2ExternalFilesView.ColumnHeaders.Skip(1))
+                        await Wait(() => treeTable.GetVisualDescendants().OfType<TreeDataGridColumnHeader>().Any(x => x.Bounds.Width >= 100 &&
+                            x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == title)),
+                            "Metadata did not return when the panel widened: " + title);
+                }
+                if (Environment.GetEnvironmentVariable("MO2_EXTERNAL_FIT_SCREENSHOTS") is { } directory) {
+                    Directory.CreateDirectory(directory);
+                    using var shot = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
+                    shot.Render(window); shot.Save(Path.Combine(directory, $"external-{width:F0}.png"));
+                }
+            }
+            // Column preferences remove columns from the source. Fitting must
+            // follow their identities, even after both optional columns vanish.
+            var current = (HierarchicalTreeDataGridSource<Mo2ExternalFileNode>)treeTable.Source!;
+            current.Columns.SetColumnWidth(1, new GridLength(150));
+            await Task.Delay(250); window.UpdateLayout();
+            var resized = treeTable.GetVisualDescendants().OfType<TreeDataGridColumnHeader>().Single(x =>
+                x.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == Mo2ExternalFilesView.ColumnHeaders[1]));
+            if (Math.Abs(resized.Bounds.Width - 150) > 2)
+                throw new Exception("Routine layout undid manual metadata column sizing");
+            var protectedName = new Mo2ColumnToggle("fixture-tree-name-" + Guid.NewGuid().ToString("N"), () => { },
+                hiddenByDefault: [Mo2FolderPage.NameHeader], pinned: [Mo2FolderPage.NameHeader]);
+            protectedName.Apply(current.Columns);
+            if (protectedName.Hidden.Contains(Mo2FolderPage.NameHeader) || protectedName.CanHide(Mo2FolderPage.NameHeader))
+                throw new Exception("Tree Name column is not protected from hidden-column preferences");
+            while (current.Columns.Count > 1) current.Columns.RemoveAt(1);
+            host.Width = 340;
+            await Task.Delay(250); window.UpdateLayout();
+            if (current.Columns.Count != 1 || treeTable.Bounds.Width <= 0)
+                throw new Exception("Hidden metadata columns reappeared during resize");
+            host.Width = 550;
+            host.IsHitTestVisible = true;
+            await Mo2ToolbarSearchCheck.Run(window, treeView);
             host.Children.Remove(treeView);
+            Console.WriteLine("PASS External Files fit: readable names at 550/340/250px; metadata returns when widened; manual sizing retained and removed columns stay removed");
             Console.WriteLine("PASS External Files rescan: selection and collapsed folders retained, missing selection cleared");
             Console.WriteLine("PASS External Files tree UI: folder collapse, search expands ancestors, clearing search restores collapse");
             Console.WriteLine("PASS External Files lifecycle: late success/failure discarded, reopen reads fresh, closing clears rows and disables reveal");

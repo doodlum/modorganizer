@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.ReactiveUI;
+using Avalonia.Threading;
 using NexusMods.App.UI.Controls.PageHeader;
 using NexusMods.App.UI.Windows;
 using NexusMods.App.UI.WorkspaceSystem;
@@ -30,14 +32,15 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
     private Mo2Save[] _saves = [];
     private Mo2ProfileTarget? _target;
     private bool _reading;
+    private bool _backgroundReading, _refreshRequested;
     private string? _error;
     private string? _actionError;
-    private string? _selectedFile;
+    private readonly HashSet<string> _selectedFiles = new(StringComparer.Ordinal);
     private readonly Func<Mo2ProfileTarget, Task<Mo2Save[]>>? _read;
     private bool _active;
     private long _activation;
     public Mo2SavesView() : this(null) { }
-    internal Mo2SavesView(Func<Mo2ProfileTarget, Task<Mo2Save[]>>? read)
+    internal Mo2SavesView(Func<Mo2ProfileTarget, Task<Mo2Save[]>>? read, TimeSpan? refreshInterval = null)
     {
         _read = read;
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
@@ -64,75 +67,125 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         _table.Classes.Add("MainListsStyling");
         _search.TextChanged += (_,_) => Render();
         _table.DoubleTapped += async (_,_) => await RunAction("details");
+        // SavesTab::eventFilter sends Delete to the native confirmation for the
+        // selected saves. Bind it to the table, leaving search editing untouched.
+        _table.KeyDown += async (_, args) => {
+            if (args.Key != Key.Delete || !Ready) return;
+            args.Handled = true;
+            await RunAction("delete");
+        };
         // MO2's own saves menu (savestab.cpp, onContextMenu), which is the only place
         // its Saves tab offers anything: fixing the mods a save wants, deleting it,
         // and showing it in a file manager. The header line keeps the same actions;
         // this is where MO2 users reach for them.
         Mo2RowMenu.Attach<Mo2Save>(_table, save => [
-            Mo2EntryMenu.Action("Fix enabled mods...", () => RunAction("repair"), Ready),
-            Mo2EntryMenu.Action("Delete 1 save(s)", () => RunAction("delete"), Ready),
-            // Opened on this desktop: MO2's own explores the folder inside its prefix.
-            Mo2EntryMenu.Action("Open in Explorer...", () => { OpenSave(save); return Task.CompletedTask; },
-                ViewModel?.Profile.SavesDirectory is { Length: > 0 }),
-        ]);
+            Mo2EntryMenu.Action("Fix enabled mods...", () => RunAction("repair"), Ready && SelectedSaves.Length == 1),
+            Mo2EntryMenu.Action($"Delete {SelectedSaves.Length} save(s)", () => RunAction("delete"), Ready),
+            Mo2EntryMenu.Action("Open in Explorer...", () => OpenSave(save), Ready),
+        ], availability: ReadMenuAvailability);
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true; ++_activation;
+            if (_read is null) new Mo2SaveHover(this, _table, model.Profile).DisposeWith(d);
             var connected = model.Profile.IsConnected;
             void Changed() {
                 var edge = connected != model.Profile.IsConnected; connected = model.Profile.IsConnected;
                 if (_target != model.Profile.CurrentTarget || edge) _ = Refresh();
                 UpdateActions();
             }
-            model.Profile.Changed += Changed; Disposable.Create(() => { _active = false; ++_activation; model.Profile.Changed -= Changed; UpdateActions(); }).DisposeWith(d); _ = Refresh();
+            // A game can create saves without changing mods, plugins or profiles.
+            // Read through MO2 so local-save settings and Wine drive mappings stay
+            // native. Coalesce ticks, pause during host actions, and stop on detach.
+            var timer = new DispatcherTimer { Interval = refreshInterval ?? TimeSpan.FromSeconds(3) };
+            timer.Tick += async (_, _) => {
+                if (IsEffectivelyVisible && model.Profile.CanChangeOriginalUi) await Refresh(background: true);
+            };
+            model.Profile.Changed += Changed;
+            Disposable.Create(() => {
+                timer.Stop(); _active = false; _backgroundReading = false; _refreshRequested = false; ++_activation;
+                model.Profile.Changed -= Changed; UpdateActions();
+            }).DisposeWith(d);
+            timer.Start(); _ = Refresh();
         });
     }
-    private async Task RunAction(string operation)
+    private async Task<Mo2MenuEntry[]?> ReadMenuAvailability(Mo2Save? save)
     {
-        if (!_active || _reading || ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2Save save) return;
+        // Injected save readers have no corresponding native files.
+        if (_read is not null) return null;
+        if (!Ready || ViewModel is not { } model || _target is not { } target) return [];
+        var activation = _activation;
+        var files = SelectedSaves.Select(row => row.File).ToArray();
+        var entries = await model.Profile.ReadListMenu("readFileMenu", files, target, "saves");
+        return Ready && activation == _activation && target == model.Profile.CurrentTarget &&
+            files.SequenceEqual(SelectedSaves.Select(row => row.File)) ? entries : [];
+    }
+
+    internal async Task RunAction(string operation)
+    {
+        if (!Ready || ViewModel is not { } model || _target is not { } target) return;
+        var saves = SelectedSaves;
+        if (operation != "delete" && saves.Length != 1) return;
         var activation = _activation;
         _actionError = null;
-        var error = await model.Profile.SaveAction(save, operation, target);
+        var error = await model.Profile.SaveAction(saves, operation, target);
         await Refresh();
         if (_active && activation == _activation && target == model.Profile.CurrentTarget && error is not null) {
             _actionError = error; _status.Text = error;
         }
     }
     // What the header buttons are enabled by, which is also what the menu asks.
-    private bool Ready => _active && !_reading && ViewModel?.Profile.CanChangeOriginalUi == true &&
+    private bool Ready => _active && (!_reading || _backgroundReading) && ViewModel?.Profile.CanChangeOriginalUi == true &&
         _target == ViewModel.Profile.CurrentTarget && _table.RowSelection?.SelectedItem is Mo2Save;
-    private void UpdateActions() => _details.IsEnabled = _repair.IsEnabled = _delete.IsEnabled = Ready;
+    private Mo2Save[] SelectedSaves => _table.RowSelection?.SelectedItems.OfType<Mo2Save>().ToArray() ?? [];
+    private void UpdateActions()
+    {
+        _details.IsEnabled = _repair.IsEnabled = Ready && SelectedSaves.Length == 1;
+        _delete.IsEnabled = Ready;
+    }
 
     // MO2 names a save relative to the folder it read it from, so the two are put
     // back together here and the file is shown in the desktop's own file manager.
-    private void OpenSave(Mo2Save save)
+    private async Task OpenSave(Mo2Save? save)
     {
-        if (ViewModel?.Profile is not { SavesDirectory: { Length: > 0 } folder } profile) return;
+        if (save is null || !Ready || ViewModel?.Profile is not { } profile || _target is not { } target) return;
+        if (profile.SavesDirectory is not { Length: > 0 } folder) {
+            // The owning host knows how C: and custom Wine drives are mapped.
+            await profile.RunFileMenu("saves", SelectedSaves.Select(row => row.File).ToArray(), [["Open in Explorer..."]], target);
+            return;
+        }
         var path = Path.Combine(folder, save.File.Replace('\\', '/'));
         if (!File.Exists(path)) { _status.Text = "MO2 no longer has " + save.File; return; }
         profile.RevealLocalFile?.Invoke(path);
     }
-    internal async Task Refresh()
+    internal async Task Refresh(bool background = false)
     {
-        if (!_active || _reading || ViewModel is not { } model) return;
+        if (!_active || ViewModel is not { } model) return;
+        if (_reading) { if (!background) _refreshRequested = true; return; }
         var activation = _activation;
-        _reading = true; _error = null;
-        if (_target != model.Profile.CurrentTarget) { _actionError = null; _selectedFile = null; }
+        var retainRows = background && _target == model.Profile.CurrentTarget;
+        var changed = false;
+        _reading = true; _backgroundReading = retainRows; _error = null;
+        if (_target != model.Profile.CurrentTarget) { _actionError = null; _selectedFiles.Clear(); }
         _target = model.Profile.CurrentTarget;
         var target = _target.Value; var connected = model.Profile.IsConnected;
-        _saves = []; Render();
+        if (!retainRows) { _saves = []; Render(); }
+        else UpdateActions();
         try {
             var saves = await (_read?.Invoke(target) ?? model.Profile.ReadSaves(target));
             if (_active && activation == _activation && target == model.Profile.CurrentTarget) {
+                changed = !_saves.SequenceEqual(saves);
                 _saves = saves;
-                if (_selectedFile is not null && !saves.Any(save => save.File == _selectedFile)) _selectedFile = null;
+                _selectedFiles.IntersectWith(saves.Select(save => save.File));
             }
         } catch (Exception error) { if (_active && activation == _activation && target == model.Profile.CurrentTarget) _error = error.Message; }
         finally {
-            _reading = false;
+            _reading = false; _backgroundReading = false;
             if (_active) {
-                if (activation != _activation || target != model.Profile.CurrentTarget || connected != model.Profile.IsConnected) await Refresh();
-                else Render();
+                if (_refreshRequested || activation != _activation || target != model.Profile.CurrentTarget || connected != model.Profile.IsConnected) {
+                    _refreshRequested = false; await Refresh();
+                }
+                else if (!retainRows || changed) Render();
+                else { UpdateActions(); UpdateStatus(); }
             }
         }
     }
@@ -143,26 +196,38 @@ internal sealed class Mo2SavesView : ReactiveUserControl<Mo2SavesPage>
         var source = new FlatTreeDataGridSource<Mo2Save>(rows);
         // MO2's own two columns for this tab (mainwindow.ui, savegameList): the save's
         // name and the file it is stored in, rather than one column carrying both.
-        static TemplateColumn<Mo2Save> Column(string header, Func<Mo2Save, string> text, GridLength width) =>
+        TemplateColumn<Mo2Save> Column(string header, Func<Mo2Save, string> text, GridLength width) =>
             new(header, new FuncDataTemplate<Mo2Save>((row, _) => {
-                var label = new TextBlock { Text = row is null ? "" : text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                if (row is null) return null;
+                var label = new TextBlock { Text = text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = Mo2TableRow.CellMargin };
-                if (row is not null) ToolTip.SetTip(label, row.Name + "\n" + row.File);
+                // Native hover already supplies the extension's complete save
+                // information. A second text tooltip would cover that widget.
+                if (_read is not null || ViewModel?.Profile.CanPreviewSaves != true)
+                    ToolTip.SetTip(label, row.Name + "\n" + row.File);
                 return label;
             }), width: width);
         source.Columns.Add(Column("Name", x => x.Name, new GridLength(1, GridUnitType.Star)));
         source.Columns.Add(Column("File", x => x.File, new GridLength(1, GridUnitType.Star)));
-        source.RowSelection!.SelectionChanged += (_,_) => {
-            if (ReferenceEquals(_table.Source, source)) _selectedFile = source.RowSelection.SelectedItem?.File;
-            UpdateActions();
-        };
+        source.RowSelection!.SingleSelect = false;
         _columns?.Apply(source.Columns);
         var old = _table.Source; _table.Source = source; (old as IDisposable)?.Dispose();
-        if (_selectedFile is { } file) {
-            var index = Array.FindIndex(rows, row => row.File == file);
-            if (index >= 0) source.RowSelection.Select(new IndexPath(index));
-        }
+        for (var index = 0; index < rows.Length; index++)
+            if (_selectedFiles.Contains(rows[index].File)) source.RowSelection.Select(new IndexPath(index));
+        // Attach after restoring: intermediate selections must not erase the rest
+        // of the saved set. Filtering keeps hidden identities, but actions only
+        // operate on rows selected in the visible table.
+        source.RowSelection.SelectionChanged += (_,_) => {
+            if (ReferenceEquals(_table.Source, source)) {
+                _selectedFiles.Clear();
+                _selectedFiles.UnionWith(source.RowSelection.SelectedItems.OfType<Mo2Save>().Select(save => save.File));
+            }
+            UpdateActions();
+        };
         UpdateActions();
-        _status.Text = _actionError ?? _error ?? (_reading ? "Reading MO2 saves…" : _saves.Length == 0 ? "No saves reported by MO2 for this profile." : $"{rows.Length} of {_saves.Length} saves");
+        UpdateStatus();
     }
+    private void UpdateStatus() => _status.Text = _actionError ?? _error ?? (_reading && !_backgroundReading
+        ? "Reading MO2 saves…" : _saves.Length == 0 ? "No saves reported by MO2 for this profile."
+        : $"{_table.Rows?.Count ?? 0} of {_saves.Length} saves");
 }

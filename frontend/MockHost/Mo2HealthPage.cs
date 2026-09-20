@@ -31,30 +31,42 @@ internal sealed class Mo2HealthPage : APageViewModel<IDiagnosticListViewModel>, 
     public DiagnosticFilter Filter { get => _filter; set { this.RaiseAndSetIfChanged(ref _filter, value); this.RaisePropertyChanged(nameof(DiagnosticEntries)); } }
     private readonly Mo2LiveWorkspace _shell;
     private bool _refreshing;
-    private string? _profile;
+    private Mo2ProfileTarget? _target;
+    private Mo2ProfileTarget? _entriesTarget;
+    private readonly Mo2LiveProfile _source;
+    private readonly Func<Task<(string Title, string Details)[]>> _read;
+    private bool _active;
+    private long _activation;
     public bool HasResult { get; private set; }
-    public Mo2HealthPage(IWindowManager windows, Mo2LiveWorkspace shell) : base(windows)
+    public Mo2HealthPage(IWindowManager windows, Mo2LiveWorkspace shell) : this(windows, shell, shell.Profile) { }
+    internal Mo2HealthPage(IWindowManager windows, Mo2LiveWorkspace shell, Mo2LiveProfile source,
+        Func<Task<(string Title, string Details)[]>>? read = null) : base(windows)
     {
+        _source = source; _read = read ?? source.ReadHealth;
         _shell = shell; TabTitle = "Health Check"; TabIcon = IconValues.Cardiology;
         Set([Entry("Checking MO2", "Waiting for MO2’s diagnostic extensions.", DiagnosticSeverity.Suggestion)]);
         this.WhenActivated(d => {
+            _active = true; ++_activation;
             void Changed() {
-                if (_profile != shell.Profile.ProfilePath) {
+                if (_target != source.CurrentTarget) {
                     HasResult = false;
                     Set([Entry("Checking MO2", "Reading the selected profile’s diagnostics.", DiagnosticSeverity.Suggestion)]);
                 }
                 _ = Refresh();
             }
-            shell.Profile.Changed += Changed;
+            source.Changed += Changed;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
             timer.Tick += (_, _) => _ = Refresh(); timer.Start();
-            Disposable.Create(() => { timer.Stop(); shell.Profile.Changed -= Changed; }).DisposeWith(d);
+            Disposable.Create(() => { _active = false; ++_activation; timer.Stop(); source.Changed -= Changed; }).DisposeWith(d);
             _ = Refresh();
         });
     }
     private IDiagnosticEntryViewModel Entry(string title, string details, DiagnosticSeverity severity) => new Mo2HealthEntry(title, details, severity, _shell);
     private void Set(IDiagnosticEntryViewModel[] entries)
     {
+        if (_entriesTarget == _source.CurrentTarget && _all.Select(x => (x.Title, x.Summary, x.Severity))
+            .SequenceEqual(entries.Select(x => (x.Title, x.Summary, x.Severity)))) return;
+        _entriesTarget = _source.CurrentTarget;
         _all = entries;
         this.RaisePropertyChanged(nameof(DiagnosticEntries));
         this.RaisePropertyChanged(nameof(NumCritical)); this.RaisePropertyChanged(nameof(NumWarnings)); this.RaisePropertyChanged(nameof(NumSuggestions));
@@ -62,26 +74,26 @@ internal sealed class Mo2HealthPage : APageViewModel<IDiagnosticListViewModel>, 
     public async Task Refresh()
     {
         if (_refreshing) return;
-        _refreshing = true; var path = _shell.Profile.ProfilePath;
-        if (_profile != path) {
+        _refreshing = true; var target = _source.CurrentTarget; var activation = _activation;
+        if (_target != target) {
             HasResult = false;
             Set([Entry("Checking MO2", "Reading the selected profile’s diagnostics.", DiagnosticSeverity.Suggestion)]);
         }
-        _profile = path;
+        _target = target;
         try {
-            var problems = await _shell.Profile.ReadHealth();
-            if (_shell.Profile.ProfilePath != path) return;
+            var problems = await _read();
+            if (activation != _activation || _source.CurrentTarget != target) return;
             // MO2's diagnostic API provides no severity; preserve every report as a warning.
             Set(problems.Select(x => Entry(x.Title, x.Details, DiagnosticSeverity.Warning)).ToArray());
             HasResult = true;
         } catch (Exception error) {
-            if (_shell.Profile.ProfilePath == path) {
+            if (activation == _activation && _source.CurrentTarget == target) {
                 HasResult = false;
                 Set([Entry("Health check unavailable", error.Message, DiagnosticSeverity.Warning)]);
             }
         } finally {
             _refreshing = false;
-            if (_shell.Profile.ProfilePath != path) await Refresh();
+            if (_active && (activation != _activation || _source.CurrentTarget != target)) await Refresh();
         }
     }
 }
@@ -119,17 +131,22 @@ internal sealed class Mo2HealthDetails : APageViewModel<IDiagnosticDetailsViewMo
     private readonly Mo2LiveProfile _profile;
     private readonly Mo2HealthDetailsContext _context;
     private bool _refreshing;
+    private bool _active;
+    private long _activation;
+    private readonly Func<Task<(string Title, string Details)[]>> _read;
     public bool HasResult { get; private set; }
     private bool IsSourceProfile => _profile.IsConnected && !_profile.SelectingProfile &&
         _profile.Endpoint == _context.Endpoint && _profile.ProfilePath == _context.ProfilePath;
 
-    public Mo2HealthDetails(IWindowManager windows, Mo2LiveProfile profile, Mo2HealthDetailsContext context) : base(windows)
+    public Mo2HealthDetails(IWindowManager windows, Mo2LiveProfile profile, Mo2HealthDetailsContext context,
+        Func<Task<(string Title, string Details)[]>>? read = null) : base(windows)
     {
-        _profile = profile; _context = context;
+        _profile = profile; _context = context; _read = read ?? profile.ReadHealth;
         TabTitle = context.Diagnostic.Title; TabIcon = IconValues.Cardiology; Severity = context.Diagnostic.Severity;
         MarkdownRendererViewModel = new Mo2DiagnosticText();
         Set("Checking this diagnostic with MO2.");
         this.WhenActivated(d => {
+            _active = true; ++_activation;
             void Changed() {
                 if (!IsSourceProfile) ShowUnavailable();
                 _ = Refresh();
@@ -137,7 +154,7 @@ internal sealed class Mo2HealthDetails : APageViewModel<IDiagnosticDetailsViewMo
             profile.Changed += Changed;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
             timer.Tick += (_, _) => _ = Refresh(); timer.Start();
-            Disposable.Create(() => { timer.Stop(); profile.Changed -= Changed; }).DisposeWith(d);
+            Disposable.Create(() => { _active = false; ++_activation; timer.Stop(); profile.Changed -= Changed; }).DisposeWith(d);
             Changed();
         });
     }
@@ -154,9 +171,10 @@ internal sealed class Mo2HealthDetails : APageViewModel<IDiagnosticDetailsViewMo
     {
         if (!IsSourceProfile) { ShowUnavailable(); return; }
         if (_refreshing) return;
-        _refreshing = true;
+        _refreshing = true; var activation = _activation;
         try {
-            var reports = await _profile.ReadHealth();
+            var reports = await _read();
+            if (activation != _activation) return;
             if (!IsSourceProfile) { ShowUnavailable(); return; }
             var matches = reports.Where(x => x.Title == _context.Diagnostic.Title).ToArray();
             var exact = matches.Where(x => x.Details == _context.Diagnostic.Details.Value).ToArray();
@@ -166,9 +184,13 @@ internal sealed class Mo2HealthDetails : APageViewModel<IDiagnosticDetailsViewMo
                 "This diagnostic has changed. Open Health Check to select the current report.");
             HasResult = true;
         } catch (Exception error) {
+            if (activation != _activation) return;
             HasResult = false;
             if (!IsSourceProfile) ShowUnavailable();
             else Set("Health check unavailable: " + error.Message);
-        } finally { _refreshing = false; }
+        } finally {
+            _refreshing = false;
+            if (_active && activation != _activation) await Refresh();
+        }
     }
 }

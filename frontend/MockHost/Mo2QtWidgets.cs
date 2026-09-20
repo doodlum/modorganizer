@@ -67,12 +67,21 @@ internal static class Mo2QtWidgets
     internal const string SavesFilterTip = "Filter the list of saves.";
     internal const string ArchiveFilterTip = "Filter the list of archives.";
 
+    // Keep tab actions together at ordinary widths and wrap whole controls when
+    // panels narrow. A horizontal StackPanel measured them beyond the right edge.
+    internal static WrapPanel ActionBar(string name, double horizontalInset = 0) => new() {
+        Name = name, Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6,
+        MinHeight = Mo2TableRow.ActionSize, Margin = new Thickness(horizontalInset, 0, horizontalInset, 6),
+        VerticalAlignment = VerticalAlignment.Top,
+    };
+
     // A push button as MO2 labels them: the caption it draws, the tooltip it
     // explains itself with, and a Material icon in place of MO2's own.
     internal static Button Button(string name, string caption, string tip, string icon, Action click)
     {
         var button = new Button {
             Name = name, Padding = new Thickness(6, 2), Background = Brushes.Transparent, FontSize = Mo2Density.FontSize,
+            Height = Mo2TableRow.ActionSize, MinHeight = 0,
             VerticalAlignment = VerticalAlignment.Center,
             Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = {
                 new UnifiedIcon { Value = new ProjektankerIcon(icon), Size = Mo2TableRow.GlyphSize,
@@ -197,11 +206,11 @@ internal static class Mo2QtWidgets
 
     // MO2's category filter: a checkable list beside the mod list, where ticking
     // categories narrows it to mods in them. MO2 keeps a tree, because its categories
-    // nest; the ones this frontend gets from MO2 are a flat set of names, so this is
-    // the same control over the categories there actually are.
-    internal static Border Categories(string name, out ItemsControl items, out ScrollViewer scroller, params Control[] footer)
+    // nest; the category component preserves the hierarchy reported by the host
+    // and includes descendants when matching a selected parent.
+    internal static Border Categories(string name, out Mo2CategoryFilterList items, out ScrollViewer scroller, params Control[] footer)
     {
-        items = new ItemsControl { Name = name };
+        items = new Mo2CategoryFilterList { Name = name };
         scroller = new ScrollViewer { Content = items, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         // MO2's group box: its title, the filter tree, and under it the two rows of
@@ -221,13 +230,14 @@ internal static class Mo2QtWidgets
     private static Control Head(Control control) { DockPanel.SetDock(control, Dock.Top); return control; }
 
     // One row of that list: the category, and how many mods are in it, as MO2 shows.
-    internal static CheckBox Category(string category, int count, bool active, Action<bool> changed)
+    internal static CheckBox Category(string category, int count, bool? active, Action<bool?> changed)
     {
-        var box = new CheckBox { Content = $"{category} ({count})", IsChecked = active, MinWidth = 0,
+        var box = new Mo2CategoryToggle { Content = new TextBlock { Text = $"{category} ({count})", TextTrimming = TextTrimming.CharacterEllipsis }, HorizontalContentAlignment = HorizontalAlignment.Stretch, IsChecked = active, MinWidth = 0,
             FontSize = Mo2Density.FontSize, MinHeight = 0, Margin = new Thickness(0) };
         box.Tag = category;
-        ToolTip.SetTip(box, FiltersEditTip);
-        box.IsCheckedChanged += (_, _) => changed(box.IsChecked == true);
+        Avalonia.Automation.AutomationProperties.SetName(box, category);
+        ToolTip.SetTip(box, category + "\nClick or Space: include, exclude, clear. Right-click or Shift+Space: reverse.");
+        box.IsCheckedChanged += (_, _) => changed(box.IsChecked);
         return box;
     }
 }

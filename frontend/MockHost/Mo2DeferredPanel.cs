@@ -23,6 +23,9 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
     private static readonly TimeSpan ReflowDuration = TimeSpan.FromMilliseconds(220);
     // The panel's own corner actions are 24px, not the 28px the page toolbars use.
     private const double TabActionSize = 24;
+    // Each panel owns its transitions. Replacing this collection on every bounds
+    // notification tears down active animations, even when the mode is unchanged.
+    private readonly Transitions _reflow = CreateReflow();
 
     internal Mo2DeferredPanel(IPanelViewModel model)
     {
@@ -48,14 +51,15 @@ internal sealed class Mo2DeferredPanel : ReactiveUserControl<IPanelViewModel>
     {
         if (ViewModel is null) return;
         var bounds = ViewModel.ActualBounds;
-        Transitions = Mo2PanelPhysics.Resizing ? null : Reflow();
+        var transitions = Mo2PanelPhysics.Resizing ? null : _reflow;
+        if (!ReferenceEquals(Transitions, transitions)) Transitions = transitions;
         Width = bounds.Width; Height = bounds.Height;
         SetValue(Canvas.LeftProperty, bounds.X); SetValue(Canvas.TopProperty, bounds.Y);
         _inner ??= this.GetVisualDescendants().OfType<PanelView>().FirstOrDefault();
         if (_inner is not null) { _inner.Width = bounds.Width; _inner.Height = bounds.Height; }
     }
 
-    private Transitions Reflow() => new() {
+    private static Transitions CreateReflow() => new() {
         new DoubleTransition { Property = Layoutable.WidthProperty, Duration = ReflowDuration, Easing = new CubicEaseOut() },
         new DoubleTransition { Property = Layoutable.HeightProperty, Duration = ReflowDuration, Easing = new CubicEaseOut() },
         new DoubleTransition { Property = Canvas.LeftProperty, Duration = ReflowDuration, Easing = new CubicEaseOut() },

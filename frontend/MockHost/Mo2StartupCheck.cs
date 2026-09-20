@@ -1,17 +1,20 @@
 using System.Diagnostics;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace Mo2.Frontend;
 
-// What the user waits through before the frontend is usable, split into the parts
-// that can be worked on separately: the process reaching its first window, the
-// window reaching a first painted frame, and the connected profile's own lists
-// reaching the screen.
+// Startup diagnostics for the paired Mods/Plugins layout. Layout bounds and a
+// dispatcher marker establish readiness; a desktop capture is still needed to
+// verify compositor output, and this does not measure physical input latency.
 internal static class Mo2StartupCheck
 {
+    private static readonly bool Enabled = Environment.GetEnvironmentVariable("MO2_VERIFY_STARTUP") == "1";
     private static readonly Stopwatch Since = Stopwatch.StartNew();
     private static double _windowOpened;
+    private static bool _collectionPlaceholder;
 
     internal static void ProcessStarted() => Since.Restart();
 
@@ -20,10 +23,10 @@ internal static class Mo2StartupCheck
     // and builds a page factory for each page, and only measuring says which of
     // those is the one worth moving off the path.
     private static readonly List<(string Name, double Started, double Ended)> Timeline = [];
-    internal static IDisposable Phase(string name) => new Span(name);
+    internal static IDisposable Phase(string name) => Enabled ? new Span(name) : System.Reactive.Disposables.Disposable.Empty;
 
     private static readonly List<string> Notes = [];
-    internal static void Note(string note) { lock (Notes) Notes.Add(note); }
+    internal static void Note(string note) { if (Enabled) lock (Notes) Notes.Add(note); }
 
     // Stamped from the layout pass that first satisfies something, rather than from
     // a polling loop. Everything here polled with Task.Delay, whose continuations
@@ -61,11 +64,36 @@ internal static class Mo2StartupCheck
     internal static void WindowOpened(Window window, Mo2LiveWorkspace live)
     {
         _windowOpened = Since.Elapsed.TotalMilliseconds;
-        window.LayoutUpdated += (_, _) => {
+        // Normal sessions do not need a visual-tree census on every layout pass.
+        if (!Enabled) return;
+        window.LayoutUpdated += Observe;
+        window.Closed += Closed;
+        void Closed(object? sender, EventArgs args) {
+            window.LayoutUpdated -= Observe;
+            window.Closed -= Closed;
+        }
+        void Observe(object? sender, EventArgs args) {
             if (live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0) Stamp("connected");
             if (live.ModsPage?.Adapter.SourceCount.Value > 0) Stamp("listed");
-            if (window.GetVisualDescendants().OfType<TreeDataGrid>().Any(x => x.Rows?.Count > 0)) Stamp("drawn");
-        };
+            var mods = window.GetVisualDescendants().OfType<Mo2ModsView>().FirstOrDefault(x => x.IsEffectivelyVisible);
+            if (mods is not null && mods.GetVisualDescendants().OfType<Control>().Any(x =>
+                    x.Name is "WritableCollectionPageHeader" or "Statusbar" && x.IsEffectivelyVisible))
+                _collectionPlaceholder = true;
+            var plugins = window.GetVisualDescendants().OfType<Mo2PluginsView>().FirstOrDefault(x => x.IsEffectivelyVisible);
+            var pluginTable = plugins?.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault();
+            if (mods is null || pluginTable is null || Stamped("connected") is null || Stamped("listed") is null) return;
+            var modNames = live.Profile.Mods.Select(x => x.DisplayName).ToHashSet();
+            var readableMod = mods.GetVisualDescendants().OfType<TreeDataGridRow>()
+                .Where(x => x.IsEffectivelyVisible).Any(row => row.GetVisualDescendants().OfType<TextBlock>().Any(x =>
+                    x.IsEffectivelyVisible && x.Bounds.Width >= 60 && x.Bounds.Height > 0 && x.Text is not null && modNames.Contains(x.Text)));
+            if (!readableMod || !Mo2PluginRenderCheck.HasReadableRows(pluginTable,
+                    live.Profile.Order.Plugins.Select(x => x.DisplayName).ToHashSet())) return;
+            Stamp("drawn");
+            window.LayoutUpdated -= Observe;
+            // Measure an actual queued turn after readable layout. This is not a
+            // physical-input test or the first idle turn since process launch.
+            Dispatcher.UIThread.Post(() => Stamp("ready"), DispatcherPriority.Background);
+        }
     }
 
     internal static async Task Run(Mo2LiveWorkspace live, Window window)
@@ -91,30 +119,25 @@ internal static class Mo2StartupCheck
             }
             throw new Exception(what + " never happened");
         }
-        // Observed from the UI thread, so these are the moments the window could
-        // have shown each thing, not the moments the data arrived. That is the
-        // number that matters here: work the dispatcher is busy with is time the
-        // user cannot click through.
-        // The stamps are taken from layout; this loop only adds the moment
-        // the dispatcher had room to answer at all, which is when the window first
-        // responds to the person using it.
-        var idle = await Until(() => Stamped("drawn") is not null, "No table ever drew a row");
+        await Until(() => Stamped("ready") is not null, "Mods and Plugins never reached readable layout and a background dispatcher turn");
+        var idle = Stamped("ready")!.Value;
         var connected = Stamped("connected") ?? idle;
         var listed = Stamped("listed") ?? idle;
         var drawn = Stamped("drawn") ?? idle;
         Console.WriteLine($"STARTUP: first window {_windowOpened:F0}ms, MO2 connected {connected:F0}ms, " +
-            $"mod list built {listed:F0}ms, first rows drawn {drawn:F0}ms, dispatcher first idle {idle:F0}ms");
+            $"mod list built {listed:F0}ms, readable rows laid out {drawn:F0}ms, background turn after rows {idle:F0}ms");
         Console.WriteLine("STARTUP PHASES: " + Phases());
         lock (Notes) Console.WriteLine("STARTUP TEMPLATES: " + string.Join(" | ", Notes));
+        if (_collectionPlaceholder) throw new Exception("Upstream collection controls appeared in Mods during startup");
         // The window has to be on screen quickly even if MO2 is slow to answer, which
         // is the part of startup the frontend actually controls.
         // Bounds set from what this machine actually reaches, so a regression shows
         // up as a failure rather than as a number nobody reads. They are not targets
         // and they are one machine's timings.
         if (_windowOpened > 3200) throw new Exception($"The first window took {_windowOpened:F0}ms");
-        if (drawn > 6000) throw new Exception($"The first rows were drawn at {drawn:F0}ms");
-        if (idle > 8000) throw new Exception($"The dispatcher was busy until {idle:F0}ms");
-        Console.WriteLine($"PASS startup: the window is up in {_windowOpened:F0}ms, the connected profile's rows are on screen " +
-            $"by {drawn:F0}ms, and the dispatcher first has room to answer at {idle:F0}ms");
+        if (drawn > 6000) throw new Exception($"Readable rows were laid out at {drawn:F0}ms");
+        if (idle > 8000) throw new Exception($"The background turn after readable layout ran at {idle:F0}ms");
+        Console.WriteLine($"PASS startup: window {_windowOpened:F0}ms, readable Mods and Plugins layout {drawn:F0}ms, " +
+            $"background turn {idle:F0}ms; no collection placeholders observed");
     }
 }

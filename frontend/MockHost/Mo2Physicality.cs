@@ -6,6 +6,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using System.Runtime.CompilerServices;
 
 namespace Mo2.Frontend;
 
@@ -22,7 +24,21 @@ internal static class Mo2Physicality
     internal static readonly TimeSpan SpringDuration = TimeSpan.FromMilliseconds(320);
     private static readonly TimeSpan SpringDelay = TimeSpan.FromMilliseconds(90);
 
-    private static readonly HashSet<ScrollViewer> Overscrolled = [];
+    private static readonly ConditionalWeakTable<Control, object> OverscrollOwners = new();
+    private static readonly ConditionalWeakTable<ScrollViewer, OverscrollState> OverscrollStates = new();
+
+    static Mo2Physicality()
+    {
+        InputElement.PointerWheelChangedEvent.AddClassHandler<ScrollViewer>((scroll, args) => {
+            if (OverscrollOwners.TryGetValue(scroll, out _) || scroll.GetVisualAncestors().OfType<Control>()
+                    .Any(owner => OverscrollOwners.TryGetValue(owner, out _)))
+                OverscrollStates.GetValue(scroll, viewer => new OverscrollState(viewer)).Wheel(args);
+        }, RoutingStrategies.Tunnel);
+    }
+
+    // Scope the behavior to a page. Class routing includes viewers added later,
+    // so there is no need to census the visual tree on every layout pass.
+    internal static void AttachOverscrollToPage(Control page) => OverscrollOwners.GetValue(page, _ => new object());
 
     private static Transitions Pull(AvaloniaProperty property) => new() {
         new DoubleTransition { Property = property, Duration = PullDuration, Easing = new CubicEaseOut() } };
@@ -34,42 +50,48 @@ internal static class Mo2Physicality
     // Wheeling past either end of a scroll viewer. The presenter moves, not the
     // offset, so scrollbars and hit testing are untouched and nothing to recover
     // from if the pointer leaves mid-pull.
-    internal static void AttachOverscroll(ScrollViewer scroll)
-    {
-        if (!Overscrolled.Add(scroll)) return;
-        scroll.DetachedFromVisualTree += (_, _) => Overscrolled.Remove(scroll);
-        var translate = new TranslateTransform();
-        var pull = 0.0;
-        long version = 0;
-        Control? target = null;
+    internal static void AttachOverscroll(ScrollViewer scroll) => AttachOverscrollToPage(scroll);
 
-        void Apply(double wanted, bool springing)
+    private sealed class OverscrollState
+    {
+        private readonly ScrollViewer _scroll;
+        private readonly TranslateTransform _translate = new();
+        private double _pull;
+        private long _version;
+
+        internal OverscrollState(ScrollViewer scroll)
         {
-            target ??= scroll.Presenter as Control;
-            if (target is null) return;
-            if (!ReferenceEquals(target.RenderTransform, translate)) target.RenderTransform = translate;
-            translate.Transitions = springing ? Spring(TranslateTransform.YProperty) : Pull(TranslateTransform.YProperty);
-            translate.Y = wanted;
+            _scroll = scroll;
+            scroll.DetachedFromVisualTree += (_, _) => {
+                ++_version; _pull = 0;
+                _translate.Transitions = null; _translate.Y = 0;
+            };
         }
 
-        scroll.AddHandler(InputElement.PointerWheelChangedEvent, (_, e) => {
+        private void Apply(double wanted, bool springing)
+        {
+            if (_scroll.Presenter is not Control target) return;
+            if (!ReferenceEquals(target.RenderTransform, _translate)) target.RenderTransform = _translate;
+            _translate.Transitions = springing ? Spring(TranslateTransform.YProperty) : Pull(TranslateTransform.YProperty);
+            _translate.Y = wanted;
+        }
+
+        internal void Wheel(PointerWheelEventArgs e)
+        {
             var down = e.Delta.Y < 0;
             if (e.Delta.Y == 0) return;
-            var scrollable = scroll.Extent.Height - scroll.Viewport.Height;
-            // A list shorter than its viewport is at both ends at once.
-            var atEnd = down ? scroll.Offset.Y >= scrollable - 0.5 : scroll.Offset.Y <= 0.5;
-            if (!atEnd) { if (pull != 0) { pull = 0; version++; Apply(0, springing: true); } return; }
-            // Each further notch gives less, so the pull eases into its limit rather
-            // than stopping dead against it.
-            var remaining = 1 - Math.Abs(pull) / MaxPull;
-            pull = Math.Clamp(pull + (down ? -1 : 1) * PullPerNotch * remaining, -MaxPull, MaxPull);
-            Apply(pull, springing: false);
-            var current = ++version;
+            var scrollable = _scroll.Extent.Height - _scroll.Viewport.Height;
+            var atEnd = down ? _scroll.Offset.Y >= scrollable - 0.5 : _scroll.Offset.Y <= 0.5;
+            if (!atEnd) { if (_pull != 0) { _pull = 0; _version++; Apply(0, springing: true); } return; }
+            var remaining = 1 - Math.Abs(_pull) / MaxPull;
+            _pull = Math.Clamp(_pull + (down ? -1 : 1) * PullPerNotch * remaining, -MaxPull, MaxPull);
+            Apply(_pull, springing: false);
+            var current = ++_version;
             DispatcherTimer.RunOnce(() => {
-                if (current != version) return;
-                pull = 0; Apply(0, springing: true);
+                if (current != _version) return;
+                _pull = 0; Apply(0, springing: true);
             }, SpringDelay);
-        }, RoutingStrategies.Tunnel);
+        }
     }
 
     // The give a control shows while it is being pushed past a limit. Used by the

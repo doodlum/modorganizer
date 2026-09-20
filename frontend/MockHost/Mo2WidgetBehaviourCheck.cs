@@ -19,7 +19,7 @@ namespace Mo2.Frontend;
 // that count rows cannot tolerate.
 internal static class Mo2WidgetBehaviourCheck
 {
-    internal static async Task Run(Mo2LiveWorkspace live, Window window)
+    internal static async Task Run(Mo2LiveWorkspace live, Window window, bool categoriesOnly = false)
     {
         for (var attempt = 0; attempt < 300 && !(live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0); attempt++)
             await Task.Delay(100);
@@ -41,6 +41,7 @@ internal static class Mo2WidgetBehaviourCheck
         await Navigate(menu.LeftMenuItemLoadout);
         await Settle();
         var mods = For<Mo2ModsView>(live.ModsPage);
+        if (mods is null && categoriesOnly) throw new Exception("My Mods never drew for category verification");
         if (mods is null) faults.Add("My Mods never drew");
         else {
             var adapter = (Mo2ModsAdapter)mods.ViewModel!.Adapter;
@@ -69,14 +70,16 @@ internal static class Mo2WidgetBehaviourCheck
                 else worked.Add($"the mod filter narrowed {all} rows to {narrowed}");
             } else faults.Add("My Mods has no filter field");
 
-            // MO2's separators box: shown always, never, or subject to the filter.
+            // MO2 applies separator modes only while a filter is active.
             var separators = live.Profile.Mods.Count(x => x.IsSeparator);
             if (Named<ComboBox>(mods, "ModsFiltersSeparators") is { } separatorMode && separators > 0) {
+                adapter.SetColumnFilters("__mo2_separator_mode_check_no_match__", "", "");
                 separatorMode.SelectedIndex = 2; await Settle();
                 var hidden = adapter.VisibleRowCount;
                 separatorMode.SelectedIndex = 1; await Settle();
                 var shown = adapter.VisibleRowCount;
                 separatorMode.SelectedIndex = 0; await Settle();
+                adapter.SetColumnFilters("", "", ""); await Settle();
                 if (shown - hidden != separators)
                     faults.Add($"hiding separators changed the list by {shown - hidden} rows, not by the {separators} it holds");
                 else worked.Add($"the separators box took {separators} separator(s) out of the list and put them back");
@@ -115,8 +118,9 @@ internal static class Mo2WidgetBehaviourCheck
             // radio pair that narrowed nothing, or that narrowed the same way whichever
             // was chosen, is the fault here — and a one-sided "And shows fewer" passes
             // for a pair that simply empties the list.
-            static string[] Owned(Mo2LiveMod mod) =>
-                mod.Category.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            string[] Owned(Mo2LiveMod mod) => mod.CategoryNames.Concat(live.Profile.CategoryTree
+                .SelectMany(x => x.Walk()).Where(x => x.Type == 1 && mod.CategoryNames.Any(Mo2CategoryNode.Names(x.Name, live.Profile.CategoryTree).Contains))
+                .Select(x => x.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             var andRadio = Named<RadioButton>(mods, "ModsFiltersAnd");
             var orRadio = Named<RadioButton>(mods, "ModsFiltersOr");
             var regular = live.Profile.Mods.Where(x => x.IsRegular).ToArray();
@@ -160,6 +164,57 @@ internal static class Mo2WidgetBehaviourCheck
                 andRadio.IsChecked = true;
                 await Settle();
                 if (adapter.VisibleRowCount != all) faults.Add("the list was left narrowed after the And/Or pair was tried");
+            }
+
+            if (categoriesOnly) {
+                if (pair.First.Name is null) throw new Exception("No distinct native category owners to verify And/Or");
+                var firstCategory = categories.Single(x => (string)x.Tag! == pair.First.Name);
+                var secondCategory = categories.Single(x => (string)x.Tag! == pair.Second.Name);
+                firstCategory.IsChecked = null;
+                await Settle();
+                void CheckInverse(bool any, bool includeSecond) {
+                    var expected = regular.Where(x => {
+                        var inverse = !Owned(x).Contains(pair.First.Name);
+                        var second = Owned(x).Contains(pair.Second.Name);
+                        return includeSecond ? (any ? inverse || second : inverse && second) : inverse;
+                    }).Select(x => x.Id.ToString()).ToHashSet();
+                    var regularIds = regular.Select(x => x.Id.ToString()).ToHashSet();
+                    if (!adapter.VisibleOrder.Where(regularIds.Contains).ToHashSet().SetEquals(expected))
+                        faults.Add("Inverted category rows disagree with native membership and And/Or");
+                }
+                CheckInverse(false, false);
+                if (Named<TextBlock>(mods, "ModsCurrentCategoryLabel")?.Text?.Contains("Not " + pair.First.Name) != true ||
+                    Named<Button>(mods, "ModsClearFiltersButton")?.IsVisible != true)
+                    faults.Add("Inverted-only filter is absent from the footer or Clear action");
+                secondCategory.IsChecked = true; await Settle(); CheckInverse(false, true);
+                orRadio!.IsChecked = true; await Settle(); CheckInverse(true, true);
+                Named<Button>(mods, "ModsClearFiltersButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                andRadio!.IsChecked = true; await Settle();
+                if (categories.Any(x => x.IsChecked != false) || adapter.VisibleRowCount != all)
+                    faults.Add("Clear retained an inverted category or failed to restore rows");
+                foreach (var box in categories) {
+                    var name = (string)box.Tag!;
+                    var count = live.Profile.Mods.Count(x => !x.IsSeparator && Owned(x).Contains(name, StringComparer.OrdinalIgnoreCase));
+                    var caption = box.Content is Panel content ? content.Children.OfType<TextBlock>().Single().Text : (box.Content as TextBlock)?.Text;
+                    if (caption != $"{name} ({count})") faults.Add("Category count differs from native membership");
+                    if (box.Content is Panel nested) {
+                        var expand = nested.Children.OfType<Button>().Single();
+                        var node = live.Profile.CategoryTree.SelectMany(x => x.Walk()).First(x => x.Name == name);
+                        var childNames = node.Children.SelectMany(x => x.Walk()).Select(x => x.Name).ToHashSet();
+                        var children = categories.Where(x => childNames.Contains((string)x.Tag!)).ToArray();
+                        var checkedBefore = box.IsChecked;
+                        expand.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                        await Settle();
+                        if (children.Any(x => x.IsVisible) || box.IsChecked != checkedBefore) faults.Add("Collapsing parent changed selection or left descendants visible");
+                        expand.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                        await Settle();
+                        if (children.Any(x => !x.IsVisible || x.Margin.Left <= box.Margin.Left)) faults.Add("Expanding parent did not restore indented children");
+                    }
+                }
+                await Navigate(restore);
+                if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
+                Console.WriteLine("PASS native category UI: category counts, include/invert selection, mixed And/Or row identities, inverse footer, clear and restored list");
+                return;
             }
 
             // MO2 says a filtered list is filtered rather than leaving it looking like
@@ -494,94 +549,84 @@ internal static class Mo2WidgetBehaviourCheck
             // nothing: the Archives box reported putting 52 rows back into a tree
             // that had had 0.
             await Until(() => rows() > 0, seconds: 30);
-            var before = rows();
-            if (before == 0) faults.Add("Data drew no rows to work its boxes over");
+            Mo2DataEntry[] Rows() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
+                ?.Source?.Items.OfType<Mo2DataEntry>().ToArray() ?? [];
+            IEnumerable<Mo2DataEntry> Descendants(IEnumerable<Mo2DataEntry> entries) {
+                foreach (var entry in entries) {
+                    yield return entry;
+                    foreach (var child in Descendants(entry.Children)) yield return child;
+                }
+            }
+            async Task DataSettled() {
+                await Settle();
+                var status = data.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "DataStatus");
+                await Until(() => status.Text?.EndsWith(" visible entries") == true, seconds: 60);
+                if (status.Text?.EndsWith(" visible entries") != true)
+                    throw new InvalidOperationException($"Data filtering did not finish: {status.Text}");
+            }
+            string[] DataNames(IEnumerable<Mo2DataEntry> entries) => entries.Select(x => x.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var before = Rows();
+            if (before.Length == 0) faults.Add("Data drew no rows to work its boxes over");
             if (Named<TextBox>(data, "DataQtFilter") is { } filter) {
-                // Text off a row the tree is showing, not "zzzzzz": a field that emptied
-                // the tree whatever was typed passed that. The page keeps a row whose
-                // name carries the text, so the rows already listed say how many should
-                // survive.
-                var listed = data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
-                    ?.Source?.Items.OfType<Mo2DataEntry>().Select(x => x.Name).ToArray() ?? [];
-                var target = listed.FirstOrDefault(x => x.Length >= 4) ?? "";
+                var target = before.Select(x => x.Name).FirstOrDefault(x => x.Length >= 4) ?? "";
                 var needle = target.Length >= 4 ? target[..4] : "";
                 if (needle.Length == 0) worked.Add("no Data row has a name long enough to filter on, so the Data filter was not exercised");
                 else {
-                    var expected = listed.Count(x => x.Contains(needle, StringComparison.OrdinalIgnoreCase));
-                    filter.Text = needle; await Settle();
-                    var narrowed = rows();
-                    var kept = Shows(data, target);
-                    filter.Text = ""; await Settle();
-                    if (rows() != before) faults.Add("clearing the Data filter did not put the tree back");
-                    else if (narrowed != expected) faults.Add($"the Data filter left {narrowed} of {before} rows for \"{needle}\", where {expected} row(s) carry it");
-                    else if (!kept) faults.Add($"the Data filter dropped {target}, which carries \"{needle}\"");
-                    else worked.Add($"the Data filter kept the {expected} of {before} row(s) named for \"{needle}\", {target} among them");
+                    bool Matches(Mo2DataEntry entry) => entry.Name.Contains(needle, StringComparison.OrdinalIgnoreCase);
+                    filter.Text = needle; await DataSettled();
+                    var narrowed = Rows();
+                    var invalid = Descendants(narrowed).Any(x => !Matches(x) &&
+                        (!x.Directory || !Descendants(x.Children).Any(Matches)));
+                    var missing = before.Where(Matches).Any(x => !narrowed.Any(y => y.Name == x.Name));
+                    filter.Text = ""; await DataSettled();
+                    if (!DataNames(Rows()).SequenceEqual(DataNames(before))) faults.Add("clearing the Data filter did not put the root rows back");
+                    else if (invalid) faults.Add("the Data filter retained a nonmatching entry without a matching descendant");
+                    else if (missing) faults.Add("the Data filter dropped a matching root entry");
+                    else worked.Add("the Data filter retained matching entries and their ancestors, then restored the root rows");
                 }
             } else faults.Add("Data has no filter field");
             if (Named<CheckBox>(data, "DataFromArchives") is { } archives) {
-                // What the box is meant to take away, counted off the rows the tree is
-                // showing. Holding it to "did not add rows" passed while the box did
-                // nothing at all — the tree went from 52 rows to 52 and that was
-                // reported as the box working.
-                Mo2DataEntry[] Listed() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
-                    ?.Source?.Items.OfType<Mo2DataEntry>().ToArray() ?? [];
-                int Served() => Listed().Count(x => !x.Directory && x.Archive.Length > 0);
-                // MO2 lists a BSA's contents under the folders it puts them in, so the
-                // Data root has none to take away and the box cannot be exercised
-                // there. Descend until a folder has some.
+                int Served() => Rows().Count(x => !x.Directory && x.Archive.Length > 0);
                 var reached = "Data";
                 if (Served() == 0)
-                    foreach (var folder in Listed().Where(x => x.Directory).Select(x => x.Name).Take(8).ToArray()) {
-                        await data.ShowFolder(folder); await Settle();
+                    foreach (var folder in Rows().Where(x => x.Directory).Select(x => x.Name).Take(8).ToArray()) {
+                        await data.ShowFolder(folder); await DataSettled();
                         if (Served() > 0) { reached = "Data/" + folder; break; }
-                        await data.ShowFolder(""); await Settle();
+                        await data.ShowFolder(""); await DataSettled();
                     }
-                var here = rows();
-                var served = Served();
-                archives.IsChecked = false;
-                // Data reads itself again when a box is ticked, so the tree is
-                // rebuilt rather than refiltered. Waited for rather than read once:
-                // a fixed pause was long enough while this instance served nothing
-                // out of an archive and not once it did, which is how a run that had
-                // reported the box unexercised for weeks turned into "reticking
-                // Archives did not put Data back".
-                await Until(() => rows() != here || served == 0, 15);
-                await Settle();
-                var without = rows();
-                archives.IsChecked = true;
-                await Until(() => rows() == here, 15);
-                await Settle();
-                if (rows() != here) faults.Add($"reticking Archives left {rows()} of {reached}'s {here} row(s)");
-                else if (served == 0)
-                    worked.Add($"the Archives box found no archive-served file under Data to take away, so it was not exercised");
-                else if (without != here - served)
-                    faults.Add($"unticking Archives left {without} of {here} rows in {reached}, with {served} served out of an archive");
-                else worked.Add($"the Archives box took the {served} archive-served row(s) out of {here} in {reached} and put them back");
-                await data.ShowFolder(""); await Settle();
+                var here = Rows();
+                var expectedFiles = DataNames(here.Where(x => !x.Directory && x.Archive.Length == 0));
+                archives.IsChecked = false; await DataSettled();
+                var without = Rows();
+                var wrongFiles = !DataNames(without.Where(x => !x.Directory)).SequenceEqual(expectedFiles);
+                var invalid = Descendants(without).Any(x => x.Directory
+                    ? !Descendants(x.Children).Any(y => !y.Directory && y.Archive.Length == 0)
+                    : x.Archive.Length > 0);
+                archives.IsChecked = true; await DataSettled();
+                if (!DataNames(Rows()).SequenceEqual(DataNames(here))) faults.Add($"reticking Archives did not restore {reached}'s root rows");
+                else if (wrongFiles || invalid) faults.Add("unticking Archives failed loose-file retention or archive-only folder pruning");
+                else worked.Add($"the Archives box retained loose files and pruned empty/archive-only folders in {reached}, then restored its root rows");
+                await data.ShowFolder(""); await DataSettled();
             } else faults.Add("Data has no Archives box");
 
-            // MO2's other two boxes over the same tree, each counted off the rows the
-            // tree is already showing rather than held to "it changed something".
-            Mo2DataEntry[] Rows() => data.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()
-                ?.Source?.Items.OfType<Mo2DataEntry>().ToArray() ?? [];
             if (Named<CheckBox>(data, "DataConflictsOnly") is { } conflicts) {
                 var here = Rows();
-                // MO2 keeps every folder — it is how the rest is reached — and the files
-                // more than one mod provides.
-                var expected = here.Count(x => x.Directory || x.Origins.Distinct().Count() > 1);
-                conflicts.IsChecked = true; await Settle();
-                var narrowed = Rows().Length;
-                conflicts.IsChecked = false; await Settle();
-                if (Rows().Length != here.Length) faults.Add("unticking Conflicts only did not put the tree back");
-                else if (narrowed != expected)
-                    faults.Add($"Conflicts only left {narrowed} of {here.Length} rows, where {expected} are folders or served by more than one mod");
-                else if (expected == here.Length)
-                    worked.Add($"no file under Data is served by one mod alone, so Conflicts only had nothing to take away and was not exercised");
-                else worked.Add($"Conflicts only kept the {expected} conflicting or folder row(s) of {here.Length} and put the rest back");
+                bool Conflicting(Mo2DataEntry entry) => !entry.Directory && entry.Origins.Distinct().Count() > 1 &&
+                    !entry.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase);
+                var expectedFiles = DataNames(here.Where(Conflicting));
+                conflicts.IsChecked = true; await DataSettled();
+                var narrowed = Rows();
+                var wrongFiles = !DataNames(narrowed.Where(x => !x.Directory)).SequenceEqual(expectedFiles);
+                var invalid = Descendants(narrowed).Any(x => x.Directory
+                    ? !Descendants(x.Children).Any(Conflicting) : !Conflicting(x));
+                conflicts.IsChecked = false; await DataSettled();
+                if (!DataNames(Rows()).SequenceEqual(DataNames(here))) faults.Add("unticking Conflicts only did not restore the root rows");
+                else if (wrongFiles || invalid) faults.Add("Conflicts only failed conflicting-file retention or nonconflicting folder pruning");
+                else worked.Add("Conflicts only retained conflicting files and their ancestors, then restored the root rows");
             } else faults.Add("Data has no Conflicts only box");
             if (Named<CheckBox>(data, "DataHiddenFiles") is { } hiddenFiles) {
                 var here = Rows();
-                static bool Hidden(Mo2DataEntry row) => !row.Directory && row.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase);
+                static bool Hidden(Mo2DataEntry row) => row.Name.EndsWith(".mohidden", StringComparison.OrdinalIgnoreCase);
                 if (here.Any(Hidden)) faults.Add("Data lists a hidden file before its box is ticked");
                 hiddenFiles.IsChecked = true; await Settle();
                 var shown = Rows();

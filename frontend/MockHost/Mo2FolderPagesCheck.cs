@@ -35,13 +35,13 @@ internal static class Mo2FolderPagesCheck
             foreach (var (name, create) in new (string, Func<Control>)[] {
                 ("External Files", () => new Mo2ExternalFilesView((_, _, _) => Task.FromResult(
                     new Mo2ExternalScan("/fixture", 1, 2, [
-                        new("folder/inner.esp", 42_275_072, "File"), new("loose.txt", 2048, "File")]))) {
+                        new("folder/inner.esp", 42_275_072, "File"), new("loose.txt", 42_275_072, "File")]))) {
                     ViewModel = new Mo2ExternalFilesPage(windows, shell.Profile) }),
                 ("Data", () => new Mo2DataView((_, _) => Task.FromResult<Mo2DataEntry[]>([
-                        new("folder", true, [], ""), new("loose.txt", false, ["Fixture"], "")])) {
+                        new("folder", true, [], ""), new("loose.txt", false, ["Fixture"], "", "42275072")])) {
                     ViewModel = new Mo2DataPage(windows, shell.Profile) }),
                 ("Overwrite", () => new Mo2OverwriteView(_ => Task.FromResult<Mo2OverwriteFile[]>([
-                        new("folder/inner.esp", 42_275_072), new("loose.txt", 2048)])) {
+                        new("folder/inner.esp", 42_275_072), new("loose.txt", 42_275_072)])) {
                     ViewModel = new Mo2OverwritePage(windows, shell.Profile) }),
             }) {
                 var page = create();
@@ -138,6 +138,10 @@ internal static class Mo2FolderPagesCheck
                                          x.Bounds.Width + .5 < x.DesiredSize.Width))
                     faults.Add($"{name} clips \"{clipped.Text}\" to {clipped.Bounds.Width:F0}px of " +
                         $"{clipped.DesiredSize.Width:F0}px");
+
+                var expectedSize = Mo2FolderPage.SizeText(42_275_072);
+                if (!table.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Text == expectedSize))
+                    faults.Add($"{name} does not render the shared file size {expectedSize}");
 
                 described.Add($"{name} ({actions.Length} icon actions)");
             }

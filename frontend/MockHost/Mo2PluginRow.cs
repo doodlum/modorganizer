@@ -9,34 +9,39 @@ namespace Mo2.Frontend;
 
 internal static class Mo2PluginRow
 {
-    // MO2's own plugin list columns, in the order its model declares them
-    // (src/pluginlist.h, EColumn) and under the headers it gives them
-    // (pluginlist.cpp). The enable box sits in the name column as it does in MO2,
-    // and the row's actions are on its right-click menu rather than in a column.
-    internal const int Name = 0, Flags = 1, Priority = 2, ModIndex = 3,
-        FormVersion = 4, HeaderVersion = 5, Author = 6, Description = 7;
+    // Display metadata that helps identify a plugin. Its position in the list
+    // conveys priority; numeric load-order details belong in the row tooltip and
+    // diagnostics, where they remain available without crowding the name.
+    internal const int Name = 0, Flags = 1, FormVersion = 2, HeaderVersion = 3,
+        Author = 4, Description = 5;
 
-    // Sized for MO2's own text, as the mod list's columns are.
     internal static Grid Columns() => new() { ColumnDefinitions = new ColumnDefinitions(
-        "*,24,48,64,76,84,92,*") };
+        "*,24,76,84,92,*") };
 
     internal static readonly (int Column, string Name)[] Headers = [
-        (Name, "Name"), (Flags, "Flags"), (Priority, "Priority"), (ModIndex, "Mod Index"),
-        (FormVersion, "Form Version"), (HeaderVersion, "Header Version"),
-        (Author, "Author"), (Description, "Description")];
+        (Name, "Name"), (Flags, "Flags"), (FormVersion, "Form Version"),
+        (HeaderVersion, "Header Version"), (Author, "Author"), (Description, "Description")];
 
     internal static readonly HashSet<int> HiddenColumns = [];
     internal static readonly (int Column, string Name)[] OptionalColumns =
         Headers.Where(x => x.Column != Name).ToArray();
 
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
-        (Flags, 24, 250), (Priority, 48, 310), (ModIndex, 64, 380),
+        (Flags, 24, 250),
         (FormVersion, 76, 720), (HeaderVersion, 84, 860), (Author, 92, 560),
         (Description, 180, 1010)];
 
     internal static void Fit(Grid row, double width) =>
         Mo2TableRow.Fit(row, width, Optional, HiddenColumns.Contains,
-            chrome: Mo2TableRow.RailWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
+            chrome: Mo2TableRow.RailWidth + Mo2TableRow.GripWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
+    internal static string Details(ScenarioPlugin plugin) => string.Join("\n", new[] {
+        plugin.DisplayName,
+        plugin.ModName.Length > 0 ? "Mod: " + plugin.ModName : "",
+        plugin.PriorityText.Length > 0 ? "Priority: " + plugin.PriorityText : "",
+        plugin.ModIndex.Length > 0 ? "Mod index: " + plugin.ModIndex : "",
+        plugin.Diagnostics,
+    }.Where(text => text.Length > 0));
+
     internal static Control Create(Mo2LiveProfile profile, ScenarioPlugin plugin)
     {
         Mo2UiLatencyProbe.Count("Plugin rows created");
@@ -103,13 +108,17 @@ internal static class Mo2PluginRow
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.Order.FindPlugin(plugin.Key)?.CanToggle == true);
         var name = Mo2TableRow.Cell(plugin.DisplayName, plugin.IsActive ? .85 : .5);
         name.Name = "PluginName";
-        ToolTip.SetTip(name, plugin.DisplayName + "\nMod: " + plugin.ModName + "\n" + plugin.Diagnostics);
+        ToolTip.SetTip(name, Details(plugin));
         var title = new DockPanel();
         var padlock = new UnifiedIcon { Name = "PluginLockIcon", Value = new ProjektankerIcon("mdi-lock-outline"), Size = 14, Margin = new Thickness(0,0,4,0), VerticalAlignment = VerticalAlignment.Center, IsVisible = plugin.IsLocked };
         ToolTip.SetTip(padlock, "Load order locked by MO2"); DockPanel.SetDock(padlock, Dock.Left); title.Children.Add(padlock);
         title.Children.Add(name);
-        var nameCell = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.StatusColumn},*") };
-        Mo2TableRow.Add(nameCell, toggle, 0); Mo2TableRow.Add(nameCell, title, 1);
+        var grip = Mo2EntryMenu.Create("Plugin", plugin.DisplayName, Actions, ownContextMenu: false);
+        if (!plugin.CanMove) {
+            ToolTip.SetTip(grip, "MO2 fixes this plugin’s load-order position");
+            Avalonia.Automation.AutomationProperties.SetName(grip, plugin.DisplayName + ": fixed load-order position");
+        }
+        var nameCell = Mo2TableRow.NameCell(grip, toggle, title);
         Mo2TableRow.Add(row, nameCell, Name);
         row.ContextFlyout = Mo2EntryMenu.Flyout(Actions);
 
@@ -123,14 +132,11 @@ internal static class Mo2PluginRow
         if (flagDetail.Length > 0) ToolTip.SetTip(flags, flagDetail);
         Mo2TableRow.Add(row, flags, Flags);
 
-        var priority = Mo2TableRow.Cell(plugin.PriorityText, .6);
-        var modIndex = Mo2TableRow.Cell(plugin.ModIndex, .6);
         var formVersion = Mo2TableRow.Cell(plugin.FormVersion, .6);
         var headerVersion = Mo2TableRow.Cell(plugin.HeaderVersion, .6);
         var author = Mo2TableRow.Cell(plugin.Author, .6);
         var description = Mo2TableRow.Cell(plugin.Description, .6);
         if (plugin.Description.Length > 0) ToolTip.SetTip(description, plugin.Description);
-        Mo2TableRow.Add(row, priority, Priority); Mo2TableRow.Add(row, modIndex, ModIndex);
         Mo2TableRow.Add(row, formVersion, FormVersion); Mo2TableRow.Add(row, headerVersion, HeaderVersion);
         Mo2TableRow.Add(row, author, Author); Mo2TableRow.Add(row, description, Description);
         void Refresh() {
@@ -138,7 +144,7 @@ internal static class Mo2PluginRow
             if (target == profile.CurrentTarget && profile.Order.FindPlugin(plugin.Key) is { } latest) plugin = latest;
             padlock.IsVisible = plugin.IsLocked;
             name.Opacity = plugin.IsActive ? .85 : .5;
-            ToolTip.SetTip(name, plugin.DisplayName + "\nMod: " + plugin.ModName + "\n" + plugin.Diagnostics);
+            ToolTip.SetTip(name, Details(plugin));
             toggle.IsChecked = plugin.IsActive;
             toggle.IsEnabled = ready && plugin.CanToggle;
             // The menu was built for the plugin as it then was. What changes while it

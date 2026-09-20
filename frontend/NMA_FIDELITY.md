@@ -1,4 +1,17 @@
-# Current shared-component audit — 2026-09-14
+# Shared tab-strip change — 2026-09-20
+
+The current working tree also changes `PanelView.axaml.cs` to reveal a selected
+tab after navigation, title changes or viewport resizing. Compact MO2 pages use
+the tab as their visible title; previously sidebar navigation could leave that
+title outside the strip. Manual arrow/wheel scrolling does not itself request a
+reveal. Selection invalidates the cached reveal even when multiple selections
+occur before the next layout. This is a shared panel behavior change, not a
+separate MO2 tab implementation.
+
+The source hashes and comparison below predate this change and must not be read
+as hashes of the current working tree.
+
+# Shared-component audit — 2026-09-14
 
 This section is the current source comparison. The dated sections below are
 historical and may describe UI choices superseded by later user requests.

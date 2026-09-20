@@ -26,7 +26,7 @@ internal sealed class Mo2ExternalFilesPage : APageViewModel<IMo2ExternalFilesPag
 internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFilesPage>
 {
     private readonly TreeDataGrid _table = Mo2FolderPage.Table("ExternalFilesTable");
-    private readonly TextBox _search = Mo2FolderPage.Search("ExternalFilesSearch", "Search external files");
+    private readonly TextBox _search;
     private readonly TextBlock _status = Mo2FolderPage.Status("ExternalFilesStatus");
     private readonly Button _reveal;
     private readonly Button _import;
@@ -50,11 +50,13 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
     internal Mo2ExternalFilesView(Func<Mo2ProfileTarget, string, CancellationToken, Task<Mo2ExternalScan>>? read)
     {
         _read = read;
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
+        Mo2TableRow.InstallRowStyles(_table);
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
         var header = new PageHeader { Title = "External Files", Icon = IconValues.FolderEditOutline,
             Description = "Files in your game folder that aren't included in Steam's installed game and DLC manifests." };
         root.Children.Add(header);
-        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto"), Margin = new Thickness(0, 8) };
+        var filter = Mo2QtWidgets.Filter("ExternalFilesSearch", "Search external files", _ => Render(), out _search);
+        var search = new Mo2ToolbarSearch(this, "ExternalFilesToolbarSearch", filter, _search, "Search external files");
         _import = Mo2ModRow.IconButton("mdi-import", "Import copy as mod… Select files inside Data. Originals remain in the game folder and can still override the imported mod.", async () => await ImportCopy());
         _import.Name = "ImportExternalFiles"; _import.IsEnabled = false;
         _cleanup = Mo2ModRow.IconButton("mdi-folder-move-outline", "Move verified originals to backup… Enable the imported mod first.", async () => await Cleanup());
@@ -65,20 +67,12 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
         _reveal.Name = "RevealExternalFiles"; _reveal.IsEnabled = false;
         var refresh = Mo2ModRow.IconButton("mdi-refresh", "Scan game folder", async () => await Refresh());
         refresh.Name = "RefreshExternalFiles";
-        toolbar.Children.Add(_search); Grid.SetColumn(_import, 1); toolbar.Children.Add(_import);
-        Grid.SetColumn(_cleanup, 2); toolbar.Children.Add(_cleanup);
-        Grid.SetColumn(_restore, 3); toolbar.Children.Add(_restore);
-        Grid.SetColumn(_reveal, 4); toolbar.Children.Add(_reveal);
-        Grid.SetColumn(refresh, 5); toolbar.Children.Add(refresh);
-        Grid.SetRow(toolbar, 1); root.Children.Add(toolbar);
-        Grid.SetRow(_status, 2); root.Children.Add(_status);
-        Grid.SetRow(_table, 3); root.Children.Add(_table);
+        Grid.SetRow(_status, 1); root.Children.Add(_status);
+        Grid.SetRow(_table, 2); root.Children.Add(_table);
         Content = root;
-        _columns = new Mo2ColumnToggle("external-files", () => Render());
-        // Search in the row beneath, magnifier on the header line, as Mods does.
-        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(toolbar, "Search external files"),
-            _import, _cleanup, _restore, _reveal, refresh);
-        _search.TextChanged += (_, _) => Render();
+        _columns = new Mo2ColumnToggle("external-files", () => Render(), pinned: [Mo2FolderPage.NameHeader]);
+        Mo2PanelChrome.Apply(this, root, header,
+            Mo2ListToolbar.Pill("ExternalFilesToolbarActions", _import, _cleanup, _restore, _reveal, refresh), search);
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true;
@@ -123,6 +117,7 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
     }
 
     private Mo2ColumnToggle? _columns;
+    private EventHandler? _fitColumns;
     // Named here so a check can compare them with NMA's own column definitions
     // without having to build the page.
     internal static string[] ColumnHeaders => [
@@ -147,12 +142,20 @@ internal sealed class Mo2ExternalFilesView : ReactiveUserControl<Mo2ExternalFile
         // here, so they cannot drift from the app this page is meant to match. They
         // were written in capitals, which made this the one page in the frontend
         // whose table headers did not read like the rest.
-        source.Columns.Add(Mo2FolderPage.SizeColumn<Mo2ExternalFileNode>(x => x.SizeText));
-        source.Columns.Add(new TextColumn<Mo2ExternalFileNode, string>(
+        var size = Mo2FolderPage.SizeColumn<Mo2ExternalFileNode>(x => x.SizeText);
+        var count = new TextColumn<Mo2ExternalFileNode, string>(
             SharedColumns.FileCount.GetColumnHeader(), x => x.FileCountText,
-            new GridLength(Mo2FolderPage.SizeColumnWidth)));
+            new GridLength(Mo2FolderPage.SizeColumnWidth),
+            new TextColumnOptions<Mo2ExternalFileNode> { MinWidth = new GridLength(0) });
+        source.Columns.Add(size); source.Columns.Add(count);
         _columns?.Apply(source.Columns);
         var previous = _table.Source; _table.Source = source; (previous as IDisposable)?.Dispose();
+        var fitColumns = Mo2FolderPage.MetadataFitter(_table, source,
+            (size, Mo2FolderPage.SizeColumnWidth, 296), (count, Mo2FolderPage.SizeColumnWidth, 400));
+        _table.LayoutUpdated -= _fitColumns;
+        _fitColumns = (_, _) => fitColumns();
+        _table.LayoutUpdated += _fitColumns;
+        fitColumns();
         // Recycled expander cells can retain their previous collapsed state
         // while a replacement source attaches. Search must expose every match.
         if (_searching) source.ExpandAll();

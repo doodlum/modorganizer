@@ -22,6 +22,7 @@ namespace Mo2.Frontend;
 // has, and offered no way to hide a column.
 internal static class Mo2FolderPage
 {
+    internal static string NameHeader => SharedColumns.NameWithFileIcon.GetColumnHeader();
     // NMA styles its file trees Compact and reserves MainListsStyling for mod
     // lists. All three of these are file trees.
     internal static TreeDataGrid Table(string name)
@@ -76,7 +77,37 @@ internal static class Mo2FolderPage
     internal const double SizeColumnWidth = 104;
 
     internal static TextColumn<T, string> SizeColumn<T>(Func<T, string> text, string? header = null) where T : class =>
-        new(header ?? SharedColumns.ItemSizeOverGamePath.GetColumnHeader(), x => text(x), new GridLength(SizeColumnWidth));
+        new(header ?? SharedColumns.ItemSizeOverGamePath.GetColumnHeader(), x => text(x), new GridLength(SizeColumnWidth),
+            new TextColumnOptions<T> { MinWidth = new GridLength(0) });
+
+    // Fixed metadata gives way before filenames become unreadable. Keep column
+    // identities rather than indices: user-hidden columns are removed from the
+    // source, so saved indices can resize the wrong column or leave its bounds.
+    internal static Action MetadataFitter<T>(TreeDataGrid table, HierarchicalTreeDataGridSource<T> source,
+        params (IColumn<T> Column, double Width, double Threshold)[] optional) where T : class
+    {
+        double previousWidth = -1;
+        IColumn<T>[] previousColumns = [];
+        return Fit;
+        void Fit() {
+            var width = table.Bounds.Width;
+            if (width <= 0) return;
+            // Ordinary layout passes must not reset a user's column resize or
+            // rebuild metadata choices while width and columns are stable.
+            if (width == previousWidth && source.Columns.SequenceEqual(previousColumns)) return;
+            previousWidth = width; previousColumns = source.Columns.ToArray<IColumn<T>>();
+            var shown = optional.Where(x => source.Columns.Contains(x.Column) && width >= x.Threshold).ToList();
+            while (shown.Count > 0 && width - 12 - shown.Sum(x => x.Width) < Mo2TableRow.NameFloor)
+                shown.Remove(shown.MaxBy(x => x.Threshold));
+            foreach (var item in optional) {
+                for (var index = 0; index < source.Columns.Count; index++) {
+                    if (!ReferenceEquals(source.Columns[index], item.Column)) continue;
+                    source.Columns.SetColumnWidth(index, new GridLength(shown.Any(x => ReferenceEquals(x.Column, item.Column)) ? item.Width : 0));
+                    break;
+                }
+            }
+        }
+    }
 
     // Matches the B / KB / MB steps the reference screenshot shows.
     internal static string SizeText(long bytes) => bytes switch {

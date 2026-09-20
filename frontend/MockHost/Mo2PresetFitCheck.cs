@@ -85,6 +85,40 @@ internal static class Mo2PresetFitCheck
                     $"{name} did not open in MO2's right panel");
                 await Measure(right, name, page);
             }
+            var navigationFaults = faults.Count;
+            var rightView = window.GetVisualDescendants().OfType<PanelView>().Single(x => ReferenceEquals(x.ViewModel, right));
+            var tabScroll = rightView.GetVisualDescendants().OfType<ScrollViewer>().Single(x => x.Name == "TabHeaderScrollViewer");
+            var beforeScroll = tabScroll.Offset.X;
+            if (beforeScroll <= 0) faults.Add("tab scrolling was not exercised: last selected tab did not require scrolling");
+            else {
+                rightView.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "ScrollLeftButton")
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(350);
+                window.UpdateLayout();
+                if (tabScroll.Offset.X >= beforeScroll - 1) faults.Add("manual tab scrolling was overridden by selected-tab reveal");
+            }
+            foreach (var tab in new[] { right.Tabs[0], right.Tabs[^1] }) {
+                right.SelectTab(tab.Id);
+                try { await Until(() => SelectedTabVisible(rightView, right), "Selecting a distant tab did not reveal its label"); }
+                catch (Exception error) {
+                    var selected = rightView.GetVisualDescendants().OfType<PanelTabHeaderView>().SingleOrDefault(x => x.ViewModel?.Id == right.SelectedTab.Id);
+                    throw new Exception(error.Message + $"; title={right.SelectedTab.Header.Title}; offset={tabScroll.Offset.X}; viewport={tabScroll.Viewport.Width}; extent={tabScroll.Extent.Width}; headerX={selected?.TranslatePoint(default, tabScroll)?.X}; headerWidth={selected?.Bounds.Width}");
+                }
+            }
+            var originalWidth = window.Width;
+            var originalState = window.WindowState;
+            try {
+                window.WindowState = WindowState.Normal;
+                await Task.Delay(200);
+                foreach (var width in new[] { 900.0, 640.0, 1280.0 }) {
+                    window.Width = width;
+                    await Until(() => Math.Abs(window.ClientSize.Width - width) < 2, $"Tab resize check did not reach requested width {width}");
+                    await Task.Delay(300); window.UpdateLayout();
+                    await Until(() => SelectedTabVisible(rightView, right), "Selected tab disappeared after resizing");
+                }
+            } finally { window.Width = originalWidth; window.WindowState = originalState; }
+            if (faults.Count == navigationFaults)
+                Console.WriteLine("PASS selected-tab navigation: manual scrolling retained; first/last selection and 900/640/1280-width resizing keep the selected label visible");
         } finally {
             actions[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             await Task.Delay(800);
@@ -98,9 +132,18 @@ internal static class Mo2PresetFitCheck
             (control.Name ?? control.GetType().Name) +
             (control is ContentControl { Content: string text } && text.Length > 0 ? $" (\"{text}\")" : "");
 
-        async Task Until(Func<bool> ready, string failure)
+        static bool SelectedTabVisible(PanelView view, IPanelViewModel panel)
         {
-            for (var attempt = 0; attempt < 200; attempt++) {
+            var scroll = view.GetVisualDescendants().OfType<ScrollViewer>().Single(x => x.Name == "TabHeaderScrollViewer");
+            var header = view.GetVisualDescendants().OfType<PanelTabHeaderView>().SingleOrDefault(x => x.ViewModel?.Id == panel.SelectedTab.Id);
+            var at = header?.TranslatePoint(default, scroll);
+            return header is not null && at is not null && scroll.Viewport.Width > 0 && at.Value.X >= -Slack &&
+                at.Value.X + Math.Min(header.Bounds.Width, scroll.Viewport.Width) <= scroll.Viewport.Width + Slack;
+        }
+
+        async Task Until(Func<bool> ready, string failure, int seconds = 20)
+        {
+            for (var attempt = 0; attempt < seconds * 10; attempt++) {
                 if (ready()) return;
                 await Task.Delay(100);
                 window.UpdateLayout();
@@ -126,12 +169,80 @@ internal static class Mo2PresetFitCheck
                 settled = now;
             }
 
+            if (page is Mo2ExternalFilesPage) {
+                Mo2ExternalFilesView? external = null;
+                await Until(() => (external = view!.GetVisualDescendants().OfType<Mo2ExternalFilesView>()
+                    .FirstOrDefault(x => ReferenceEquals(x.ViewModel, page))) is { IsReading: false },
+                    "External Files scan did not finish", seconds: 120);
+                var status = external!.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "ExternalFilesStatus").Text ?? "";
+                if (!status.Contains("external files ·")) throw new Exception("External Files scan did not produce a classification: " + status);
+                Console.WriteLine("CHECK populated External Files: " + status);
+                await Task.Delay(300); window.UpdateLayout();
+            }
+
+            if (page is Mo2SavesPage savesPage) {
+                var expected = await savesPage.Profile.ReadSaves(savesPage.Profile.CurrentTarget);
+                TreeDataGrid? table = null;
+                await Until(() => (table = view!.GetVisualDescendants().OfType<TreeDataGrid>()
+                    .FirstOrDefault(x => x.IsEffectivelyVisible && x.Name == "SavesTable"))?.Source
+                    is FlatTreeDataGridSource<Mo2Save> source && source.Items.SequenceEqual(expected),
+                    "Saves did not display MO2's current rows");
+                if (expected.Length > 0) {
+                    await Until(() => table!.GetVisualDescendants().OfType<TextBlock>().Any(x =>
+                        x.IsEffectivelyVisible && x.Bounds.Width >= 60 && x.Bounds.Height > 0 && x.Text == expected[0].Name),
+                        "Populated Saves has no readable first name");
+                    try {
+                        foreach (var count in new[] { 1, Math.Min(2, expected.Length) }.Distinct()) {
+                            table!.RowSelection!.Clear();
+                            for (var i = 0; i < count; i++) table.RowSelection.Select(new IndexPath(i));
+                            var files = table.RowSelection.SelectedItems.OfType<Mo2Save>().Select(row => row.File).ToArray();
+                            var native = await savesPage.Profile.ReadListMenu("readFileMenu", files,
+                                savesPage.Profile.CurrentTarget, "saves");
+                            var menu = table.ContextMenu!;
+                            menu.Open(table);
+                            await Until(() => menu.Items.OfType<MenuItem>().Any(x =>
+                                x.Header as string == $"Delete {count} save(s)" && x.IsEnabled),
+                                "Saves menu did not finish its native availability lookup");
+                            foreach (var item in menu.Items.OfType<MenuItem>()) {
+                                var original = native.FirstOrDefault(x => x.Text == item.Header as string);
+                                if (item.IsEnabled != (original?.Enabled == true))
+                                    throw new Exception("Saves menu availability differs from MO2: " + item.Header);
+                            }
+                            menu.Close();
+                        }
+                    } finally { table!.ContextMenu!.Close(); table.RowSelection!.Clear(); }
+                    Console.WriteLine($"PASS populated Saves: {expected.Length} native rows, readable name, single/multiple selection and native menu availability; no save action invoked");
+                }
+            }
+
             if (directory is not null) {
                 Directory.CreateDirectory(directory);
-                using var shot = new RenderTargetBitmap(new PixelSize(
-                    Math.Max(1, (int)window.ClientSize.Width), Math.Max(1, (int)window.ClientSize.Height)));
-                shot.Render(window);
-                shot.Save(Path.Combine(directory, "preset-" + title.Replace(" ", "-").ToLowerInvariant() + ".png"));
+                var imagePath = Path.Combine(directory, "preset-" + title.Replace(" ", "-").ToLowerInvariant() + ".png");
+                if (Environment.GetEnvironmentVariable("MO2_CAPTURE_DESKTOP_PRESET") == "1") {
+                    var handle = window.TryGetPlatformHandle();
+                    if (handle?.HandleDescriptor != "XID") throw new Exception("Desktop preset capture requires an X11 frontend window");
+                    var id = handle.Handle.ToInt64().ToString();
+                    async Task<string> Command(string command, params string[] arguments) {
+                        var info = new System.Diagnostics.ProcessStartInfo(command) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+                        foreach (var argument in arguments) info.ArgumentList.Add(argument);
+                        using var process = System.Diagnostics.Process.Start(info) ?? throw new Exception("Could not start " + command);
+                        var output = process.StandardOutput.ReadToEndAsync();
+                        var error = process.StandardError.ReadToEndAsync();
+                        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                        try { await process.WaitForExitAsync(timeout.Token); }
+                        catch (OperationCanceledException) { process.Kill(); await process.WaitForExitAsync(); throw new Exception(command + " capture timed out"); }
+                        if (process.ExitCode != 0) throw new Exception(command + ": " + await error);
+                        return (await output).Trim();
+                    }
+                    await Command("xdotool", "windowactivate", id);
+                    await Task.Delay(100);
+                    if (await Command("xdotool", "getactivewindow") != id) throw new Exception("Owned frontend did not become the active capture window");
+                    await Command("spectacle", "-b", "-n", "-a", "-e", "-S", "-o", Path.GetFullPath(imagePath));
+                } else {
+                    using var shot = new RenderTargetBitmap(new PixelSize(
+                        Math.Max(1, (int)window.ClientSize.Width), Math.Max(1, (int)window.ClientSize.Height)));
+                    shot.Render(window); shot.Save(imagePath);
+                }
             }
 
             // Every widget the page draws: MO2's buttons, boxes, fields and the
@@ -177,6 +288,10 @@ internal static class Mo2PresetFitCheck
             if (Environment.GetEnvironmentVariable("MO2_PRESET_FIT_SENSITIVITY") == "1")
                 bounds = bounds.WithWidth(bounds.Width * 0.6);
             var clipped = new List<string>();
+            // A visible strip is insufficient when its selected label is scrolled
+            // away. Compact pages rely on that label as their only visible title.
+            if (!SelectedTabVisible(view!, panel))
+                clipped.Add("selected tab label is outside the tab-strip viewport");
             // Reachability, in the layout MO2 itself uses. Every panel here
             // shares the workspace — the right one carries five tabs — which is
             // the exact condition that had been hiding every page's action row,
@@ -185,7 +300,7 @@ internal static class Mo2PresetFitCheck
             // A control that is not there at all cannot be found to be clipped,
             // so "drawn whole" below has nothing to say about it.
             var reachable = 0;
-            foreach (var handed in host!.GetVisualDescendants().OfType<Control>().Prepend(host)
+            foreach (var handed in host!.GetVisualDescendants().OfType<Control>().Prepend(host!)
                          .Where(x => Mo2PanelChrome.Handed.TryGetValue(x, out _)).ToArray()) {
                 Mo2PanelChrome.Handed.TryGetValue(handed, out var given);
                 reachable += given?.Length ?? 0;

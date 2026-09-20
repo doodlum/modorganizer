@@ -33,20 +33,29 @@ internal sealed class Mo2NotificationState
 internal sealed class Mo2Notifications : IDisposable
 {
     private readonly Mo2LiveWorkspace _shell;
+    private readonly Mo2LiveProfile _profile;
+    private readonly Func<Task<(string Title, string Details)[]>> _read;
+    private bool _wasConnected;
+    private long _connectionVersion;
     private readonly Mo2NotificationState _state = new();
     private readonly StackPanel _items = new() { Spacing = 8 };
     private readonly TextBlock _badge = new() { FontSize = 10, Foreground = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Border _badgeBorder;
-    private readonly TextBlock _status = new() { Opacity = .65, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _status = new() { Name = "NotificationStatus", Opacity = .65, TextWrapping = TextWrapping.Wrap };
     private readonly Flyout _flyout;
     private readonly ScrollViewer _scroll;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(10) };
     private WindowNotificationManager? _toasts;
     private bool _reading, _disposed;
+    private Mo2ProfileTarget? _renderedTarget;
+    private Mo2NotificationState.Warning[] _renderedWarnings = [];
     public Button Button { get; }
-    public Mo2Notifications(Mo2LiveWorkspace shell)
+    public Mo2Notifications(Mo2LiveWorkspace shell) : this(shell, shell.Profile) { }
+    internal Mo2Notifications(Mo2LiveWorkspace shell, Mo2LiveProfile profile,
+        Func<Task<(string Title, string Details)[]>>? readHealth = null)
     {
-        _shell = shell;
+        _shell = shell; _profile = profile; _read = readHealth ?? profile.ReadHealth;
+        _wasConnected = profile.IsConnected;
         var icon = new UnifiedIcon { Value = new ProjektankerIcon("mdi-bell-outline"), Size = 20 };
         _badgeBorder = new Border { Background = Brush.Parse("#FB923C"), CornerRadius = new CornerRadius(8), MinWidth = 14, Height = 14,
             Padding = new Thickness(2,0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Child = _badge, IsVisible = false };
@@ -71,50 +80,64 @@ internal sealed class Mo2Notifications : IDisposable
             }
             Render(); _ = Refresh();
         };
-        shell.Profile.Changed += Changed;
+        profile.Changed += Changed;
         _timer.Tick += (_,_) => _ = Refresh();
         _timer.Start(); Changed();
     }
     private void Changed() {
-        if (_state.Target != _shell.Profile.CurrentTarget) {
-            _state.Select(_shell.Profile.CurrentTarget); _status.Text = "Checking MO2 warnings…"; Render(); _ = Refresh();
+        var connectionChanged = _wasConnected != _profile.IsConnected;
+        if (connectionChanged) { _wasConnected = _profile.IsConnected; ++_connectionVersion; }
+        var targetChanged = _state.Target != _profile.CurrentTarget;
+        if (targetChanged) _state.Select(_profile.CurrentTarget);
+        if (!_profile.IsConnected) {
+            _status.Text = _state.Warnings.Length > 0
+                ? "MO2 is disconnected. Showing last known warnings."
+                : "MO2 is disconnected. Warnings cannot be checked.";
+            Render();
+        } else if (targetChanged || connectionChanged) {
+            _status.Text = "Checking MO2 warnings…"; Render(); _ = Refresh();
         }
     }
-    private async Task Refresh() {
-        if (_disposed || _reading || !_shell.Profile.CanChangeOriginalUi || _shell.Profile.ProfilePath.Length == 0) return;
-        _reading = true; var target = _shell.Profile.CurrentTarget;
+    internal async Task Refresh() {
+        if (_disposed || _reading || !_profile.CanChangeOriginalUi || _profile.ProfilePath.Length == 0) return;
+        _reading = true; var target = _profile.CurrentTarget; var connectionVersion = _connectionVersion;
         try {
-            var reports = await _shell.Profile.ReadHealth();
-            if (_disposed || target != _shell.Profile.CurrentTarget) return;
+            var reports = await _read();
+            if (_disposed || !_profile.IsConnected || connectionVersion != _connectionVersion || target != _profile.CurrentTarget) return;
             var added = _state.Update(target, reports.Select(p => new Mo2NotificationState.Warning(p.Title, p.Details)));
-            _status.Text = reports.Length == 0 ? "No MO2 warnings for this profile." : $"{_state.Warnings.Length} MO2 warning{(_state.Warnings.Length == 1 ? "" : "s")} · {_shell.Profile.GameName}";
+            _status.Text = reports.Length == 0 ? "No MO2 warnings for this profile." : $"{_state.Warnings.Length} MO2 warning{(_state.Warnings.Length == 1 ? "" : "s")} · {_profile.GameName}";
             Render();
             if (added > 0 && TopLevel.GetTopLevel(Button) is Window window) {
                 _toasts ??= new WindowNotificationManager(window) { Position = NotificationPosition.BottomRight, MaxItems = 2 };
                 _toasts.Show(new Notification("MO2 warnings", $"{added} new warning{(added == 1 ? "" : "s")}. Open Notifications for details.", NotificationType.Warning, TimeSpan.FromSeconds(6), onClick: () => _flyout.ShowAt(Button)));
             }
         } catch (Exception) {
-            if (!_disposed && target == _shell.Profile.CurrentTarget) { _status.Text = "MO2 warnings could not be refreshed. Retrying automatically."; Render(); }
+            if (!_disposed && _profile.IsConnected && connectionVersion == _connectionVersion && target == _profile.CurrentTarget) { _status.Text = "MO2 warnings could not be refreshed. Retrying automatically."; Render(); }
         } finally {
             _reading = false;
-            if (!_disposed && target != _shell.Profile.CurrentTarget) _ = Refresh();
+            if (!_disposed && (connectionVersion != _connectionVersion || target != _profile.CurrentTarget)) _ = Refresh();
         }
     }
     private void Render() {
         _badge.Text = _state.Unread > 9 ? "9+" : _state.Unread.ToString(); _badgeBorder.IsVisible = _state.Unread > 0;
-        ToolTip.SetTip(Button, $"Notifications · {_state.Warnings.Length} MO2 warnings, {_state.Unread} unread");
+        ToolTip.SetTip(Button, $"{_status.Text} · {_state.Warnings.Length} MO2 warnings, {_state.Unread} unread");
+        // Polling and marking reports read update status/badges without closing a
+        // report the user has expanded or replacing their selected text.
+        if (_renderedTarget == _state.Target && _renderedWarnings.SequenceEqual(_state.Warnings)) return;
+        _renderedTarget = _state.Target;
+        _renderedWarnings = _state.Warnings.ToArray();
         _items.Children.Clear();
         foreach (var warning in _state.Warnings) {
             var target = _state.Target;
             var body = new StackPanel { Spacing = 8 };
             body.Children.Add(new TextBlock { Text = warning.Details, TextWrapping = TextWrapping.Wrap, Opacity = .8 });
             var details = new Button { Content = "View Health Check", HorizontalAlignment = HorizontalAlignment.Left };
-            details.Click += (_,_) => { if (target == _shell.Profile.CurrentTarget) { _state.MarkRead(); _flyout.Hide(); Render(); _shell.OpenHealth(); } };
+            details.Click += (_,_) => { if (target == _profile.CurrentTarget) { _state.MarkRead(); _flyout.Hide(); Render(); _shell.OpenHealth(); } };
             body.Children.Add(details);
             var title = new TextBlock { Text = warning.Title, TextWrapping = TextWrapping.Wrap, MaxWidth = 280, FontWeight = FontWeight.SemiBold };
             _items.Children.Add(new Border { Background = Brush.Parse("#29292E"), CornerRadius = new CornerRadius(6), Padding = new Thickness(8),
                 Child = new Expander { Header = title, Content = body } });
         }
     }
-    public void Dispose() { _disposed = true; _timer.Stop(); _shell.Profile.Changed -= Changed; }
+    public void Dispose() { _disposed = true; _timer.Stop(); _profile.Changed -= Changed; }
 }

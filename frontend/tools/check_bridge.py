@@ -13,6 +13,45 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+class CategoryMembershipTest(unittest.TestCase):
+    def test_native_filter_tree_keeps_ids_types_and_parents(self):
+        native_spec = importlib.util.spec_from_file_location('category_tree_actions', source.with_name('mod_actions.py'))
+        native = importlib.util.module_from_spec(native_spec)
+        native_spec.loader.exec_module(native)
+        class Item:
+            def __init__(self, ident, name, kind=1, children=()): self.ident,self.name,self.kind,self.children=ident,name,kind,children
+            def data(self, col, role): return {256:self.ident,257:self.kind}[role]
+            def text(self, col): return self.name if col==1 else ''
+            def child(self, i): return self.children[i]
+            def childCount(self): return len(self.children)
+        class Tree:
+            def topLevelItemCount(self): return 2
+            def topLevelItem(self, i): return [Item(1,'Parent',children=[Item(52,'Child')]),Item(-1,'Enabled',kind=0)][i]
+        result=native.filter_tree(Tree(),256)
+        self.assertEqual(result,[{'id':1,'type':1,'name':'Parent','children':[{'id':52,'type':1,'name':'Child','children':[]}]},{'id':-1,'type':0,'name':'Enabled','children':[]}])
+
+    def test_native_grouping_role_preserves_secondary_and_comma_names(self):
+        native_spec = importlib.util.spec_from_file_location('category_native_actions', source.with_name('mod_actions.py'))
+        native = importlib.util.module_from_spec(native_spec)
+        native_spec.loader.exec_module(native)
+        class Model:
+            value = ['Primary', 'Secondary', 'Weapons, armour']
+            def index(self, row, column):
+                self_key.assertEqual((row, column), (3, 6))
+                return self
+            def data(self, role):
+                self_key.assertEqual(role, 256)  # ModList::GroupingRole = Qt::UserRole
+                return self.value
+        self_key = self
+        model = Model()
+        self.assertEqual(native.category_names(model, 3, 6, 256), model.value)
+        model.value = None
+        self.assertEqual(native.category_names(model, 3, 6, 256), [])
+        self.assertEqual(native.category_names(model, 3, None, 256), [])
+        model.value = 'Primary, Secondary'
+        with self.assertRaises(ValueError): native.category_names(model, 3, 6, 256)
+
+
 class ListApi:
     def __init__(self): self.active = False; self.calls = 0
     def allMods(self): return ['Test Mod']
@@ -42,6 +81,16 @@ class Organizer:
 
 
 class ContractTests(unittest.TestCase):
+    def test_native_filter_query_checks_target_before_reading_widgets(self):
+        request = self.request(action='readModFilterMatches', criteria=[])
+        request['profilePath'] = 'stale-profile'
+        with self.assertRaisesRegex(ValueError, 'Active MO2 profile changed'):
+            self.bridge.execute(request)
+        request['profilePath'] = self.organizer.profilePath()
+        self.bridge.mod_actions = None
+        with self.assertRaisesRegex(ValueError, 'MO2 filter integration is unavailable'):
+            self.bridge.execute(request)
+
     def test_download_history_is_included_with_native_health_reports(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory:
@@ -53,6 +102,19 @@ class ContractTests(unittest.TestCase):
                                      'profilePath': 'Z:/profiles/Test'})
             self.assertEqual([x['title'] for x in result['problems']], ['Native warning', 'Download interrupted'])
             self.assertEqual(len(native['problems']), 1)
+    def test_data_activation_preserves_nested_path_and_checks_profile(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+            actions = SimpleNamespace(activate_data_file=lambda name: calls.append(name) or {'activated': name})
+            bridge = module.Bridge(Organizer(), directory, {True: 2, False: 1}, mod_actions=actions)
+            request = {'protocol': 1, 'session': bridge.session, 'action': 'activateDataFile',
+                       'profilePath': 'Z:/profiles/Test', 'name': 'Tools/probe.cmd'}
+            self.assertEqual(bridge.execute(request), {'activated': 'Tools/probe.cmd'})
+            request['profilePath'] = 'stale'
+            with self.assertRaises(ValueError): bridge.execute(request)
+            self.assertEqual(calls, ['Tools/probe.cmd'])
+
     def test_plugin_activation_uses_native_checkbox_dispatch(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory:
@@ -185,7 +247,7 @@ class ContractTests(unittest.TestCase):
         result = data.read_directory(Api(), 'meshes\\actors')
         self.assertEqual(calls, ['meshes/actors'])
         self.assertEqual(result['entries'][0]['name'], 'textures')
-        self.assertEqual(result['entries'][1], {'name': 'test.txt', 'directory': False, 'origins': ['Winner', 'Loser'], 'archive': 'assets.bsa'})
+        self.assertEqual(result['entries'][1], {'name': 'test.txt', 'directory': False, 'origins': ['Winner', 'Loser'], 'archive': 'assets.bsa', 'size': '', 'modified': ''})
         for path in ['../mods', '/absolute', 'C:relative', 'C:/absolute', 'foo/../bar', None, 'bad\0path']:
             with self.assertRaises(ValueError): data.read_directory(Api(), path)
 

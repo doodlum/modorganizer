@@ -24,7 +24,7 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
 {
     private readonly TreeDataGrid _table = Mo2FolderPage.Table("OverwriteFiles");
     private readonly TextBlock _status = Mo2FolderPage.Status("OverwriteStatus");
-    private readonly TextBox _search = Mo2FolderPage.Search("OverwriteSearch", "Search generated files");
+    private readonly TextBox _search;
     private readonly List<Button> _actions = [];
     private Mo2OverwriteFile[] _files = [];
     private Mo2ProfileTarget? _target;
@@ -37,7 +37,8 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
     internal Mo2OverwriteView(Func<Mo2ProfileTarget, Task<Mo2OverwriteFile[]>>? read)
     {
         _read = read;
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
+        Mo2TableRow.InstallRowStyles(_table);
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
         var header = new PageHeader { Title = "Overwrite", Icon = new AvaloniaSvg("avares://MockHost/Assets/Pictograms/overwrite.svg"),
             Description = "Generated files that take priority over installed mods." };
         root.Children.Add(header);
@@ -71,17 +72,14 @@ internal sealed class Mo2OverwriteView : ReactiveUserControl<Mo2OverwritePage>
         }
         var refresh = Mo2TableRow.IconButton("mdi-refresh", "Refresh Overwrite", async () => await Refresh());
         refresh.Name = "RefreshOverwrite";
-        var filter = new StackPanel { Spacing = 8, Margin = new Thickness(0,4,0,8) }; filter.Children.Add(_search);
-        Grid.SetRow(filter,1); root.Children.Add(filter);
-        Grid.SetRow(_status,2); root.Children.Add(_status);
-        Grid.SetRow(_table,3); root.Children.Add(_table);
+        var filter = Mo2QtWidgets.Filter("OverwriteSearch", "Search generated files", _ => Render(), out _search);
+        var search = new Mo2ToolbarSearch(this, "OverwriteToolbarSearch", filter, _search, "Search generated files");
+        Grid.SetRow(_status,1); root.Children.Add(_status);
+        Grid.SetRow(_table,2); root.Children.Add(_table);
         Content = root;
         _columns = new Mo2ColumnToggle("overwrite", Render);
-        // Search beneath the header behind a magnifier, and a way to hide a column,
-        // as the other two folder pages have.
-        Mo2PanelChrome.Apply(this, root, header,
-            [Mo2PanelChrome.SearchAction(filter, "Search generated files"), .. actions, refresh]);
-        _search.TextChanged += (_,_) => Render();
+        actions.Add(refresh);
+        Mo2PanelChrome.Apply(this, root, header, Mo2ListToolbar.Pill("OverwriteToolbarActions", actions.ToArray()), search);
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true; ++_activation;

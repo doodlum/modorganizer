@@ -13,6 +13,7 @@ def number(value):
 class Bridge:
     def __init__(self, organizer, directory, plugin_states, credentials=None, downloads=None, profiles=None, executables=None, mod_actions=None):
         self.mod_actions = mod_actions
+        self._save_preview = None
         self.logs_path = None
         self.interface = None
         self.executables = executables
@@ -52,6 +53,7 @@ class Bridge:
         plugins = organizer.pluginList()
         return {
             'executableIcons': self.executables.icons() if self.executables is not None else {},
+            'canPreviewSaves': True,
             'canSortPlugins': getattr(self.mod_actions, 'can_sort_plugins', lambda: False)(),
             'sortPluginsUnavailableReason': getattr(self.mod_actions, 'sort_unavailable_reason', lambda: 'Plugin sorting is unavailable in this MO2 host.')(),
             'selectedExecutable': self.executables.selector().currentText() if self.executables is not None else '',
@@ -69,6 +71,7 @@ class Bridge:
             'instance': {'name': organizer.instanceName() if hasattr(organizer, 'instanceName') else None, 'basePath': organizer.basePath(),
                          'modsPath': organizer.modsPath(), 'downloadsPath': organizer.downloadsPath(), 'logsPath': self.logs_path,
                          'uiVisible': self.interface.is_visible() if self.interface is not None else None},
+            'modFilters': self.mod_actions.filter_snapshot() if self.mod_actions is not None and hasattr(self.mod_actions, 'filter_snapshot') else [],
             'mods': self.mod_actions.snapshot() if self.mod_actions is not None else [{'name': name, 'displayName': mods.displayName(name), 'state': number(mods.state(name)),
                       'priority': mods.priority(name)} for name in mods.allModsByProfilePriority()],
             'plugins': self.mod_actions.plugin_snapshot() if self.mod_actions is not None else [{'name': name, 'state': number(plugins.state(name)), 'priority': plugins.priority(name),
@@ -80,6 +83,8 @@ class Bridge:
         if request.get('protocol') != 1 or request.get('session') != self.session:
             raise ValueError('Bridge session changed; reconnect before issuing commands')
         action = request.get('action')
+        if self._save_preview is not None and isinstance(action, str) and action not in ('snapshot', 'savePreview') and not action.startswith('read'):
+            self._save_preview.close()
         if action == 'readNativeNexusAccount':
             if self.mod_actions is None: raise ValueError('MO2 account state is unavailable')
             return self.mod_actions.nexus_account_state()
@@ -117,6 +122,10 @@ class Bridge:
             raise ValueError('Active MO2 profile changed; refresh before editing')
         if self.profiles is not None and self.profiles.refreshing:
             raise ValueError('MO2 is refreshing the selected profile')
+        if action == 'readModFilterMatches':
+            if self.mod_actions is None: raise ValueError('MO2 filter integration is unavailable')
+            from .filter_matches import read_matches
+            return read_matches(self.mod_actions.window, self.organizer, request.get('criteria'))
         if action == 'setUiVisible':
             if self.interface is None or type(request.get('visible')) is not bool:
                 raise ValueError('MO2 interface is unavailable or visibility is not a boolean')
@@ -146,6 +155,14 @@ class Bridge:
             from .overwrite import Overwrite
             overwrite = Overwrite(self.organizer, self.mod_actions.window)
             return overwrite.read() if action == 'readOverwrite' else overwrite.action(request.get('operation'))
+        if action == 'savePreview':
+            if self.mod_actions is None: raise ValueError('MO2 save integration is unavailable')
+            if self._save_preview is None:
+                from .save_preview import SavePreviewLease, create_preview
+                self._save_preview = SavePreviewLease(
+                    lambda filename, position: create_preview(self.organizer, self.mod_actions.window, filename, position),
+                    self.organizer.profilePath)
+            return self._save_preview.request(request.get('owner'), request.get('file'), request.get('expires'), request.get('position'))
         if action in ('readSaves', 'saveAction'):
             if self.mod_actions is None: raise ValueError('MO2 save integration is unavailable')
             from .saves import read_saves, save_action, preview_save_details, current_saves_directory
@@ -177,6 +194,9 @@ class Bridge:
             reading = action.startswith('read')
             menu = self.mod_actions.plugin_menu if 'Plugin' in action else self.mod_actions.mod_menu
             return menu(request.get('names'), None if reading else request.get('path'))
+        if action == 'activateDataFile':
+            if self.mod_actions is None: raise ValueError('MO2 Data activation is unavailable')
+            return self.mod_actions.activate_data_file(request.get('name'))
         if action in ('readFileMenu', 'fileMenuAction', 'readFileRows'):
             if self.mod_actions is None: raise ValueError('MO2 mod actions are unavailable')
             if action == 'readFileRows': return self.mod_actions.file_list_rows(request.get('view'))
@@ -310,6 +330,8 @@ class Bridge:
         return self.snapshot()
 
     def poll(self):
+        if self._save_preview is not None:
+            self._save_preview.tick()
         # Installer dialogs run nested Qt loops. A second timer tick must never
         # replay the in-flight request or run another operation within a dialog.
         if self._polling:

@@ -78,7 +78,7 @@ internal static class Mo2PanelChrome
         // A DockPanel gives its last child the remaining space, so the header has to
         // go back where it was rather than at the front.
         root.Children.Insert(root is DockPanel ? Math.Max(0, index) : 0, stack);
-        WatchScrollers(view);
+        Mo2Physicality.AttachOverscrollToPage(view);
 
         root.Margin = Inset(root, view.Bounds.Height);
         root.Transitions = new Transitions { new ThicknessTransition {
@@ -118,7 +118,7 @@ internal static class Mo2PanelChrome
             var wanted = PaddingFor(view.Bounds.Height);
             if (layout.Margin != wanted) layout.Margin = wanted;
         };
-        WatchScrollers(view);
+        Mo2Physicality.AttachOverscrollToPage(view);
     }
 
     // Pages the frontend renders with a native NMA view — Downloads, Profiles and
@@ -261,18 +261,4 @@ internal static class Mo2PanelChrome
     internal static double IconSize => Mo2ResponsiveHeaders.IconSize;
     internal static double CompactIconSize => Mo2ResponsiveHeaders.CompactIconSize;
 
-    // Lists are built lazily, so a page's scroll viewers often do not exist when it
-    // attaches, and a page can own several. Each one gets the same give at its ends
-    // as it appears.
-    private static void WatchScrollers(Control view)
-    {
-        var watched = new HashSet<ScrollViewer>();
-        void Watch()
-        {
-            foreach (var scroll in view.GetVisualDescendants().OfType<ScrollViewer>())
-                if (watched.Add(scroll)) Mo2Physicality.AttachOverscroll(scroll);
-        }
-        view.AttachedToVisualTree += (_, _) => Watch();
-        view.LayoutUpdated += (_, _) => Watch();
-    }
 }

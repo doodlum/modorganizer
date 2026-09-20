@@ -25,7 +25,7 @@ internal sealed class Mo2ArchivesPage : APageViewModel<IMo2ArchivesPage>, IMo2Ar
 internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
 {
     private readonly TreeDataGrid _table = new() { Name = "ArchivesTable", ShowColumnHeaders = true };
-    private readonly TextBox _filter = new() { Name = "ArchivesFilter", Watermark = "Search archives", MinWidth = 60 };
+    private readonly TextBox _filter;
     private readonly TextBlock _status = new() { Name = "ArchivesStatus", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
     private readonly Button _browse;
     private readonly Button _extract;
@@ -43,7 +43,7 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
     internal Mo2ArchivesView(Func<Mo2ProfileTarget, Task<Mo2Archive[]>>? read)
     {
         _read = read;
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
         _browse = Mo2ModRow.IconButton("mdi-folder-search-outline", "Browse selected archive", async () => {
             if (ViewModel is not { } model || _target is not { } target || _table.RowSelection?.SelectedItem is not Mo2Archive archive) return;
             await model.Profile.BrowseArchive(archive.Name,target); await Refresh();
@@ -54,21 +54,20 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
         });
         var header = new PageHeader { Title = "Archives", Description = "Browse BSA and BA2 archives in this profile.", Icon = new AvaloniaSvg("avares://MockHost/Assets/archives-3d.svg") };
         root.Children.Add(header);
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Margin = new Thickness(0,8,0,8) };
         _browse.Name = "BrowseArchive"; _extract.Name = "ExtractArchive";
         _browse.IsEnabled = _extract.IsEnabled = false;
-        _filter.Margin = new Thickness(0,0,8,0);
-        bar.Children.Add(_filter); Grid.SetColumn(_browse,1); bar.Children.Add(_browse);
-        Grid.SetColumn(_extract,2); bar.Children.Add(_extract);
-        var refresh = Mo2ModRow.IconButton("mdi-refresh", "Refresh archives", async () => await Refresh());
-        refresh.Name = "RefreshArchives"; Grid.SetColumn(refresh,3); bar.Children.Add(refresh);
+        var field = Mo2QtWidgets.Filter("ArchivesFilter", "Search archives by name or source mod", text => {
+            if (ViewModel is { } model) model.SearchText = text;
+            Render();
+        }, out _filter);
+        var search = new Mo2ToolbarSearch(this, "ArchivesToolbarSearch", field, _filter, "Search archives");
         // MO2's own bsaTab note above the list, which says what the list below is.
         var note = Mo2QtWidgets.Note("ManagedArchiveLabel", Mo2QtWidgets.ArchivesNote);
         var archiveTab = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
         archiveTab.Children.Add(note);
         Grid.SetRow(_table,1); archiveTab.Children.Add(_table);
-        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status); Grid.SetRow(archiveTab,3); root.Children.Add(archiveTab);
-        _table.Classes.Add("MainListsStyling"); Content = root;
+        Grid.SetRow(_status,1); root.Children.Add(_status); Grid.SetRow(archiveTab,2); root.Children.Add(archiveTab);
+        _table.Classes.Add("MainListsStyling"); Mo2TableRow.InstallRowStyles(_table); Content = root;
         // MO2's own archive menu (mainwindow.cpp, on_bsaList_customContextMenuRequested),
         // which carries one entry and only that one.
         //
@@ -84,22 +83,14 @@ internal sealed class Mo2ArchivesView : ReactiveUserControl<Mo2ArchivesPage>
             }, ArchiveReady),
         ]);
         _columns = new Mo2ColumnToggle("archives", Render);
-        // The filter stays in its own row under the separator and the header line
-        // carries a magnifier, matching Mods and Plugins. A search box on the header
-        // line is what made this page's header the widest and the first to run out.
-        // MO2's bsaTab is a note above a list and nothing else: no Refresh, no
-        // Browse, no Extract. Those three were this frontend's own, and the archive
-        // row's menu is MO2's, so what it offers is what this page offers.
-        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search archives"));
+        // Use the installed lists' expandable search and keyboard behavior while
+        // retaining this page's native archive filter and row actions.
+        Mo2PanelChrome.Apply(this, root, header, search);
         ToolTip.SetTip(_status, "Loading follows the game’s archive and plugin rules.");
         LayoutUpdated += (_,_) => {
             var showModColumn = Bounds.Width >= 520;
             if (_showModColumn == showModColumn) return;
             _showModColumn = showModColumn; Render();
-        };
-        _filter.TextChanged += (_,_) => {
-            if (ViewModel is { } model) model.SearchText = _filter.Text ?? "";
-            Render();
         };
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;

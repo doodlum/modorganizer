@@ -9,11 +9,15 @@ import subprocess
 frontend = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--configuration', choices=['Release', 'Debug'], default='Release')
+parser.add_argument('--app', type=Path, help='Published MockHost.dll to launch instead of the development build')
 args = parser.parse_args()
-app = frontend / f'MockHost/bin/{args.configuration}/net9.0/MockHost.dll'
+app = (args.app.expanduser().resolve() if args.app else
+       frontend / f'MockHost/bin/{args.configuration}/net9.0/MockHost.dll')
 dotnet = frontend.parent / '.tools/dotnet/dotnet'
 if not app.is_file() or not dotnet.is_file():
-    parser.error(f'Build {args.configuration} with the repository-local SDK before installing the launcher')
+    parser.error(f'App DLL and repository-local SDK must exist: {app}, {dotnet}')
+if not app.with_suffix('.runtimeconfig.json').is_file() or not app.with_suffix('.deps.json').is_file():
+    parser.error('The app must have its runtimeconfig.json and deps.json alongside the DLL')
 root = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share'))
 apps = root / 'applications'; apps.mkdir(parents=True, exist_ok=True)
 icons = root / 'icons/hicolor/256x256/apps'; icons.mkdir(parents=True, exist_ok=True)

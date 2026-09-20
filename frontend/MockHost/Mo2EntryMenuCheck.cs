@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using System.Reactive.Linq;
 using Avalonia.VisualTree;
@@ -42,6 +44,31 @@ internal static class Mo2EntryMenuCheck
                 await Task.Delay(50);
                 window.UpdateLayout();
             }
+            var grip = row.GetVisualDescendants().OfType<Border>().Single(x => x.Name == kind + "DragHandle");
+            var host = row.GetVisualAncestors().OfType<TreeDataGridRow>().First();
+            var toggle = row.GetVisualDescendants().OfType<ToggleButton>().Single(x => x.Name == kind + "ActivationToggle");
+            var glyph = (NexusMods.UI.Sdk.Icons.UnifiedIcon)grip.Child!;
+            if (grip.Bounds.Width <= 0 || grip.Bounds.Height <= 0 || grip.Bounds.Height > host.Bounds.Height + 1 ||
+                grip.TranslatePoint(new Point(grip.Bounds.Width, 0), row)!.Value.X > toggle.TranslatePoint(default, row)!.Value.X + 1)
+                throw new Exception(kind + " drag handle is clipped or overlaps activation");
+            var table = host.GetVisualAncestors().OfType<TreeDataGrid>().First();
+            var selection = table.RowSelection!;
+            var selected = selection.SelectedIndexes.ToArray();
+            try {
+                selection.Clear(); selection.Select(table.Rows!.RowIndexToModelIndex(host.RowIndex));
+                var untilSelected = DateTime.UtcNow.AddSeconds(5);
+                while ((!host.IsSelected || glyph.Opacity != 1) && DateTime.UtcNow < untilSelected) await Task.Delay(25);
+                if (!host.IsSelected || glyph.Opacity != 1) throw new Exception(kind + " selected row hides its drag handle");
+                if (Environment.GetEnvironmentVariable("MO2_SCREENSHOT") is { } output) {
+                    using var capture = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height));
+                    capture.Render(window); capture.Save(Path.ChangeExtension(output, kind.ToLowerInvariant() + "-selected.png"));
+                }
+            } finally {
+                selection.Clear();
+                foreach (var index in selected) selection.Select(index);
+            }
+            if (host.ContextMenu is not null) throw new Exception(kind + " handle installed a competing context menu");
+            described.Add(kind.ToLowerInvariant() + " handle fits its row, reveals on selection and leaves activation/menu input separate");
             var menu = (MenuFlyout)row.ContextFlyout!;
             if (menu.Items.Count != 0) throw new Exception($"An unopened {kind.ToLowerInvariant()} menu had already built its entries");
             menu.ShowAt(row);

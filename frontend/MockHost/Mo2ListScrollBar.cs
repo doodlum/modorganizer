@@ -49,6 +49,10 @@ internal sealed class Mo2ListScrollBar : ScrollBar
         var syncing = false;
         void Sync() {
             if (viewer is null) return;
+            // With hidden headers, TreeDataGrid can retain a zero column viewport
+            // even while its row scroller is already arranged. Star columns then
+            // stay at their 30px minimum. Use the same real viewport as this rail.
+            if (viewer.Viewport.Width > 0) table.Columns?.ViewportChanged(new Rect(viewer.Viewport));
             syncing = true;
             bar.Maximum = Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height);
             bar.ViewportSize = viewer.Viewport.Height;

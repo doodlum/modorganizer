@@ -68,8 +68,13 @@ internal sealed record Mo2LiveMod(EntityId Id, string Name, string DisplayName, 
     // game, what it knows about endorsement and tracking, the version the user told
     // it to stop offering, and whether the mod read and converted cleanly.
     bool IsForeign = false, string Endorsed = "", string Tracked = "", string IgnoredVersion = "",
-    bool Validated = true, bool Converted = true, string Url = "")
+    bool Validated = true, bool Converted = true, string Url = "", string? CategoriesJson = null)
 {
+    // Keep serialized membership value-equal across snapshots; arrays in this
+    // record would make unchanged mods compare unequal on every poll.
+    public string[] CategoryNames => CategoriesJson is null
+        ? (Category.Length == 0 ? [] : [Category])
+        : System.Text.Json.JsonSerializer.Deserialize<string[]>(CategoriesJson) ?? [];
     public bool CanManage => !IsOverwrite && (IsSeparator || (State & 4) == 0);
     // A mod MO2 offers its ordinary actions on: not the overwrite folder, not a
     // separator, and not a game's own data installed outside MO2.
@@ -103,6 +108,10 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     private readonly SourceCache<Mo2LiveMod, EntityId> _mods = new(x => x.Id);
     private readonly Dictionary<string, EntityId> _ids = new(StringComparer.OrdinalIgnoreCase);
     public R3.BindableReactiveProperty<string> CollectionName { get; } = new("Connecting to MO2…");
+    public long FilterRevision { get; private set; }
+    private string? _filterSnapshot;
+    public Mo2CategoryNode[] CategoryTree { get; private set; } = [];
+    private string? _categoryTreeJson;
     public IReadOnlyCollection<Mo2LiveMod> Mods => _mods.Items.ToArray();
     public Mo2LiveMod? FindMod(EntityId id) => _mods.Lookup(id).ValueOrDefault();
     public ScenarioPluginOrder Order { get; } = new(false);
@@ -123,6 +132,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     public bool Installing { get; private set; }
     public bool Launching { get; private set; }
     public bool ManagingMod { get; private set; }
+    public bool CanPreviewSaves { get; private set; }
     public bool CanSortPlugins { get; private set; }
     // Empty until MO2 has answered, which is why the download menu treats an unknown
     // action as offerable: before the first snapshot nothing is known to be missing.
@@ -175,6 +185,7 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         var raw = snapshot.GetRawText();
         if (raw == _lastSnapshot) return;
         _lastSnapshot = raw;
+        CanPreviewSaves = snapshot.TryGetProperty("canPreviewSaves", out var canPreview) && canPreview.ValueKind == JsonValueKind.True;
         CanSortPlugins = snapshot.TryGetProperty("canSortPlugins", out var canSort) && canSort.ValueKind == JsonValueKind.True;
         // What this MO2 build has an action behind. An older MO2 carries fewer, and a
         // menu entry with no action behind it is one that draws and does nothing.
@@ -214,6 +225,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         // sending it empty, so every one of them is optional here.
         static string Text(JsonElement owner, string name) =>
             owner.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
+        var categoryJson = snapshot.TryGetProperty("modFilters", out var filters) ? filters.GetRawText() : "[]";
+        if (_categoryTreeJson != categoryJson) {
+            CategoryTree = JsonSerializer.Deserialize<Mo2CategoryNode[]>(categoryJson) ?? [];
+            _categoryTreeJson = categoryJson;
+        }
         var mods = snapshot.GetProperty("mods").EnumerateArray().Select(mod => {
             var name = mod.GetProperty("name").GetString()!;
             if (!_ids.TryGetValue(name, out var id)) _ids[name] = id = EntityId.From((ulong)_ids.Count + 100);
@@ -234,7 +250,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 Text(mod, "endorsed"), Text(mod, "tracked"), Text(mod, "ignoredVersion"),
                 !mod.TryGetProperty("validated", out var validated) || validated.GetBoolean(),
                 !mod.TryGetProperty("converted", out var converted) || converted.GetBoolean(),
-                Text(mod, "url"));
+                Text(mod, "url"), mod.TryGetProperty("categories", out var categories) && categories.ValueKind == JsonValueKind.Array
+                    ? categories.GetRawText() : null);
         }).ToArray();
         _mods.Edit(cache => {
             var ids = mods.Select(x => x.Id).ToHashSet();
@@ -258,6 +275,8 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
                 FormVersion = Text(plugin, "formVersion"), HeaderVersion = Text(plugin, "headerVersion"),
                 Author = Text(plugin, "author"), Description = Text(plugin, "description"),
             }));
+        var filterSnapshot = Endpoint + ProfilePath + snapshot.GetProperty("mods").GetRawText() + categoryJson;
+        if (_filterSnapshot != filterSnapshot) { _filterSnapshot = filterSnapshot; FilterRevision++; }
         var contentSnapshot = Endpoint + ProfilePath + snapshot.GetProperty("mods").GetRawText() + snapshot.GetProperty("plugins").GetRawText();
         if (contentSnapshot != _contentSnapshot) { _contentSnapshot = contentSnapshot; ContentRevision++; }
         var highlightSnapshot = Endpoint + ProfilePath + snapshot.GetProperty("mods").GetRawText();
@@ -361,19 +380,57 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             return result.GetProperty("files").EnumerateArray().Select(x => new Mo2OverwriteFile(x.GetProperty("path").GetString()!, x.GetProperty("bytes").GetInt64())).ToArray();
         } finally { _commands.Release(); }
     }
-    public async Task<string?> SaveAction(Mo2Save save, string operation, Mo2ProfileTarget target)
+    public Task<string?> SaveAction(Mo2Save save, string operation, Mo2ProfileTarget target) =>
+        SaveAction([save], operation, target);
+
+    public async Task<string?> SaveAction(Mo2Save[] saves, string operation, Mo2ProfileTarget target)
     {
+        if (saves.Length == 0 || saves.Select(save => save.File).Distinct(StringComparer.Ordinal).Count() != saves.Length)
+            return "Select the saves again before continuing.";
+        if (operation != "delete" && saves.Length != 1) return "Select one save for this action.";
         if (!CanStartHostAction || target != CurrentTarget) return "Connect to the selected profile and close any current MO2 dialog before using a save action.";
         ManagingMod = true; Changed?.Invoke(); await _commands.WaitAsync();
         try {
             if (!IsConnected || target != CurrentTarget) return "The profile changed. Select the save again.";
             Status = "Opening MO2 save action…"; Changed?.Invoke();
-            await Client.SendAsync("saveAction", new() { ["profilePath"] = target.ProfilePath, ["file"] = save.File, ["operation"] = operation }, timeout: TimeSpan.FromMinutes(30));
+            if (operation == "delete" && saves.Length > 1)
+                await Client.SendAsync("fileMenuAction", new() { ["profilePath"] = target.ProfilePath,
+                    ["view"] = "saves", ["names"] = saves.Select(save => save.File).ToArray(),
+                    ["path"] = new[] { new[] { $"Delete {saves.Length} save(s)" } } }, timeout: TimeSpan.FromMinutes(30));
+            else
+                await Client.SendAsync("saveAction", new() { ["profilePath"] = target.ProfilePath, ["file"] = saves[0].File, ["operation"] = operation }, timeout: TimeSpan.FromMinutes(30));
             _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
             return null;
         } catch (Exception error) { Report(error); return error.Message; }
         finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
     }
+    internal int NativeFilterReads { get; private set; }
+    public async Task<IReadOnlyDictionary<(int Type, int Id), string[]>> ReadModFilterMatches(Mo2ProfileTarget target, Mo2CategoryNode[] criteria)
+    {
+        var requested = criteria.Select(x => (x.Type, x.Id)).ToHashSet();
+        if (requested.Count != criteria.Length) throw new ArgumentException("Duplicate native filter criterion");
+        await _commands.WaitAsync();
+        try {
+            if (!CanChangeOriginalUi || target != CurrentTarget) throw new InvalidOperationException("Wait for the selected MO2 profile before reading filters.");
+            NativeFilterReads++;
+            var result = await Client.SendAsync("readModFilterMatches", new() {
+                ["profilePath"] = target.ProfilePath,
+                ["criteria"] = criteria.Select(x => new { type = x.Type, id = x.Id }).ToArray(),
+            });
+            if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Profile changed while reading native filters.");
+            if (!result.GetProperty("restored").GetBoolean()) throw new InvalidOperationException("Native filter query did not confirm restoration.");
+            var matches = new Dictionary<(int Type, int Id), string[]>();
+            foreach (var item in result.GetProperty("criteria").EnumerateArray()) {
+                var key = (item.GetProperty("type").GetInt32(), item.GetProperty("id").GetInt32());
+                var names = item.GetProperty("names").EnumerateArray().Select(x => x.GetString() ?? throw new InvalidDataException("Invalid native mod name")).ToArray();
+                if (!requested.Contains(key) || !matches.TryAdd(key, names) || names.Distinct(StringComparer.Ordinal).Count() != names.Length)
+                    throw new InvalidDataException("Native filter result has unexpected or duplicate identities");
+            }
+            if (matches.Count != requested.Count) throw new InvalidDataException("Native filter result is incomplete");
+            return matches;
+        } finally { _commands.Release(); }
+    }
+
     public async Task<Mo2Save[]> ReadSaves(Mo2ProfileTarget target)
     {
         await _commands.WaitAsync();
@@ -382,7 +439,12 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
             var result = await Client.SendAsync("readSaves", new() { ["profilePath"] = target.ProfilePath });
             // MO2 names a save relative to the folder it is reading, so the folder is
             // kept here for the frontend's own Open in Explorer.
-            SavesDirectory = result.TryGetProperty("directory", out var savesPath) && savesPath.GetString() is { Length: > 0 } saved
+            var saved = result.TryGetProperty("directory", out var savesPath) ? savesPath.GetString()?.Replace('\\', '/') : null;
+            // Linux cannot resolve C: or a custom drive without this host's Wine
+            // mapping. Leave those to MO2's native Explorer action instead of
+            // treating "C:/..." as a relative Linux path under the app directory.
+            SavesDirectory = saved is { Length: > 0 } && (OperatingSystem.IsWindows() ||
+                saved.StartsWith('/') || saved.StartsWith("Z:/", StringComparison.OrdinalIgnoreCase))
                 ? Mo2InstanceCatalog.LocalPath(saved) : null;
             return result.GetProperty("saves").EnumerateArray().Select(x => new Mo2Save(x.GetProperty("name").GetString()!, x.GetProperty("file").GetString()!)).ToArray();
         } finally { _commands.Release(); }
@@ -392,7 +454,11 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
         await _commands.WaitAsync();
         try {
             if (!IsConnected || target != CurrentTarget) throw new InvalidOperationException("Connect to the selected MO2 profile to browse Data.");
-            var result = await Client.SendAsync("readDataDirectory", new() { ["profilePath"] = target.ProfilePath, ["directory"] = directory });
+            // The target check above belongs on the UI thread. Converting the
+            // immutable response into unattached file entries does not: avoid
+            // scheduling that work onto the dispatcher for every scanned folder.
+            // Callers still resume on their own context and reject stale results.
+            var result = await Client.SendAsync("readDataDirectory", new() { ["profilePath"] = target.ProfilePath, ["directory"] = directory }).ConfigureAwait(false);
             return result.GetProperty("entries").EnumerateArray().Select(x => new Mo2DataEntry(x.GetProperty("name").GetString()!, x.GetProperty("directory").GetBoolean(), x.GetProperty("origins").EnumerateArray().Select(o => o.GetString()!).ToArray(), x.GetProperty("archive").GetString()!,
                 x.TryGetProperty("size", out var size) ? size.GetString() ?? "" : "",
                 x.TryGetProperty("modified", out var modified) ? modified.GetString() ?? "" : "")).ToArray();
@@ -938,6 +1004,20 @@ internal sealed class Mo2LiveProfile : IInstalledModsSource
     // One entry of the menu MO2 puts on one of its own file lists, triggered where MO2
     // built it. MO2 owns the action, asks its own questions and does the work; nothing
     // about what the entry does is reimplemented here.
+    public async Task ActivateDataFile(string path, Mo2ProfileTarget target)
+    {
+        if (!CanStartHostAction || target != CurrentTarget) return;
+        ManagingMod = true; Status = "Opening " + path + " in MO2"; Changed?.Invoke();
+        await _commands.WaitAsync();
+        try {
+            if (!IsConnected || target != CurrentTarget) return;
+            await Client.SendAsync("activateDataFile", new() { ["profilePath"] = target.ProfilePath, ["name"] = path },
+                timeout: TimeSpan.FromMinutes(30));
+            _lastSnapshot = null; Apply(await Client.SendAsync("snapshot"));
+        } catch (Exception error) { Report(error); }
+        finally { ManagingMod = false; Changed?.Invoke(); _commands.Release(); }
+    }
+
     public async Task RunFileMenu(string view, string[] names, string[][] paths, Mo2ProfileTarget target)
     {
         if (!CanStartHostAction || target != CurrentTarget) return;

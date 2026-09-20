@@ -5,6 +5,9 @@
 
 # Alternate Nexus frontend (in progress)
 
+Start with the [current handover](HANDOVER.md) and
+[production readiness checkpoint](PRODUCTION_READINESS.md). Saves is deferred.
+
 Native action errors retain the last known connected state and show the returned
 message. Failed snapshots, invalid response identities, timeouts and host I/O
 failures still invalidate the connection. Normal polling observes any changes
@@ -14,6 +17,37 @@ Data keeps the selected file or folder through search and refresh, restoring it
 when a search no longer hides it. Navigation and profile changes clear that
 selection. Native Data action errors stay in the panel until explicit Refresh,
 another action, navigation or a profile change.
+
+Enter on a selected Data file invokes MO2's native activation, like a double-click:
+MO2's preview preference and installed file handlers decide what opens. Preview
+menu availability also comes from the native host.
+
+Saves supports multiple selection and MO2's native bulk-delete confirmation.
+Details and repair require one selected save. Selection survives filtering and
+reordered refreshes by filename; actions use only visible selected rows. Right-click
+preserves an existing selected group or selects the pointed-at unselected row alone.
+Delete in the focused save table invokes the same native confirmation.
+Visible Saves panels check the native host every three seconds. Unchanged reads
+retain the table, scroll position and selection; hidden or detached panels pause
+polling. Background reads coalesce and retain access to existing save actions.
+Save folders on Wine drives that Linux cannot resolve use MO2's own Explorer action.
+See [Saves validation](SAVES_VALIDATION.md) for deletion/cancellation evidence and
+the outstanding desktop-keyboard check.
+
+Category filters use all assigned names from MO2's native grouping role, keeping
+secondary categories and names containing commas intact. The Category column still
+shows MO2's primary category. An older bridge supplies only that primary category;
+restart MO2 with the updated bridge to expose full membership. The category list
+preserves the host's reported hierarchy, supports expansion, and matches descendant
+assignments for selected parents. Category controls cycle through include, exclude
+and inactive; right-click or Shift+Space reverses the cycle. Exclusions participate
+in And/Or and appear in the filter summary. Native special criteria remain incomplete. See [category validation](CATEGORY_FILTER_VALIDATION.md).
+
+Logs scans and reads run off the UI thread. Closing or reopening the panel,
+changing the selected log, or switching profiles prevents an older read from
+publishing its text or error. A file selection made during a read is processed
+as soon as that read finishes. The retained tail omits its first partial line
+before applying credential redaction.
 
 Each Data tab also saves its folder, search text and conflicts-only filter with
 its profile's panel layout. Those controls restore after restarting or switching
@@ -63,6 +97,13 @@ dialog. Selection uses each running host.
 Each MO2 instance/profile pair has its own native workspace. Switching away and
 back restores its open panels, tabs and mod search.
 A newly visited profile starts with mods on the left and plugins on the right.
+The shared tab strip scrolls the selected tab into view after navigation or
+resizing, keeping the page title visible when its header is compacted. Its arrow
+buttons still allow browsing other tabs without changing the selection.
+Data and External Files share responsive metadata fitting: optional columns give
+way to filenames in narrow panels and return when space permits. Routine layout
+passes preserve manual column sizing. Their tree Name column remains mandatory,
+including when older saved column preferences are loaded.
 Panel layouts, selected tabs, searches and the Mods/Rules choice are saved across
 frontend restarts in the frontend configuration folder’s `workspace-layout.json`.
 Native panel dividers resize the live pages. Plugin details use available space
@@ -120,6 +161,29 @@ for a debugging session. After building Release with the local SDK, install
 the desktop shortcut with `python3 frontend/tools/install_desktop.py`.
 The installer also accepts `--configuration Debug` and checks that the selected
 binary exists before changing the shortcut.
+
+For a framework-dependent precompiled Linux build, publish with the local SDK:
+
+```sh
+DOTNET_PROCESSOR_COUNT=2 .tools/dotnet/dotnet publish frontend/MockHost/MockHost.csproj -p:PublishProfile=LinuxReadyToRun -m:1 -o frontend/artifacts/linux-ready-to-run
+```
+
+After validating that output, point the desktop shortcut at it with
+`python3 frontend/tools/install_desktop.py --app frontend/artifacts/linux-ready-to-run/MockHost.dll`.
+The output directory must remain in place. Running the installer without `--app`
+restores the development Release build target. Startup measurements and remaining
+validation limits are recorded in [STARTUP_PUBLISH_VALIDATION.md](STARTUP_PUBLISH_VALIDATION.md).
+
+Use `frontend/tools/check_startup.py` to validate a published build against a
+running host and a paired Mods/Plugins layout. Supply `--app`, `--bridge`,
+`--layout` and a new `--output` directory. It runs three isolated launches by
+default, preserves every verdict/screenshot, and exits unsuccessfully if any
+run fails or lacks a startup verdict. It never changes the supplied layout.
+
+Developer diagnostics are opt-in with `MO2_DEVELOPER_TOOLS=1`. Debug uses the
+pinned fork's Avalonia inspector (F12); Release uses DiagnosticsSupport for the
+external DevTools connection. The two packages are selected by configuration
+because they cannot coexist. Leave the variable unset for a normal session.
 
 ## Instance startup
 

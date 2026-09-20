@@ -14,6 +14,8 @@ internal static class Mo2SaveSelectionCheck
         };
         var root = (Grid)window.Content!;
         var host = new Grid { Width = 600, Height = 400, IsHitTestVisible = false };
+        Grid.SetRowSpan(host, root.RowDefinitions.Count);
+        Grid.SetColumnSpan(host, root.ColumnDefinitions.Count);
         root.Children.Add(host);
         try {
             host.Children.Add(view);
@@ -24,6 +26,30 @@ internal static class Mo2SaveSelectionCheck
             }
             var table = view.GetVisualDescendants().OfType<TreeDataGrid>().Single();
             var search = view.GetVisualDescendants().OfType<TextBox>().Single();
+            table.RowSelection!.Select(new IndexPath(0));
+            table.RowSelection.Select(new IndexPath(1));
+            void ExpectMany(params string[] files) {
+                var actual = table.RowSelection!.SelectedItems.OfType<Mo2Save>().Select(save => save.File).Order().ToArray();
+                if (!actual.SequenceEqual(files.Order()))
+                    throw new Exception("Saves multiple selection mismatch: " + string.Join(",", actual));
+            }
+            ExpectMany("a.fos", "b.fos");
+            table.ContextMenu!.Open(table);
+            await Task.Delay(100);
+            var menu = table.ContextMenu.Items.OfType<MenuItem>().ToArray();
+            if (!menu.Any(item => item.Header as string == "Delete 2 save(s)" && item.IsEnabled) ||
+                !menu.Any(item => item.Header as string == "Fix enabled mods..." && !item.IsEnabled))
+                throw new Exception("Saves multi-selection menu does not match MO2");
+            table.ContextMenu.Close();
+            search.Text = "a.fos"; await WaitRows(1); ExpectMany("a.fos");
+            search.Text = ""; await WaitRows(2); ExpectMany("a.fos", "b.fos");
+            rows = [rows[1], rows[0]];
+            await view.Refresh(); ExpectMany("a.fos", "b.fos");
+            rows = [new("Same title", "a.fos")];
+            await view.Refresh(); ExpectMany("a.fos");
+            rows = [new("Same title", "a.fos"), new("Same title", "b.fos")];
+            await view.Refresh(); ExpectMany("a.fos");
+            table.RowSelection!.Clear();
             table.RowSelection!.Select(new IndexPath(1));
             void Expect(string? file) {
                 if ((table.RowSelection?.SelectedItem as Mo2Save)?.File != file)
@@ -44,7 +70,11 @@ internal static class Mo2SaveSelectionCheck
             await view.Refresh(); Expect(null);
             rows = [new("Same title", "a.fos"), new("Recreated", "b.fos")];
             await view.Refresh(); Expect(null);
-            Console.WriteLine("PASS Saves selection: duplicate titles, filtering, reordered refresh, and removal without selection resurrection");
+            rows = [.. rows, new("Third", "c.fos")];
+            await view.Refresh();
+            table.RowSelection!.Select(new IndexPath(0)); table.RowSelection.Select(new IndexPath(1));
+            Mo2RowMenu.SelectRow(table, 2); ExpectMany("c.fos");
+            Console.WriteLine("PASS Saves selection: multiple rows, native menu counts/single-save repair, duplicate titles, filtering, reordered refresh, and removal without selection resurrection");
         } finally { root.Children.Remove(host); }
     }
 }

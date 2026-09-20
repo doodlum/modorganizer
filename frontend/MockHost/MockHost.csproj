@@ -4,10 +4,16 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
+    <!-- Debug inherits Avalonia.Diagnostics from the pinned NMA UI project.
+         Its inspector cannot coexist with DiagnosticsSupport in one build. -->
+    <PackageReference Condition="'$(Configuration)' != 'Debug'" Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageReference Include="SteamKit2" Version="3.3.1" />
+    <!-- Security backport for the 0.21.x dependency used by Avalonia and XDG portals.
+         https://github.com/tmds/Tmds.DBus/releases/tag/rel%2F0.21.3 -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
     <AvaloniaResource Include="Assets/**/*.svg" />
     <AvaloniaResource Include="Assets/AppIcon.png" />
     <Compile Include="../upstream/src/NexusMods.Backend/Settings/SettingsBuilder.cs" Link="Upstream/SettingsBuilder.cs" />

@@ -100,12 +100,10 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         return items;
     }
 
-    public Mo2DownloadsView()
+    internal static double StatusWidth(double width, bool transfers) => transfers ? (width < 460 ? 184d : 224d) : 128d;
+    internal static void InstallProgressStyle(Control target)
     {
-        var native = new NexusMods.App.UI.Pages.Downloads.DownloadsPageView();
-        // The native plugin API gives us downloaded bytes, but no total size.
-        // Keep NMA's progress styling without implying a known percentage.
-        native.Styles.Add(new Style(selector => selector.OfType<ProgressBar>().Class("DownloadBar")) {
+        target.Styles.Add(new Style(selector => selector.OfType<ProgressBar>().Class("DownloadBar")) {
             Setters = { new Setter(ProgressBar.MinWidthProperty, 0d), new Setter(ProgressBar.MaxWidthProperty,
                 new Avalonia.Data.Binding("Bounds.Width") {
                     RelativeSource = new Avalonia.Data.RelativeSource(Avalonia.Data.RelativeSourceMode.FindAncestor) { AncestorType = typeof(Mo2DownloadsView) },
@@ -122,7 +120,15 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     })
                 }) }
         });
-        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
+    }
+
+    public Mo2DownloadsView()
+    {
+        var native = new NexusMods.App.UI.Pages.Downloads.DownloadsPageView();
+        // The native plugin API gives us downloaded bytes, but no total size.
+        // Keep NMA's progress styling without implying a known percentage.
+        InstallProgressStyle(native);
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*") };
         StandardButton ActionButton(string text, string name, IconValue icon) {
             var button = new StandardButton { Text = text, Name = name, LeftIcon = icon,
                 Type = StandardButton.Types.Tertiary, Fill = StandardButton.Fills.None,
@@ -151,25 +157,36 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         var nativeToolbar = native.GetLogicalDescendants().OfType<Toolbar>().Single();
         if (nativeToolbar.Parent is Panel toolbarOwner) toolbarOwner.Children.Remove(nativeToolbar);
         else nativeToolbar.IsVisible = false;
-        Grid.SetRow(native,2); layout.Children.Add(native);
-        var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24,8,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
-        layout.Children.Add(unavailable);
+        // Keep the header and native controls inside one shared page inset. The
+        // embedded view used to add its own 24px inset and 16px content gap below
+        // our toolbar, leaving Downloads misaligned with the other tabs.
+        var header = native.GetLogicalDescendants()
+            .OfType<NexusMods.App.UI.Controls.PageHeader.PageHeader>().Single();
+        var nativeRoot = (Grid)header.Parent!;
+        nativeRoot.Children.Remove(header);
+        var nativeContent = nativeRoot.Children.OfType<Grid>().Single();
+        nativeContent.Margin = new Thickness(0);
+        layout.Children.Add(header);
+        Grid.SetRow(native,3); layout.Children.Add(native);
+        var unavailable = new TextBlock { Name = "DownloadsUnavailable", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,8,0,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        var status = new StackPanel();
+        Grid.SetRow(status, 2); layout.Children.Add(status);
         // The game and profile these downloads belong to. Shown, where it used to be
         // a hidden marker for the stale-picker checks: the native page header that
         // carried it is stood down with the rest of the header line on a narrow
         // panel, which left this page with a band of nothing where the other pages
         // say what they are showing.
         var context = new TextBlock { Name = "DownloadProfileContext", Opacity = .6, FontSize = Mo2Density.FontSize,
-            Margin = new Thickness(24,0,24,6), TextTrimming = TextTrimming.CharacterEllipsis };
-        Grid.SetRow(context, 1); layout.Children.Add(context);
+            Margin = new Thickness(0,0,0,6), TextTrimming = TextTrimming.CharacterEllipsis };
+        status.Children.Add(context);
+        status.Children.Add(unavailable);
         // MO2's own downloadTab furniture: a Refresh and a Query Metadata beside it.
         // MO2's own four: the columns its download list keeps hidden until they are
         // asked for. Name is not offered at all, as MO2 counts its menu from the
         // column after it.
         _columns = new Mo2ColumnToggle("downloads", () => _rebuildColumns?.Invoke(),
             hiddenByDefault: ["Mod name", "Version", "Nexus ID", "Source Game"], pinned: ["Name"]);
-        var qtBar = new StackPanel { Name = "DownloadsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 6, Margin = new Thickness(24,0,24,8), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        var qtBar = Mo2QtWidgets.ActionBar("DownloadsQtBar");
         // The list's own refresh is a local of the activation block, so the button is
         // pointed at whatever that block last set rather than at the page.
         // MO2's btnRefreshDownloads reads its downloads folder again; this one only
@@ -180,33 +197,27 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // page's toolbar was put here for a while; MO2 has no widget for it either,
         // and a download still arrives through MO2's own nxm handler, which is what
         // MO2 registers itself for.
-        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsRefreshButton", "Refresh", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
+        var refresh = Mo2QtWidgets.Icon("DownloadsRefreshButton", Mo2QtWidgets.DownloadsRefreshTip, "mdi-refresh",
             async () => {
                 if (ViewModel is { } model) await model.Profile.RefreshDownloads();
                 _qtRefresh?.Invoke();
-            }));
-        qtBar.Children.Add(Mo2QtWidgets.Button("DownloadsQueryButton", Mo2QtWidgets.QueryMetadata, Mo2QtWidgets.QueryMetadataTip,
-            "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); }));
-        Grid.SetRow(qtBar, 0); layout.Children.Add(qtBar);
-        // And the row MO2 puts under that list: the box that shows the downloads it
-        // has been told to hide, and the field that narrows the list.
-        var qtFilterBar = new Grid { Name = "DownloadsFilterBar", ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
-            Margin = new Thickness(24,6,24,8) };
+            });
+        var query = Mo2QtWidgets.Icon("DownloadsQueryButton", Mo2QtWidgets.QueryMetadataTip,
+            "mdi-cloud-search-outline", async () => { if (ViewModel is { } model) await model.Profile.QueryDownloadMetadata(); });
+        qtBar.Children.Add(Mo2ListToolbar.Pill("DownloadsToolbarActions", refresh, query));
+        Grid.SetRow(qtBar, 1); layout.Children.Add(qtBar);
         CheckBox? hiddenBox = null;
         TextBox? filterField = null;
         void ApplyFilter() => ViewModel?.Provider.SetFilter(filterField?.Text ?? "", hiddenBox?.IsChecked == true);
         hiddenBox = Mo2QtWidgets.Check("DownloadsHiddenFiles", Mo2QtWidgets.HiddenDownloads, Mo2QtWidgets.HiddenDownloadsTip,
             false, _ => ApplyFilter());
-        qtFilterBar.Children.Add(hiddenBox);
         var qtFilter = Mo2QtWidgets.Filter("DownloadsQtFilter", Mo2QtWidgets.DownloadFilterTip, _ => ApplyFilter(), out filterField);
-        qtFilter.MinWidth = 160;
-        Grid.SetColumn(qtFilter, 2); qtFilterBar.Children.Add(qtFilter);
-        Grid.SetRow(qtFilterBar, 3); layout.Children.Add(qtFilterBar);
+        qtBar.Children.Add(new Mo2ToolbarSearch(this, "DownloadsToolbarSearch", qtFilter, filterField, "Search downloads"));
+        qtBar.Children.Add(hiddenBox);
         Content = layout;
-        // The native downloads page draws its own header and toolbar; the shared
-        // chrome puts them on one line with the separator, padding and compaction
-        // every other page has.
-        Mo2PanelChrome.Adopt(native);
+        // The outer page owns the shared header, padding and compaction. The
+        // embedded downloads view supplies the table without a second inset.
+        Mo2PanelChrome.Apply(this, layout, header);
         // MO2 installs a download when it is double-clicked, which is how its own
         // list is worked. The button that used to share this code went with the
         // toolbar; the gesture is MO2's own and stays.
@@ -227,12 +238,26 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
         // few actions that apply to a selection, and everything else — installing,
         // asking Nexus what a file is, opening it, hiding it, and the six that act on
         // the whole folder — is here, under MO2's own captions and conditions.
-        native.AttachedToVisualTree += (_, _) => {
-            if (native.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault() is not { ContextMenu: null } table) return;
-            Mo2RowMenu.Attach<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>(
-                table, row => DownloadMenu(row), allowEmpty: true);
+        TreeDataGrid? styledTable = null;
+        void AttachTable()
+        {
+            if (native.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault() is not { } table) return;
+            native.LayoutUpdated -= TableLaidOut;
+            if (!ReferenceEquals(styledTable, table)) {
+                Mo2TableRow.InstallRowStyles(table);
+                Mo2RowMenu.Attach<NexusMods.App.UI.Controls.CompositeItemModel<NexusMods.Abstractions.Downloads.DownloadId>>(
+                    table, row => DownloadMenu(row), allowEmpty: true);
+                styledTable = table;
+            }
             AttachColumnMenu();
+        }
+        void TableLaidOut(object? sender, EventArgs args) => AttachTable();
+        native.AttachedToVisualTree += (_, _) => {
+            native.LayoutUpdated -= TableLaidOut;
+            native.LayoutUpdated += TableLaidOut;
+            AttachTable();
         };
+        native.DetachedFromVisualTree += (_, _) => native.LayoutUpdated -= TableLaidOut;
         // The heading strip carries the column menu, as MO2's header does. The rows
         // below keep the download menu: Avalonia resolves a right-click against the
         // innermost control carrying a flyout, so the two do not collide. The strip is
@@ -261,6 +286,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                 context.Text = model.HeaderDescription;
                 unavailable.IsVisible = !profile.IsConnected;
                 unavailable.Text = profile.ProfilePath.Length == 0 ? "Select a profile to view downloads." : "Downloads are unavailable. Reconnect to MO2 to refresh this folder.";
+                resizeColumns?.Invoke();
             }
             profile.Changed += Refresh; SizeChanged += Resized;
             void Resized(object? sender, SizeChangedEventArgs args) { Refresh(); resizeColumns?.Invoke(); }
@@ -302,7 +328,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     // Every column is built and then the chosen ones taken out, so the
                     // menu knows the whole set whichever of them is on screen.
                     _columns!.Apply(columns);
-                    var previousWidth = double.NaN;
+                    (double Width, bool Transfers)? previousLayout = null;
                     // Each column past the status keeps its width until the panel is
                     // too narrow to hold it, then collapses. Dropped rather than
                     // removed: the list used to take columns out of the collection and
@@ -310,15 +336,21 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                     // and the one being moved was known by index.
                     var sizes = meta.ToDictionary(x => x.Header, x => (x.Width, x.Threshold), StringComparer.OrdinalIgnoreCase);
                     sizes["Size"] = (90, 430);
-                    var optional = Enumerable.Range(2, Math.Max(0, columns.Count - 2))
+                    var statusColumn = Enumerable.Range(0, columns.Count)
+                        .FirstOrDefault(index => string.Equals(columns[index].Header?.ToString(), "Status", StringComparison.OrdinalIgnoreCase), -1);
+                    var optional = Enumerable.Range(1, Math.Max(0, columns.Count - 1)).Where(index => index != statusColumn)
                         .Select(index => (Column: index, Size: sizes.TryGetValue(columns[index].Header?.ToString() ?? "", out var found) ? found : (Width: 100d, Threshold: 0d)))
                         .Select(x => (x.Column, x.Size.Width, x.Size.Threshold)).ToArray();
                     resizeColumns = () => {
-                        if (Bounds.Width <= 0 || Bounds.Width == previousWidth) return;
-                        previousWidth = Bounds.Width;
+                        var transfers = profile.Downloads.Any(file => file.Partial);
+                        var currentLayout = (Bounds.Width, transfers);
+                        if (Bounds.Width <= 0 || currentLayout == previousLayout) return;
+                        previousLayout = currentLayout;
                         // The native Downloads table measures star columns at their
                         // minimum. Allocate its remaining width explicitly instead.
-                        var statusWidth = Bounds.Width < 460 ? 184d : 224d;
+                        // Finished rows have no pause/resume/cancel controls. Keep
+                        // the existing transfer allocation only while it is needed.
+                        var statusWidth = statusColumn < 0 ? 0 : StatusWidth(Bounds.Width, transfers);
                         var taken = statusWidth;
                         foreach (var (column, width, threshold) in optional) {
                             if (column >= columns.Count) continue;
@@ -327,7 +359,7 @@ internal sealed class Mo2DownloadsView : ReactiveUserControl<Mo2DownloadsPage>
                             if (show) taken += width;
                         }
                         columns.SetColumnWidth(0, new GridLength(Math.Max(60, Bounds.Width - 48 - taken)));
-                        if (columns.Count > 1) columns.SetColumnWidth(1, new GridLength(statusWidth));
+                        if (statusColumn >= 0) columns.SetColumnWidth(statusColumn, new GridLength(statusWidth));
                     };
                     resizeColumns();
                 }

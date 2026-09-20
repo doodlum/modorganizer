@@ -36,7 +36,6 @@ internal static class Mo2ExtraButtonsCheck
         // MO2's tabs each show their whole list; the file pages here are one panel
         // that navigates, so they need a way back up and a way to search in place.
         ["SearchToggleButton"] = "shows the page's filter row, which MO2 draws permanently under its list",
-        ["DataParentFolder"] = "the way back up a folder, which this page needs because it navigates where MO2's Data tree expands in place",
         // The clear inside a filter field. MO2's LineEditClear carries the same
         // affordance inside the box itself.
         ["ModsQtFilterClear"] = "the clear inside MO2's own filter field",

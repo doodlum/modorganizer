@@ -211,8 +211,8 @@ internal static class Mo2TabDragDrop
         }
 
         DragDrop.SetAllowDrop(window, true);
-        window.AddHandler(DragDrop.DragOverEvent, Over);
-        window.AddHandler(DragDrop.DragEnterEvent, Over);
+        window.AddHandler(DragDrop.DragOverEvent, Over, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+        window.AddHandler(DragDrop.DragEnterEvent, Over, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
         window.AddHandler(DragDrop.DragLeaveEvent, (_, _) => preview.IsVisible = false);
         window.AddHandler(DragDrop.DropEvent, (_, args) => {
             var source = dragging;
@@ -225,7 +225,7 @@ internal static class Mo2TabDragDrop
             var origin = under.Value.View.TranslatePoint(default, window)!.Value;
             var bounds = new Rect(origin, under.Value.View.Bounds.Size);
             Move(controller, source.Workspace, source.Panel, source.Tab, under.Value.Panel, ZoneFor(bounds, point));
-        });
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     internal static void Move(IWorkspaceController controller, WorkspaceId workspaceId,
@@ -235,7 +235,7 @@ internal static class Mo2TabDragDrop
         var source = workspace.Panels.FirstOrDefault(x => x.Id == sourcePanelId);
         if (source is null) return;
         var tab = source.Tabs.FirstOrDefault(x => x.Id == tabId);
-        if (tab?.Contents.PageData is not { } page) return;
+        if (tab is not PanelTabViewModel moving || workspace is not WorkspaceViewModel mutableWorkspace || target is not PanelViewModel destination) return;
         // Dropping a tab back where it already is should not rebuild the layout.
         if (zone == Zone.Tab && target.Id == sourcePanelId) return;
         // The only tab of the panel being split has nowhere to go: the source panel
@@ -252,14 +252,14 @@ internal static class Mo2TabDragDrop
         // answered while the pointer was still moving.
         var splitting = CanSplit(workspace, sourcePanelId, target, zone);
         source.CloseTab(tabId);
-        // Landing as a tab is what a drop does when it cannot split: the page still
-        // goes where it was dropped, which is the part the person doing the dragging
-        // chose. Refusing outright would look like the drag had failed.
-        OpenPageBehavior behavior = new OpenPageBehavior.NewTab(target.Id);
+        if (source.Tabs.Any(x => x.Id == tabId)) return; // CanClose vetoed the move.
         if (splitting) {
             var split = SplitState(workspace, target, zone);
-            if (Fits(split)) behavior = new OpenPageBehavior.NewPanel(split);
+            if (Fits(split)) {
+                mutableWorkspace.AddPanelWithMovedTab(split, moving);
+                return;
+            }
         }
-        controller.OpenPage(workspaceId, page, behavior, selectTab: true, checkOtherPanels: false);
+        destination.AdoptTab(moving);
     }
 }

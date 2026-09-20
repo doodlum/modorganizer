@@ -66,11 +66,18 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // zero now.
         var alert = editor.FindControl<Control>("LoadOrderAlert")!;
         alert.IsVisible = false;
-        // And the help button in the rail beside the list, which opens it. MO2's mod
-        // list had the same shape of button and it went for the same reason: MO2
-        // explains its lists nowhere on the tab.
+        // Replace upstream help with the shared rail's MO2-specific explanation.
         editor.FindControl<Control>("InfoAlertButton")!.IsVisible = false;
         var tableControl = editor.FindControl<TreeDataGrid>("SortOrderTreeDataGrid")!;
+        // MO2's fixed masters must not advertise a permitted drop only for the
+        // backend to silently ignore it. Check the whole selection at drag start.
+        tableControl.RowDragStarted += (_, args) => {
+            var profile = ViewModel?.LiveProfile;
+            var rows = args.Models.OfType<CompositeItemModel<ISortItemKey>>().ToArray();
+            if (profile?.CanChangeOriginalUi != true || rows.Length == 0 ||
+                rows.Any(row => profile.Order.FindPlugin(row.Key)?.CanMove != true))
+                args.AllowedEffects = Avalonia.Input.DragDropEffects.None;
+        };
         tableControl.ShowColumnHeaders = false;
         Mo2TableRow.InstallRowStyles(tableControl);
         var mainGrid = editor.FindControl<Grid>("MainGrid")!;
@@ -85,7 +92,8 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // glyph columns do — a word in a column one icon wide is drawn as "…".
         foreach (var (column, text) in Mo2PluginRow.Headers)
             Mo2ModRow.Add(headings, column == Mo2PluginRow.Flags
-                ? Mo2TableRow.GlyphHeading("mdi-flag", text) : Mo2TableRow.Heading(text), column);
+                ? Mo2TableRow.GlyphHeading("mdi-flag", text) : column == Mo2PluginRow.Name
+                    ? Mo2TableRow.NameHeading(text) : Mo2TableRow.Heading(text), column);
         mainGrid.Children.Add(headings);
         var pluginRail = editor.FindControl<Grid>("TrophyBarColumnGrid")!;
         Grid.SetRowSpan(pluginRail, 2);
@@ -100,7 +108,7 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // scrollbar beside the rail.
         editor.FindControl<Control>("TrophyBarColumnGrid")!.IsVisible = true;
         editor.FindControl<Control>("TrophyBarDockPanel")!.IsVisible = false;
-        var pluginRailGrid = Mo2ListRail.Create("PluginRailScrollBar", out var pluginScroll);
+        var pluginRailGrid = Mo2ListRail.Create("PluginRailScrollBar", out var pluginScroll, plugins: true);
         Grid.SetRow(pluginRailGrid, 1);
         editor.FindControl<Grid>("TrophyBarColumnGrid")!.Children.Add(pluginRailGrid);
         Mo2ListRail.Connect(pluginScroll, tableControl);
@@ -119,16 +127,18 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(24) };
         // MO2's own espTab furniture: Sort, Restore and Save across the top with the
         // active-plugin count beside them, and its filter field under the list.
-        var qtSort = Mo2QtWidgets.Button("SortPluginsButton", "Sort", Mo2QtWidgets.SortTip, "mdi-sort-alphabetical-variant",
+        var qtSort = Mo2QtWidgets.Icon("SortPluginsButton", Mo2QtWidgets.SortTip, "mdi-sort-alphabetical-variant",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.SortPlugins(live.CurrentTarget); });
         // Restore and Save go through MO2's own backup buttons, which own the retention
         // policy, the restore picker and the writes — the same route the order history
         // menu already takes.
-        var qtRestore = Mo2QtWidgets.Button("RestorePluginsButton", "Restore", Mo2QtWidgets.RestoreTip, "mdi-backup-restore",
+        var qtRestore = Mo2QtWidgets.Icon("RestorePluginsButton", Mo2QtWidgets.RestoreTip, "mdi-backup-restore",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "restore", live.CurrentTarget); });
-        var qtSave = Mo2QtWidgets.Button("SavePluginsButton", "Save", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
+        var qtSave = Mo2QtWidgets.Icon("SavePluginsButton", Mo2QtWidgets.SaveTip, "mdi-content-save-outline",
             async () => { if (ViewModel?.LiveProfile is { } live) await live.OrderBackup("plugins", "backup", live.CurrentTarget); });
         var qtCount = Mo2QtWidgets.Counter("ActivePluginsCounter", out var activeCount);
+        var showDetails = Mo2QtWidgets.Toggle("PluginDetailsButton", "Show plugin details", "mdi-information-outline", false,
+            shown => { if (ViewModel is { } model) model.ShowPluginDetails = shown; });
         // MO2 greys its own three out — sortButton when the managed game has no
         // sorting or LOOT is already running, and the whole pane while one of its
         // dialogs is up — and shows why on the one it disables. These stood drawn
@@ -141,18 +151,17 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
         // The same band as the row of widgets above the mod list, and the same gap
         // under it: 25px tall with 8 below here against 24 and 6 there put this
         // table's headings 3px below the ones beside them.
-        var qtBar = new StackPanel { Name = "PluginsQtBar", Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 6, Height = Mo2TableRow.ActionSize, Margin = new Thickness(0, 0, 0, 6) };
-        qtBar.Children.Add(qtSort); qtBar.Children.Add(qtRestore); qtBar.Children.Add(qtSave); qtBar.Children.Add(qtCount);
+        var qtBar = Mo2QtWidgets.ActionBar("PluginsQtBar");
+        qtBar.Children.Add(Mo2ListToolbar.Pill("PluginsToolbarActions", qtSort, qtRestore, qtSave, showDetails));
+        qtBar.Children.Add(qtCount);
         var qtFilterHost = Mo2QtWidgets.Filter("PluginsQtFilter", Mo2QtWidgets.PluginFilterTip,
-            text => { if (ViewModel is { } model) model.Mo2SearchText = text; }, out _);
-        qtFilterHost.Margin = new Thickness(0, 8, 0, 0);
+            text => { if (ViewModel is { } model) model.Mo2SearchText = text; }, out var pluginFilter);
+        qtBar.Children.Add(new Mo2ToolbarSearch(this, "PluginsToolbarSearch", qtFilterHost, pluginFilter, "Search plugins"));
 
         var body = new Grid(); body.Children.Add(editor); body.Children.Add(chooseProfile);
-        var tab = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
+        var tab = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
         tab.Children.Add(qtBar);
         Grid.SetRow(body, 1); tab.Children.Add(body);
-        Grid.SetRow(qtFilterHost, 2); tab.Children.Add(qtFilterHost);
         layout.Children.Add(tab); Content = layout;
         // MO2 shows how many plugins are active, which is what the counter beside the
         // sort actions reads.
@@ -199,9 +208,13 @@ internal sealed class Mo2PluginsView : ReactiveUserControl<ScenarioLoadOrderPage
                 var selected = profile.Order.Plugins.Where(plugin => ViewModel.Adapter.SelectedModels.Any(row => row.Key.Equals(plugin.Key))).ToArray();
                 // The mirror of what selecting mods does to this table.
                 profile.HighlightPlugins(selected.Select(x => x.DisplayName));
-                details.Text = string.Join("\n\n", selected.Select(x => $"{x.DisplayName} · {(x.IsActive ? "Enabled" : "Disabled")} · Mod index {(x.ModIndex.Length == 0 ? "—" : x.ModIndex)}\n{x.Diagnostics}"));
+                details.Text = string.Join("\n\n", selected.Select(x => Mo2PluginRow.Details(x) + "\n" + (x.IsActive ? "Enabled" : "Disabled")));
                 if (selected.Length == 0) details.Text = "Select a plugin to view MO2’s diagnostics and mod index.";
                 detailScroll.IsVisible = ViewModel.ShowPluginDetails && profile.ProfilePath.Length > 0 && selected.Length > 0;
+                showDetails.IsEnabled = selected.Length > 0;
+                showDetails.IsChecked = ViewModel.ShowPluginDetails;
+                ToolTip.SetTip(showDetails, selected.Length == 0 ? "Select a plugin to view its details" :
+                    ViewModel.ShowPluginDetails ? "Hide plugin details" : "Show plugin details");
             }
             void UpdateConnection() {
                 var connected = profile.ProfilePath.Length > 0;

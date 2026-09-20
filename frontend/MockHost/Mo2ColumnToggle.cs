@@ -38,8 +38,8 @@ internal sealed class Mo2ColumnToggle
     internal Mo2ColumnToggle(string panel, Action rerender, string[]? hiddenByDefault = null, string[]? pinned = null)
     {
         _panel = panel; _rerender = rerender;
-        _defaults = hiddenByDefault ?? [];
         _pinned = new HashSet<string>(pinned ?? [], StringComparer.OrdinalIgnoreCase);
+        _defaults = (hiddenByDefault ?? []).Where(name => !_pinned.Contains(name)).ToArray();
         // A panel that has never been opened takes MO2's own defaults; one that has
         // takes what was chosen, including "nothing hidden", which is why the saved
         // file is read as the answer rather than merged with them.
@@ -51,6 +51,8 @@ internal sealed class Mo2ColumnToggle
             }
         } catch (IOException) { } catch (JsonException) { }
         if (!saved) foreach (var name in _defaults) _hidden.Add(name);
+        // Mandatory columns cannot be removed by old saved preferences either.
+        _hidden.ExceptWith(_pinned);
         Action = Mo2ModRow.IconButton("mdi-tune-variant", "Choose columns", () => { });
         Action.Name = "ColumnToggleButton";
         Action.Flyout = _flyout;
@@ -99,7 +101,7 @@ internal sealed class Mo2ColumnToggle
             if (Name(column) is { Length: > 0 } name && !_known.Contains(name)) _known.Add(name);
         }
         for (var index = columns.Count - 1; index >= 0; index--) {
-            if (Name(columns[index]) is { Length: > 0 } name && _hidden.Contains(name)) columns.RemoveAt(index);
+            if (Name(columns[index]) is { Length: > 0 } name && !_pinned.Contains(name) && _hidden.Contains(name)) columns.RemoveAt(index);
         }
     }
 

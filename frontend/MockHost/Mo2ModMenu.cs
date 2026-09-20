@@ -133,6 +133,7 @@ internal static class Mo2ModMenu
             mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_TRUE" ? Mo2("Un-Endorse") : null,
             mod.IsRegular && nexus && mod.Endorsed is "ENDORSED_FALSE" or "ENDORSED_NEVER" ? Mo2("Endorse") : null,
             mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_FALSE" ? Mo2("Won't endorse") : null,
+            mod.IsRegular && nexus && mod.Endorsed == "ENDORSED_UNKNOWN" ? Entry("Endorsement state unknown", () => Task.CompletedTask, false) : null,
             mod.IsRegular && nexus ? Mo2("Remap Category (From Nexus)") : null,
             mod.IsRegular && nexus && mod.Tracked == "TRACKED_FALSE" ? Mo2("Start tracking") : null,
             mod.IsRegular && nexus && mod.Tracked == "TRACKED_TRUE" ? Mo2("Stop tracking") : null,

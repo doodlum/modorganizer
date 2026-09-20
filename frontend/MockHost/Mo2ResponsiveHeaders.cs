@@ -20,37 +20,65 @@ internal static class Mo2ResponsiveHeaders
     // carrying their own idea of the size.
     internal const double IconSize = 48;
     internal const double CompactIconSize = 28;
-    private sealed class State(PageHeader header)
+    private sealed class State
     {
-        public Thickness Margin = header.Margin;
+        private readonly PageHeader _header;
+        public Thickness Margin;
+        public Thickness? ContainerMargin;
         public ScrollViewer? Viewer;
         public double ScrollAmount;
+
+        public State(PageHeader header)
+        {
+            _header = header; Margin = header.Margin;
+            ContainerMargin = header.Name == "AllPageHeader" && header.Parent?.GetType() == typeof(Panel) ? ((Panel)header.Parent).Margin : null;
+            header.DetachedFromVisualTree += (_, _) => StopObserving();
+        }
+
+        private void StopObserving()
+        {
+            if (Viewer is not { } viewer) return;
+            viewer.ScrollChanged -= Scrolled;
+            viewer.RemoveHandler(InputElement.PointerWheelChangedEvent, Wheeled);
+            Viewer = null;
+        }
+
         public void ObserveScroll(UserControl owner)
         {
             if (Viewer?.GetVisualRoot() is not null && Viewer.GetVisualAncestors().Contains(owner)) return;
             var viewer = owner.GetVisualDescendants().OfType<TreeDataGrid>().FirstOrDefault()?
                 .GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault(v =>
                     v.GetVisualDescendants().Any(c => c.GetType().Name == "TreeDataGridRowsPresenter"));
-            if (viewer is null || ReferenceEquals(Viewer, viewer)) return;
+            if (ReferenceEquals(Viewer, viewer)) return;
+            StopObserving();
+            if (viewer is null) return;
             Viewer = viewer;
             ScrollAmount = Math.Clamp(viewer.Offset.Y, 0, ScrollDistance);
-            viewer.ScrollChanged += (_, e) => {
-                // Resizing the header can clamp the offset. Only a scroll, rather
-                // than a viewport resize, should change its collapsed state.
-                if (ReferenceEquals(Viewer, viewer) && Math.Abs(e.ViewportDelta.Y) < .1 && Math.Abs(e.OffsetDelta.Y) > .1) {
-                    ScrollAmount = viewer.Offset.Y <= .1 ? 0 : Math.Clamp(ScrollAmount + e.OffsetDelta.Y, 0, ScrollDistance);
-                    header.InvalidateMeasure();
-                }
-            };
-            viewer.AddHandler(InputElement.PointerWheelChangedEvent, (_, e) => {
-                if (e.Delta.Y > 0 && viewer.Offset.Y <= .1 && ScrollAmount > 0) {
-                    ScrollAmount = Math.Max(0, ScrollAmount - e.Delta.Y * 40);
-                    header.InvalidateMeasure();
-                }
-            }, RoutingStrategies.Tunnel);
+            viewer.ScrollChanged += Scrolled;
+            viewer.AddHandler(InputElement.PointerWheelChangedEvent, Wheeled, RoutingStrategies.Tunnel);
         }
-        public Thickness? ContainerMargin = header.Name == "AllPageHeader" && header.Parent?.GetType() == typeof(Panel) ? ((Panel)header.Parent).Margin : null;
+
+        private void Scrolled(object? sender, ScrollChangedEventArgs e)
+        {
+            // Header resizing can clamp the offset; only scroll motion contributes.
+            if (Viewer is { } viewer && ReferenceEquals(sender, viewer) && Math.Abs(e.ViewportDelta.Y) < .1 && Math.Abs(e.OffsetDelta.Y) > .1) {
+                ScrollAmount = viewer.Offset.Y <= .1 ? 0 : Math.Clamp(ScrollAmount + e.OffsetDelta.Y, 0, ScrollDistance);
+                _header.InvalidateMeasure();
+            }
+        }
+
+        private void Wheeled(object? sender, PointerWheelEventArgs e)
+        {
+            if (Viewer is { } viewer && ReferenceEquals(sender, viewer) && e.Delta.Y > 0 && viewer.Offset.Y <= .1 && ScrollAmount > 0) {
+                ScrollAmount = Math.Max(0, ScrollAmount - e.Delta.Y * 40);
+                _header.InvalidateMeasure();
+            }
+        }
     }
+    // Header state follows the control across windows; detached viewers are
+    // unsubscribed so they cannot retain or drive a header that has moved away.
+    private static readonly ConditionalWeakTable<PageHeader, State> States = new();
+    internal static double? ObservedScrollForTesting(PageHeader header) => States.TryGetValue(header, out var state) ? state.ScrollAmount : null;
     // A panel holding one tab hides its tab strip, which keeps the page clean but
     // also takes away the only thing a tab can be dragged by — and with the default
     // Mods/Plugins layout that is every panel. The strip comes back when the pointer
@@ -58,7 +86,7 @@ internal static class Mo2ResponsiveHeaders
     // the rest of the time.
     internal const double RevealBand = 44;
     private static readonly ConditionalWeakTable<PanelView, object> Revealed = new();
-    private static readonly HashSet<PanelView> Watched = [];
+    private static readonly ConditionalWeakTable<PanelView, object> Watched = new();
 
     internal static bool IsRevealed(PanelView panel) => Revealed.TryGetValue(panel, out _);
 
@@ -87,8 +115,9 @@ internal static class Mo2ResponsiveHeaders
 
     private static void WatchReveal(PanelView panel)
     {
-        if (!Watched.Add(panel)) return;
-        panel.DetachedFromVisualTree += (_, _) => { Watched.Remove(panel); Reveal(panel, false); };
+        if (Watched.TryGetValue(panel, out _)) return;
+        Watched.Add(panel, new object());
+        panel.DetachedFromVisualTree += (_, _) => Reveal(panel, false);
         panel.AddHandler(InputElement.PointerMovedEvent, (_, e) =>
             Reveal(panel, e.GetPosition(panel).Y <= RevealBand), RoutingStrategies.Tunnel, handledEventsToo: true);
         panel.PointerExited += (_, _) => Reveal(panel, false);
@@ -96,13 +125,12 @@ internal static class Mo2ResponsiveHeaders
 
     public static void Attach(Window window)
     {
-        var states = new ConditionalWeakTable<PageHeader, State>();
         window.LayoutUpdated += (_, _) => {
             foreach (var header in FindHeaders(window)) {
                 var owner = header.GetVisualAncestors().OfType<UserControl>().FirstOrDefault();
                 if (owner is null || !owner.IsEffectivelyVisible || owner.Bounds.Width <= 0 || owner.Bounds.Height <= 0) continue;
-                if (!header.IsVisible && !states.TryGetValue(header, out _)) continue;
-                var state = states.GetValue(header, h => new State(h));
+                if (!header.IsVisible && !States.TryGetValue(header, out _)) continue;
+                var state = States.GetValue(header, h => new State(h));
                 state.ObserveScroll(owner);
                 var panel = header.GetVisualAncestors().OfType<PanelView>().FirstOrDefault();
                 var availableWidth = Math.Min(owner.Bounds.Width, panel?.Bounds.Width ?? owner.Bounds.Width);

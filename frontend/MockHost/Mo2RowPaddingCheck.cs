@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 
 namespace Mo2.Frontend;
 
@@ -19,20 +20,27 @@ internal static class Mo2RowPaddingCheck
     {
         var faults = new List<string>();
 
-        // The columns both tables have in common are the same width. The ones
-        // between them differ on purpose: the pages describe different things.
+        // Grip and status now live inside the name cell. Comparing the outer
+        // metadata columns accidentally compares unrelated fields (for example,
+        // mod Flags against plugin Form Version).
         var mods = Mo2ModRow.Columns();
         var plugins = Mo2PluginRow.Columns();
-        void Same(string what, int modColumn, int pluginColumn)
-        {
-            var a = mods.ColumnDefinitions[modColumn].Width;
-            var b = plugins.ColumnDefinitions[pluginColumn].Width;
-            if (a != b) faults.Add($"{what}: Mods {a}, Plugins {b}");
-        }
-        Same("grip column", 0, 0);
-        Same("status column", 1, 1);
-        Same("name column", 2, 2);
-        Same("actions column", mods.ColumnDefinitions.Count - 1, plugins.ColumnDefinitions.Count - 1);
+        if (mods.ColumnDefinitions[Mo2ModRow.Name].Width !=
+            plugins.ColumnDefinitions[Mo2PluginRow.Name].Width)
+            faults.Add("Name columns do not share the same sizing");
+        var grip = new Border();
+        var status = new CheckBox();
+        var title = Mo2TableRow.Cell("Example");
+        var name = Mo2TableRow.NameCell(grip, status, title);
+        if (name.ColumnDefinitions.Count != 3 ||
+            name.ColumnDefinitions[0].Width != new GridLength(Mo2TableRow.GripWidth) ||
+            name.ColumnDefinitions[1].Width != new GridLength(Mo2TableRow.StatusColumn) ||
+            name.ColumnDefinitions[2].Width != new GridLength(1, GridUnitType.Star) ||
+            Grid.GetColumn(grip) != 0 || Grid.GetColumn(status) != 1 || Grid.GetColumn(title) != 2)
+            faults.Add("Name-cell grip, status and title layout is inconsistent");
+        var heading = Mo2TableRow.NameHeading("Name");
+        if (heading.Margin.Left != Mo2TableRow.GripWidth + Mo2TableRow.StatusColumn + title.Margin.Left)
+            faults.Add("Name heading does not align with the title after grip and status");
 
         // And every cell either row draws carries the shared inset.
         void Inset(string what, Thickness actual)
@@ -44,7 +52,7 @@ internal static class Mo2RowPaddingCheck
         Inset("a shared heading", Mo2TableRow.Heading("x").Margin);
 
         if (faults.Count > 0) throw new Exception(string.Join("; ", faults));
-        Console.WriteLine($"PASS row padding: Mods and Plugins share their grip, status, name and actions columns, " +
+        Console.WriteLine($"PASS row padding: Mods and Plugins share name sizing and aligned grip, status and title cells, " +
             $"and every cell and heading in both is inset {Mo2TableRow.CellMargin.Left}px");
     }
 
@@ -91,16 +99,18 @@ internal static class Mo2RowPaddingCheck
             var actions = row.GetVisualDescendants().OfType<Button>()
                 .Where(x => x.Bounds.Width > 0 && x.TranslatePoint(default, page) is not null)
                 .OrderBy(x => x.TranslatePoint(default, page)!.Value.X).LastOrDefault();
-            // Vertically as well: the two headers are different heights because they
-            // say different things, but everything below the separator that divides
-            // header from table has to be spaced the same on both pages.
-            var rule = page.GetVisualDescendants().OfType<Control>()
-                .FirstOrDefault(x => x.Name == "PanelHeaderSeparator");
+            // The responsive header can be completely hidden. Its separator then
+            // retains stale bounds, so use the visible action pill as our anchor.
+            var toolbar = page.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(x => x.IsEffectivelyVisible &&
+                    x.Name == (page is Mo2ModsView ? "ModsToolbarActions" : "PluginsToolbarActions"));
             var headingRow = heading;
-            var ruleBottom = rule?.TranslatePoint(new Point(0, rule.Bounds.Height), page)?.Y;
-            var headingTop = headingRow?.TranslatePoint(default, page)?.Y;
+            var toolbarBottom = toolbar?.TranslatePoint(new Point(0, toolbar.Bounds.Height), page)?.Y;
+            var headingTop = heading.TranslatePoint(default, page)?.Y;
             var rowTop = row.TranslatePoint(default, page)?.Y;
-            if (rule is null || ruleBottom is null || headingTop is null || rowTop is null) return null;
+            if (toolbarBottom is null || headingTop is null || rowTop is null) return null;
+            if (headingTop < toolbarBottom - 1)
+                throw new Exception($"{page.GetType().Name}: column headings overlap the toolbar");
             var headingAt = heading.TranslatePoint(default, page)?.X;
             var toggleAt = (row.GetVisualDescendants().OfType<Control>().FirstOrDefault(x => x.Name == statusName) ?? toggle)
                 .TranslatePoint(default, page)?.X;
@@ -118,7 +128,7 @@ internal static class Mo2RowPaddingCheck
                 RowRight: page.Bounds.Width - (rowAt.Value + row.Bounds.Width),
                 RowHeight: row.Bounds.Height,
                 Actions: page.Bounds.Width - actionsAt.Value,
-                HeadingTop: headingTop.Value - ruleBottom.Value,
+                HeadingTop: headingTop.Value - toolbarBottom.Value,
                 HeadingHeight: headingRow.Bounds.Height,
                 FirstRowTop: rowTop.Value - (headingTop.Value + headingRow.Bounds.Height));
         }
@@ -159,7 +169,7 @@ internal static class Mo2RowPaddingCheck
         // mod row draws no buttons and the rightmost one found in it is whatever the
         // row happens to hold.
         Same("row height", mods.RowHeight, plugins.RowHeight);
-        Same("headings below the separator", mods.HeadingTop, plugins.HeadingTop);
+        Same("headings below the toolbar", mods.HeadingTop, plugins.HeadingTop);
         Same("heading row height", mods.HeadingHeight, plugins.HeadingHeight);
         Same("first row below the headings", mods.FirstRowTop, plugins.FirstRowTop);
 
@@ -245,10 +255,48 @@ internal static class Mo2RowPaddingCheck
                 $". Down mods: {Down(Page<Mo2ModsView>(), ModsHeading)}" +
                 $". Down plugins: {Down(Page<Mo2PluginsView>(), PluginsHeading)}");
         }
+        var initialCategories = Page<Mo2ModsView>()!.GetLogicalDescendants().OfType<Mo2CategoryFilterList>().Where(x => x.Name == "ModCategories").Distinct().Single();
+        if (initialCategories.Items.Count != 0)
+            throw new Exception("Initially closed category pane constructed unused filter rows");
+        Console.WriteLine("PASS lazy category rows: initially closed pane has no unused category controls");
+        double? helpTop = null;
+        foreach (var page in new[] { Page<Mo2ModsView>()!, Page<Mo2PluginsView>()! }) {
+            var help = page.GetVisualDescendants().OfType<Button>().Single(x => x.Name?.EndsWith("RailScrollBarHelp") == true);
+            var position = help.TranslatePoint(default, page)!.Value;
+            if (!help.IsEffectivelyVisible || help.Bounds.Width < 20 || position.X < 0 || position.Y < 0 ||
+                position.X + help.Bounds.Width > page.Bounds.Width || position.Y + help.Bounds.Height > page.Bounds.Height)
+                throw new Exception("List help is hidden or clipped");
+            if (helpTop is { } expectedTop && Math.Abs(position.Y - expectedTop) > 1)
+                throw new Exception($"List help buttons are misaligned: {expectedTop:F0}px / {position.Y:F0}px");
+            helpTop = position.Y;
+            var flyout = (Flyout)help.Flyout!;
+            try {
+                typeof(Button).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(help, null);
+                await Task.Delay(150);
+                if (!flyout.IsOpen || flyout.Content is not StackPanel content ||
+                    content.Children.OfType<TextBlock>().Last().Bounds.Height <= 0)
+                    throw new Exception("List help click did not show its explanation");
+            } finally { flyout.Hide(); }
+        }
+        Console.WriteLine("PASS list rail help: Mods and Plugins buttons fit and open their explanations");
+        var pairedFlags = 0;
+        foreach (var row in Page<Mo2ModsView>()!.GetVisualDescendants().OfType<Grid>().Where(x => x.Name == "ModRedesignRow")) {
+            var icons = row.GetVisualDescendants().OfType<Control>().ToArray();
+            var flag = icons.Single(x => x.Name == "ModFlagIcon");
+            var endorsement = icons.Single(x => x.Name == "ModEndorsementIcon");
+            if (!flag.IsEffectivelyVisible || flag.Opacity == 0 || endorsement.Opacity == 0) continue;
+            var left = flag.TranslatePoint(default, row)!.Value.X;
+            var right = endorsement.TranslatePoint(default, row)!.Value.X;
+            if (right < left + flag.Bounds.Width + 3 || right + endorsement.Bounds.Width > row.Bounds.Width)
+                throw new Exception("Mod flag and endorsement glyphs overlap or leave the row");
+            pairedFlags++;
+        }
+        if (pairedFlags == 0) throw new Exception("Flag layout requires a rendered mod with both flag and endorsement glyphs");
+        Console.WriteLine($"PASS mod flag layout: {pairedFlags} rows show separate flag and endorsement glyphs without overlap");
         Console.WriteLine($"PASS row padding (live): both tables run from {mods.Left:F0}px to {mods.Right:F0}px of their " +
             $"page, their status column {mods.Status:F0}px and name column {mods.Name:F0}px into the table, their rows " +
             $"{mods.RowHeight:F0}px tall ending {mods.RowRight:F0}px from the page with the last action {mods.Actions:F0}px in, " +
-            $"and their headings {mods.HeadingTop:F0}px below the header separator with the first row {mods.FirstRowTop:F0}px " +
+            $"and their headings {mods.HeadingTop:F0}px below the toolbar with the first row {mods.FirstRowTop:F0}px " +
             $"below a {mods.HeadingHeight:F0}px heading row");
     }
 }

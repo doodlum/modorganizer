@@ -21,6 +21,7 @@ internal static class Mo2HeaderFitCheck
 
     internal static async Task Run(string? directory = null)
     {
+        await Mo2HeaderScrollCheck.Run();
         var host = new ContentControl();
         var window = new Window { Width = 1000, Height = 700, Content = host, ShowInTaskbar = false };
         Mo2ResponsiveHeaders.Attach(window);

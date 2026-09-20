@@ -28,7 +28,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
 {
     private readonly StackPanel _rows = new() { Spacing = 8 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBox _search = new() { Watermark = "Search tools", Name = "ToolsSearch", MinWidth = 60 };
+    private readonly TextBox _search;
     private Mo2Tool[] _tools = [];
     private Mo2ProfileTarget? _target;
     private bool _loading;
@@ -37,32 +37,33 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
     private long _activation;
     private readonly Func<Task<Mo2Tool[]>>? _read;
     private bool _compact;
-    private string _executablesKey = "";
+    private (string Name, string Icon, bool Pinned)[] _executableRows = [];
+    private string _selectedExecutable = "";
+    private static IEnumerable<(string Name, string Icon, bool Pinned)> ExecutableRows(Mo2LiveProfile profile) =>
+        profile.Executables.Select(name => (name, profile.ExecutableIcons.GetValueOrDefault(name) ?? "", profile.PinnedExecutables.Contains(name)));
     private readonly List<string> _pins = [];
     private string PinsPath => Mo2ToolPins.Path;
     public Mo2ToolsView() : this(null) { }
     internal Mo2ToolsView(Func<Task<Mo2Tool[]>>? read)
     {
         _read = read;
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), Margin = new Thickness(24) };
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(24) };
         var header = new PageHeader { Title = "Tools", Description = "Programs and extension tools for the selected game.", Icon = new AvaloniaSvg("avares://MockHost/Assets/Vortex/tools.svg") };
         root.Children.Add(header);
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(0, 8, 0, 8) };
-        bar.Children.Add(_search);
+        var filter = Mo2QtWidgets.Filter("ToolsSearch", "Search tools", _ => Render(), out _search);
+        var search = new Mo2ToolbarSearch(this, "ToolsToolbarSearch", filter, _search, "Search tools");
         var manage = Mo2ModRow.IconButton("mdi-pencil-outline", "Add or edit programs in MO2", async () => {
             if (ViewModel is not { } model) return;
             await model.Profile.RunTool(new Mo2Tool([], "Executable settings", "", "", true), model.Profile.CurrentTarget, true);
             await Refresh();
         });
-        manage.Name = "ManageToolsButton"; manage.Margin = new Thickness(8,0,0,0);
+        manage.Name = "ManageToolsButton";
         var refresh = Mo2ModRow.IconButton("mdi-refresh", "Refresh tools", async () => await Refresh());
         refresh.Name = "RefreshToolsButton";
-        Grid.SetColumn(manage,1); Grid.SetColumn(refresh,2); bar.Children.Add(manage); bar.Children.Add(refresh);
-        Grid.SetRow(bar,1); root.Children.Add(bar); Grid.SetRow(_status,2); root.Children.Add(_status);
+        Grid.SetRow(_status,1); root.Children.Add(_status);
         var scroll = new ScrollViewer { Content = _rows, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-        Grid.SetRow(scroll,3); root.Children.Add(scroll); Content = root;
-        // Search in the row beneath, magnifier on the header line, as Mods does.
-        Mo2PanelChrome.Apply(this, root, header, Mo2PanelChrome.SearchAction(bar, "Search tools"), manage, refresh);
+        Grid.SetRow(scroll,2); root.Children.Add(scroll); Content = root;
+        Mo2PanelChrome.Apply(this, root, header, Mo2ListToolbar.Pill("ToolsToolbarActions", manage, refresh), search);
         _status.IsVisible = false;
         _status.PropertyChanged += (_,args) => {
             if (args.Property == TextBlock.TextProperty) _status.IsVisible = !string.IsNullOrEmpty(_status.Text);
@@ -72,7 +73,6 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
             if (compact == _compact) return;
             _compact = compact; Render();
         };
-        _search.TextChanged += (_,_) => Render();
         this.WhenActivated(d => {
             if (ViewModel is not { } model) return;
             _active = true; ++_activation;
@@ -84,9 +84,11 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
                 var connectionChanged = wasConnected != model.Profile.IsConnected;
                 wasConnected = model.Profile.IsConnected;
                 if (_target != model.Profile.CurrentTarget || connectionChanged) _ = Refresh();
-                else if (_executablesKey != string.Join("|", model.Profile.Executables.Prepend(model.Profile.SelectedExecutable))) Render();
-                else foreach (var button in _rows.Children.OfType<Border>().SelectMany(x => ((Grid)x.Child!).Children).OfType<Button>().Where(x => x.Name == "LaunchToolButton"))
-                    button.IsEnabled = model.Profile.CanChangeOriginalUi && button.Tag is true;
+                else if (_selectedExecutable != model.Profile.SelectedExecutable || !_executableRows.SequenceEqual(ExecutableRows(model.Profile))) Render();
+                else foreach (var button in _rows.Children.OfType<Border>().SelectMany(x => ((Grid)x.Child!).Children).OfType<Button>()) {
+                    if (button.Name == "LaunchToolButton") button.IsEnabled = model.Profile.CanChangeOriginalUi && button.Tag is true;
+                    else if (button.Name == "PinExecutableButton") button.IsEnabled = model.Profile.CanChangeOriginalUi;
+                }
             }
             model.Profile.Changed += Changed;
             Disposable.Create(() => {
@@ -123,7 +125,8 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         _rows.Children.Clear();
         if (!_active || ViewModel is not { } model) return;
         var profile = model.Profile; var target = profile.CurrentTarget;
-        _executablesKey = string.Join("|", profile.Executables.Prepend(profile.SelectedExecutable));
+        _executableRows = ExecutableRows(profile).ToArray();
+        _selectedExecutable = profile.SelectedExecutable;
         if (target != _target || !profile.IsConnected) return;
         var all = profile.Executables.Select(name => (Key: "exe:" + name, Name: name, Description: "Launch with this profile’s mods", Enabled: true, Icon: profile.ExecutableIcons.GetValueOrDefault(name) ?? "", Run: (Func<Task>)(() => profile.CurrentTarget == target ? profile.Launch(name) : Task.CompletedTask)))
             .Concat(_tools.Select(tool => (Key: "tool:" + JsonSerializer.Serialize(tool.Id), Name: tool.Name, Description: tool.Description.Length > 0 ? tool.Description : tool.Group.Length > 0 ? tool.Group : "MO2 extension tool", Enabled: tool.Enabled, Icon: tool.Icon, Run: (Func<Task>)(() => profile.RunTool(tool, target))))).ToArray();
@@ -133,6 +136,13 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
         bool Pinned(string key) => key.StartsWith("exe:", StringComparison.Ordinal)
             ? profile.PinnedExecutables.Contains(key[4..])
             : _pins.Contains(PinKey(key));
+        var availableExtensionPins = all.Where(x => x.Key.StartsWith("tool:", StringComparison.Ordinal))
+            .Select(x => PinKey(x.Key)).ToHashSet(StringComparer.Ordinal);
+        int PreviousPin(string key) {
+            for (var index = _pins.IndexOf(key) - 1; index >= 0; index--)
+                if (availableExtensionPins.Contains(_pins[index])) return index;
+            return -1;
+        }
         var selected = "exe:" + profile.SelectedExecutable;
         var sections = new[] { "Default launcher", "Pinned tools", "Tools" };
         foreach (var section in sections) {
@@ -149,9 +159,16 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
                 row.Children.Add(Mo2ToolIcons.Create(entry.Icon, _compact ? 18 : 20));
                 var label = new TextBlock { Text = entry.Name, FontSize = Mo2Density.FontSize, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(6,0) };
                 ToolTip.SetTip(label, entry.Name + "\n" + entry.Description); Grid.SetColumn(label,1); row.Children.Add(label);
-                if (section == "Pinned tools") {
-                    var up = new Button { Content = "↑", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1), IsEnabled = _pins.IndexOf(PinKey(entry.Key)) > 0 };
-                    ToolTip.SetTip(up, "Move pinned tool earlier"); up.Click += (_,_) => { var i = _pins.IndexOf(PinKey(entry.Key)); if (i > 0) { (_pins[i-1],_pins[i]) = (_pins[i],_pins[i-1]); SavePins(); Render(); } };
+                if (section == "Pinned tools" && entry.Key.StartsWith("tool:", StringComparison.Ordinal)) {
+                    var up = new Button { Name = "MovePinnedToolEarlier", Content = "↑", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1), IsEnabled = PreviousPin(PinKey(entry.Key)) >= 0 };
+                    ToolTip.SetTip(up, "Move pinned tool earlier");
+                    up.Click += (_,_) => {
+                        var key = PinKey(entry.Key);
+                        var index = _pins.IndexOf(key); var previous = PreviousPin(key);
+                        if (index >= 0 && previous >= 0) {
+                            (_pins[previous], _pins[index]) = (_pins[index], _pins[previous]); SavePins(); Render();
+                        }
+                    };
                     Grid.SetColumn(up,2); row.Children.Add(up);
                 }
                 // Pinning an executable is MO2's own Toolbar and Menu — MO2 keeps that
@@ -160,7 +177,7 @@ internal sealed class Mo2ToolsView : ReactiveUserControl<Mo2ToolsPage>
                 // because MO2 pins no tool.
                 var executable = entry.Key.StartsWith("exe:", StringComparison.Ordinal) ? entry.Key[4..] : null;
                 var isPinned = Pinned(entry.Key);
-                var pin = new Button { Content = isPinned ? "Unpin" : "Pin", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1),
+                var pin = new Button { Name = executable is null ? "PinExtensionToolButton" : "PinExecutableButton", Content = isPinned ? "Unpin" : "Pin", FontSize = Mo2Density.FontSize, Padding = new Thickness(6,1), MinHeight = 0, Margin = new Thickness(1),
                     IsEnabled = executable is null || profile.CanChangeOriginalUi };
                 if (executable is not null)
                     pin.Click += async (_,_) => { await profile.ToggleShortcut(executable, "Toolbar and Menu", target); Render(); };

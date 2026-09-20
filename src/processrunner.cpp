@@ -706,9 +706,11 @@ ProcessRunner::Results ProcessRunner::run()
       log::error("failed to get the associated executable, running unhooked");
       m_sp.hooked = false;
     }
-  } else if (!shouldRunShell() && !m_sp.hooked) {
-    // this is an executable that should not be hooked; just run it through
-    // the shell
+  } else if (!shouldRunShell() && !m_sp.hooked && m_sp.arguments.isEmpty()) {
+    // The shell helper only accepts a file path. Keep executables with arguments
+    // on runBinary(), which preserves their command line and working directory
+    // while respecting m_sp.hooked. In particular, batch and Java files need
+    // the arguments prepared by getFileExecutionContext().
     m_shellOpen = m_sp.binary;
   }
 
@@ -755,6 +757,18 @@ std::optional<ProcessRunner::Results> ProcessRunner::runShell()
 
 std::optional<ProcessRunner::Results> ProcessRunner::runBinary()
 {
+  // Unhooked launches retain physical paths and do not prepare the VFS or
+  // invoke the hooked-launch plugin callbacks. In particular, a batch file
+  // inside a mod must not have its working directory rewritten into game Data.
+  QWidget* parent = (m_ui ? m_ui->mainWindow() : nullptr);
+  if (!m_sp.hooked) {
+    m_handle.reset(startBinary(parent, m_sp));
+    if (m_handle.get() == INVALID_HANDLE_VALUE) {
+      return Error;
+    }
+    return {};
+  }
+
   if (m_profileName.isEmpty()) {
     // get the current profile name if it wasn't overridden
     const auto profile = m_core.currentProfile();
@@ -772,9 +786,6 @@ std::optional<ProcessRunner::Results> ProcessRunner::runBinary()
                         m_profileName, m_customOverwrite, m_forcedLibraries)) {
     return Error;
   }
-
-  // parent widget used for any dialog popped up while checking for things
-  QWidget* parent = (m_ui ? m_ui->mainWindow() : nullptr);
 
   const auto* game = m_core.managedGame();
   auto& settings   = m_core.settings();

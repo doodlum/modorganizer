@@ -40,10 +40,12 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--check-category-membership") { Mo2CategoryMembershipCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-host-startup-lease") { Mo2HostStartupLeaseCheck.Run().GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--hold-host-startup-lease") { Mo2HostStartupLeaseCheck.Hold(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-original-actions") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2OriginalActionCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
         if (args.FirstOrDefault() == "--check-bridge-latency") { if (args.Length != 2) throw new ArgumentException("Expected bridge directory"); Mo2BridgeLatencyCheck.Run(args[1]).GetAwaiter().GetResult(); return; }
+        if (args.FirstOrDefault() == "--check-data-filters") { Mo2DataFiltersCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-row-padding") { Mo2RowPaddingCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-view-locator") { Mo2ViewLocatorCheck.Run(); return; }
         if (args.FirstOrDefault() == "--check-sorted-roots") { Mo2SortedRootsCheck.Run(); return; }
@@ -125,7 +127,9 @@ internal static class Program
             .UseReactiveUI().LogToTrace();
         // Lets the Avalonia DevTools MCP attach to this process. Opt-in, because the
         // diagnostics listener has no place in a normal user session.
+#if !DEBUG
         if (Environment.GetEnvironmentVariable("MO2_DEVELOPER_TOOLS") == "1") builder = builder.WithDeveloperTools();
+#endif
         builder.StartWithClassicDesktopLifetime(args);
     }
 }
@@ -262,12 +266,40 @@ public partial class MockApp : Application
                 // The eight keys MO2 gives its own actions, which this window had none of.
                 Mo2QtShortcuts.Install(liveWindow, live);
                 desktop.MainWindow = liveWindow;
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SAVE_HOVER") is { Length: > 0 } hoverPhase)
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SaveHoverCheck.Run(live, liveWindow, hoverPhase); }
+                        catch (Exception error) { Console.WriteLine("FAIL save hover UI: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_RENDER") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2PluginRenderCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL plugin render: " + error); }
+                    };
+#if DEBUG
+                if (Environment.GetEnvironmentVariable("MO2_DEVELOPER_TOOLS") == "1") liveWindow.AttachDevTools();
+#endif
                 if (endpoint.Length == 0) live.ShowHome();
                 desktop.Exit += (_, _) => live.Dispose();
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_FILE_PAGE_LIFECYCLE") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2FilePageLifecycleCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL file page lifecycle: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SAVE_DELETE_CANCEL") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SaveDeleteCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL save delete cancellation: " + error.Message); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SAVES_POLLING") == "1")
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SavesPollingCheck.Run(live, liveWindow, Environment.GetEnvironmentVariable("MO2_SAVES_POLL_PROBE")); }
+                        catch (Exception error) { Console.WriteLine("FAIL Saves polling: " + error); }
+                    };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_SAVE_DELETE_OUTCOME") is { Length: > 0 } saveDeleteSpec)
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2SaveDeleteOutcomeCheck.Run(live, liveWindow, saveDeleteSpec); }
+                        catch (Exception error) { Console.WriteLine("FAIL save delete outcome: " + error); }
                     };
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEARCH_FOCUS") == "1")
                     liveWindow.Opened += async (_, _) => {
@@ -279,21 +311,52 @@ public partial class MockApp : Application
                         try { await Mo2SidebarToggleCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL sidebar toggle: " + error.Message); }
                     };
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_KEYBOARD_SEARCH") is { } keyboardSearchPath) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2KeyboardSearchCheck.Run(liveWindow, keyboardSearchPath); }
+                        catch (Exception error) { Console.WriteLine("FAIL desktop keyboard search: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_SEARCH_INPUT") == "1")
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2SearchInputCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL search input: " + error.Message); }
                     }, TimeSpan.FromSeconds(3));
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_FILES_LIFECYCLE") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_EXTERNAL_FILES_LIFECYCLE") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
+                        using var turn = await Mo2CheckTurn.Take();
                         try { await Mo2ExternalFilesLifecycleCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL External Files lifecycle: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOOLS_LIFECYCLE") == "1")
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOOLS_LIFECYCLE") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2ToolsLifecycleCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL Tools lifecycle: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_HEALTH_LIFECYCLE") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2HealthLifecycleCheck.Run(live); }
+                        catch (Exception error) { Console.WriteLine("FAIL Health lifecycle: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_NOTIFICATION_FIT") is { Length: > 0 } notificationFit) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2NotificationFitCheck.Run(live, notificationFit); }
+                        catch (Exception error) { Console.WriteLine("FAIL notification fit: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOGGLE_LIFECYCLE") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2ToggleLifecycleCheck.Run(liveWindow); }
@@ -406,11 +469,30 @@ public partial class MockApp : Application
                         try { await Mo2IconAliasesCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL icon aliases: " + error); }
                     };
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENTRY_MENUS") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_MOD_POINTER_DRAG") is { Length: > 0 } dragPhasePath) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2ModPointerDragCheck.Run(live, liveWindow, dragPhasePath); }
+                        catch (Exception error) { Console.WriteLine("FAIL mod pointer drag: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_POINTER_DRAG") is { Length: > 0 } pluginDragPhasePath) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2PluginPointerDragCheck.Run(live, liveWindow, pluginDragPhasePath); }
+                        catch (Exception error) { Console.WriteLine("FAIL plugin pointer drag: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_ENTRY_MENUS") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_, _) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2EntryMenuCheck.Run(live, liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL lazy entry menus: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(3));
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_PLUGIN_ROW") == "1")
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
                         try { await Mo2PluginRowCheck.Run(live, liveWindow); }
@@ -435,6 +517,14 @@ public partial class MockApp : Application
                 // down part-way on every run and printed nothing at all, which
                 // verify.sh reported as NO VERDICT for a check that was never given
                 // the chance to have one.
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_POINTER") is { } tabPointerPath) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2TabPointerCheck.Run(live, liveWindow, tabPointerPath); }
+                        catch (Exception error) { Console.WriteLine("FAIL tab pointer: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_TAB_RESTORE") == "1") {
                     Mo2CheckTurn.Expect();
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
@@ -458,6 +548,24 @@ public partial class MockApp : Application
                         try { await Mo2SharedNexusLogoutCheck.Live(live, desktop); }
                         catch { Console.WriteLine("FAIL shared logout UI verification; inspect native account state before retrying"); }
                     }, TimeSpan.FromSeconds(2));
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_OVERWRITE_TOOLBAR") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try {
+                            using var turn = await Mo2CheckTurn.Take();
+                            await WaitFor(() => live.Profile.IsConnected, "MO2 profile connected");
+                            var view = new Mo2OverwriteView(_ => Task.FromResult<Mo2OverwriteFile[]>([
+                                new("generated/config.ini", 120), new("output.log", 300)])) {
+                                ViewModel = new Mo2OverwritePage(new FixtureWindows { ActiveWindow = live }, live.Profile)
+                            };
+                            var checkWindow = new Window { Width = 650, Height = 650, Content = view, ShowInTaskbar = false };
+                            checkWindow.Show();
+                            try { await Mo2ToolbarSearchCheck.Run(checkWindow, view); }
+                            finally { checkWindow.Close(); }
+                        } catch (Exception error) { Console.WriteLine("FAIL Overwrite toolbar: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_OVERWRITE_REFRESH") == "1")
                     liveWindow.Opened += (_,_) => DispatcherTimer.RunOnce(async () => {
                         try {
@@ -506,11 +614,14 @@ public partial class MockApp : Application
                         finally { Mo2CheckTurn.Finished(); }
                     };
                 }
-                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PHYSICALITY") == "1")
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_PHYSICALITY") == "1") {
+                    Mo2CheckTurn.Expect();
                     liveWindow.Opened += async (_, _) => {
-                        try { await Mo2PhysicalityCheck.Run(); }
+                        try { await Mo2PhysicalityCheck.Run(liveWindow); }
                         catch (Exception error) { Console.WriteLine("FAIL physicality: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
                     };
+                }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_PANEL_CHROME") == "1")
                     liveWindow.Opened += async (_, _) => {
                         try { await Mo2PanelChromeCheck.Run(); }
@@ -579,6 +690,124 @@ public partial class MockApp : Application
                         catch (Exception error) { Console.WriteLine("FAIL selection parity: " + error.Message); }
                         finally { Mo2CheckTurn.Finished(); }
                     }, TimeSpan.FromSeconds(2));
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_GAME_SWITCH") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2GameSwitchCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL game switch: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOAD_TRANSFER_FIT") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DownloadTransferFitCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL download transfer fit: " + error); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_LOGS_LIFECYCLE") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2LogsLifecycleCheck.Run(live); }
+                        catch (Exception error) { Console.WriteLine("FAIL Logs lifecycle: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_VISIBILITY") is { } visibilitySpecification) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataVisibilityCheck.Run(live, visibilitySpecification); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data visibility: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_TOOL_DIALOG") is { } toolSpecification) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2NativeToolDialogCheck.Run(live, toolSpecification); }
+                        catch (Exception error) { Console.WriteLine("FAIL native tool dialog: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_PREVIEW") is { } previewSpecification) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataPreviewCheck.Run(live, previewSpecification); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data preview: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_ACTIVATION") is { } activationSpecification) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataActivationCheck.Run(live, activationSpecification); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data activation: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_EXPORT") is { } exportDestination) {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataExportCheck.Run(live, exportDestination); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data export: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_SEARCH") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataSearchCheck.Run(live); await Mo2DataSearchCheck.RunNative(live); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data search: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_TREE") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2DataTreeCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL Data tree: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_VISIBLE_NATIVE_FILTERS") == "1") {
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2NativeFilterUiCheck.Run(live, liveWindow); }
+                        catch (Exception error) { Console.WriteLine("FAIL visible native filters: " + error); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_FILTER_CACHE") == "1") {
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2NativeFilterCacheCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL native filter cache: " + error.Message); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_NATIVE_FILTERS") == "1") {
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2NativeFilterCheck.Run(live); }
+                        catch (Exception error) { Console.WriteLine("FAIL native filter adapter: " + error.Message); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATEGORY_TREE") == "1") {
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2CategoryTreeCheck.Run(); }
+                        catch (Exception error) { Console.WriteLine("FAIL category tree UI: " + error.Message); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_CATEGORY_UI") == "1") {
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2WidgetBehaviourCheck.Run(live, liveWindow, categoriesOnly: true); }
+                        catch (Exception error) { Console.WriteLine("FAIL native category UI: " + error.Message); }
+                    };
+                }
+                if (Environment.GetEnvironmentVariable("MO2_VERIFY_QT_BAR_FIT") == "1") {
+                    Mo2CheckTurn.Expect();
+                    liveWindow.Opened += async (_, _) => {
+                        try { await Mo2QtBarFitCheck.Run(Environment.GetEnvironmentVariable("MO2_QT_BAR_SCREENSHOTS")); }
+                        catch (Exception error) { Console.WriteLine("FAIL Qt bar fit: " + error.Message); }
+                        finally { Mo2CheckTurn.Finished(); }
+                    };
                 }
                 if (Environment.GetEnvironmentVariable("MO2_VERIFY_FOLDER_PAGES") == "1")
                     liveWindow.Opened += async (_, _) => {
@@ -677,7 +906,7 @@ public partial class MockApp : Application
                             catch (Exception error) { Console.WriteLine("FAIL header fit: " + error.Message); }
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ROW_PADDING") == "1") {
-                            try { await Mo2RowPaddingCheck.Live(live, liveWindow); }
+                            try { await Mo2RowPaddingCheck.Live(live, liveWindow); await Mo2ToolbarSearchCheck.Run(liveWindow); }
                             catch (Exception error) { Console.WriteLine("FAIL row padding (live): " + error.Message); }
                         }
                         // Awaited here, like the page audit: it walks every page and
@@ -717,6 +946,35 @@ public partial class MockApp : Application
                         }
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_WORKSPACE_INPUT") == "1") await VerifyWorkspaceInput(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_ARCHIVES") == "1") await VerifyArchives(live,liveWindow);
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOADS_TOOLBAR_SEARCH") == "1") {
+                            try {
+                                live.ShowProfile();
+                                await live.ProfileMenu.LeftMenuItemLibrary.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                                await WaitFor(() => liveWindow.GetVisualDescendants().OfType<Mo2DownloadsView>().Any(x => x.IsEffectivelyVisible), "Downloads page visible");
+                                var downloads = liveWindow.GetVisualDescendants().OfType<Mo2DownloadsView>().Single(x => x.IsEffectivelyVisible);
+                                if (Environment.GetEnvironmentVariable("MO2_VERIFY_DOWNLOADS_COLUMNS") == "1") await Mo2DownloadsColumnsCheck.Run(downloads);
+                                await Mo2ToolbarSearchCheck.Run(liveWindow, downloads);
+                            } catch (Exception error) { Console.WriteLine("FAIL Downloads toolbar search: " + error); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_DATA_TOOLBAR_SEARCH") == "1") {
+                            try {
+                                live.ShowProfile();
+                                await live.ProfileMenu.DataItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                                await WaitFor(() => liveWindow.GetVisualDescendants().OfType<Mo2DataView>().Any(x => x.IsEffectivelyVisible), "Data page visible");
+                                var data = liveWindow.GetVisualDescendants().OfType<Mo2DataView>().Single(x => x.IsEffectivelyVisible);
+                                await Mo2ToolbarSearchCheck.Run(liveWindow, data);
+                            } catch (Exception error) { Console.WriteLine("FAIL Data toolbar search: " + error); }
+                        }
+                        if (Environment.GetEnvironmentVariable("MO2_VERIFY_ARCHIVES_SEARCH") == "1") {
+                            try {
+                                live.ShowProfile();
+                                await live.ProfileMenu.ArchivesItem.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
+                                await WaitFor(() => liveWindow.GetVisualDescendants().OfType<Mo2ArchivesView>().Any(x => x.IsEffectivelyVisible), "Archives page visible");
+                                var archives = liveWindow.GetVisualDescendants().OfType<Mo2ArchivesView>().Single(x => x.IsEffectivelyVisible);
+                                await Mo2ToolbarSearchCheck.Run(liveWindow, archives);
+                            } catch (Exception error) { Console.WriteLine("FAIL Archives toolbar search: " + error); }
+                        }
+
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_NEW_UI") == "1") await VerifyNewUi(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_FINAL_PAGES") == "1") await VerifyFinalPages(live, liveWindow);
                         if (Environment.GetEnvironmentVariable("MO2_VERIFY_TOPBAR") == "1") await VerifyTopBar(live, liveWindow);
@@ -908,6 +1166,11 @@ public partial class MockApp : Application
                                 _ => menu.LogsItem };
                             await item.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default));
                             await Task.Delay(4000);
+                            foreach (var panel in live.WorkspaceController.ActiveWorkspace.Panels)
+                            foreach (var tab in panel.Tabs)
+                                if (tab.Header.Title != tab.Contents.ViewModel.TabTitle)
+                                    throw new InvalidOperationException("Navigated tab caption differs from its page title");
+                            Console.WriteLine("PASS page navigation: tab captions match their current page titles after settling");
                         }
                         if (Environment.GetEnvironmentVariable("MO2_SINGLE_PANEL") == "1") {
                             try {
@@ -964,6 +1227,9 @@ public partial class MockApp : Application
                 Background = (IBrush)this.FindResource("SurfaceBaseBrush")!, Content = grid };
             Add(grid, new DevelopmentBuildBannerView { ViewModel = new DevelopmentBuildBannerDesignViewModel() }, 0, 2, columnSpan: 3);
             desktop.MainWindow = window;
+#if DEBUG
+            if (Environment.GetEnvironmentVariable("MO2_DEVELOPER_TOOLS") == "1") window.AttachDevTools();
+#endif
             if (Environment.GetEnvironmentVariable("MO2_INTERACTION_REPORT") is { } interactionReport)
                 ScenarioInteractionReport.Attach(window, scenario, interactionReport);
             Task verification = Task.CompletedTask;
@@ -2632,22 +2898,47 @@ public partial class MockApp : Application
         var snapshot = await new Mo2BridgeClient(live.Profile.Endpoint).SendAsync("snapshot");
         var expected = snapshot.GetProperty("plugins").EnumerateArray().Select(x => (
             x.GetProperty("name").GetString(), x.GetProperty("diagnostics").GetString(), x.GetProperty("modIndex").GetString(),
-            x.GetProperty("canToggle").GetBoolean(), x.GetProperty("canMove").GetBoolean())).OrderBy(x => x.Item1).ToArray();
-        if (!expected.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, (string?)x.Diagnostics, (string?)x.ModIndex, x.CanToggle, x.CanMove)).OrderBy(x => x.Item1)))
+            x.GetProperty("canToggle").GetBoolean(), x.GetProperty("canMove").GetBoolean(),
+            x.TryGetProperty("priorityText", out var priority) ? priority.GetString() ?? "" : "")).OrderBy(x => x.Item1).ToArray();
+        if (!expected.SequenceEqual(live.Profile.Order.Plugins.Select(x => ((string?)x.DisplayName, (string?)x.Diagnostics,
+                (string?)x.ModIndex, x.CanToggle, x.CanMove, x.PriorityText)).OrderBy(x => x.Item1)))
             throw new InvalidOperationException("Native plugin diagnostics disagree with MO2");
         var plugin = live.Profile.Order.Plugins.First(x => !x.CanToggle && !x.CanMove);
         await WaitFor(() => live.PluginsPage!.Adapter.Source.Value.Items.Any(x => x.Key.Equals(plugin.Key)), "Plugin rows did not refresh");
-        live.PluginsPage!.Adapter.SelectedModels.Clear();
-        live.PluginsPage.Adapter.SelectedModels.Add(live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
-        await WaitFor(() => window.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "Mo2PluginDiagnostics" && x.Text!.Contains(plugin.Diagnostics)), "Native plugin diagnostics were not rendered");
-        var row = live.PluginsPage.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key));
-        var index = row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
-        if (index.MoveUp.CanExecute() || index.MoveDown.CanExecute())
-            throw new InvalidOperationException("Forced plugin movement controls are enabled");
-        var view = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
-        if (view.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "Disable selected") && x.IsEffectivelyEnabled))
-            throw new InvalidOperationException("Forced plugin activation controls are enabled");
-        Console.WriteLine("PASS: " + expected.Length + " native plugin diagnostics, mod indices and restrictions match MO2; forced plugin controls disabled for " + plugin.DisplayName);
+        var page = live.PluginsPage!;
+        var originalSelection = page.Adapter.SelectedModels.ToArray();
+        var originalDetails = page.ShowPluginDetails;
+        try {
+            page.Adapter.SelectedModels.Clear();
+            page.Adapter.SelectedModels.Add(page.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key)));
+            var view = window.GetVisualDescendants().OfType<Mo2PluginsView>().Single();
+            var detailsButton = view.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+                .Single(x => x.Name == "PluginDetailsButton");
+            await WaitFor(() => detailsButton.IsEffectivelyEnabled, "Selected plugin cannot open details");
+            if (!page.ShowPluginDetails) detailsButton.IsChecked = true;
+            bool ContainsDetails(string? text) => text is not null && text.Contains(plugin.DisplayName) &&
+                text.Contains(plugin.Diagnostics) && (plugin.ModIndex.Length == 0 || text.Contains("Mod index: " + plugin.ModIndex)) &&
+                (plugin.PriorityText.Length == 0 || text.Contains("Priority: " + plugin.PriorityText));
+            await WaitFor(() => view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "Mo2PluginDiagnostics" &&
+                x.IsEffectivelyVisible && ContainsDetails(x.Text)), "Native plugin details are not visible");
+            var name = view.GetVisualDescendants().OfType<TextBlock>().Single(x => x.Name == "PluginName" && x.Text == plugin.DisplayName);
+            if (!ContainsDetails(ToolTip.GetTip(name) as string)) throw new InvalidOperationException("Plugin tooltip lost native order details");
+            var row = page.Adapter.Source.Value.Items.Single(x => x.Key.Equals(plugin.Key));
+            var index = row.Get<SharedComponents.IndexComponent>(LoadOrderColumns.IndexColumn.IndexComponentKey);
+            if (index.MoveUp.CanExecute() || index.MoveDown.CanExecute())
+                throw new InvalidOperationException("Forced plugin movement controls are enabled");
+            var toggle = view.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+                .Single(x => x.Name == "PluginActivationToggle" && Equals(x.Tag, plugin.DisplayName));
+            if (toggle.IsEnabled) throw new InvalidOperationException("Forced plugin activation is enabled");
+            detailsButton.IsChecked = false;
+            await WaitFor(() => !view.GetVisualDescendants().OfType<TextBlock>().Any(x => x.Name == "Mo2PluginDiagnostics" && x.IsEffectivelyVisible),
+                "Plugin details toggle did not close details");
+            Console.WriteLine("PASS: " + expected.Length + " native plugin diagnostics, mod indices and restrictions match MO2; toolbar opens/closes details; tooltip retains order metadata");
+        } finally {
+            page.ShowPluginDetails = originalDetails;
+            page.Adapter.SelectedModels.Clear();
+            foreach (var row in originalSelection) page.Adapter.SelectedModels.Add(row);
+        }
     }
 
     private static async Task VerifyLiveHistory(Mo2LiveWorkspace live, Window window)

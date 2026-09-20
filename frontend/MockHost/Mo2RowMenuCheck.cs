@@ -39,6 +39,7 @@ internal static class Mo2RowMenuCheck
         for (var attempt = 0; attempt < 300 && !(live.Profile.IsConnected && live.Profile.ProfilePath.Length > 0); attempt++)
             await Task.Delay(100);
         if (!live.Profile.IsConnected) throw new Exception("Bridge never connected");
+        await Mo2MenuAvailabilityCheck.Run();
         live.ShowProfile();
 
         var menu = live.ProfileMenu;
@@ -91,6 +92,51 @@ internal static class Mo2RowMenuCheck
             row => Drawn<Mo2DataView>("DataTable",
                 pick: model => model is Mo2DataEntry { Directory: false } file && (row is null || file.Name == row)));
 
+        // Qt directories and an empty selection have only the four common actions.
+        var dataView = window.GetVisualDescendants().OfType<Mo2DataView>().FirstOrDefault(x => x.IsEffectivelyVisible);
+        var dataTable = dataView?.GetVisualDescendants().OfType<TreeDataGrid>().Single();
+        if (dataTable is not null) {
+            var samples = Enumerable.Range(0, dataTable.Rows!.Count)
+                .Where(i => dataTable.Rows[i].Model is Mo2DataEntry { Directory: false })
+                .GroupBy(i => Path.GetExtension(((Mo2DataEntry)dataTable.Rows[i].Model!).Name).ToLowerInvariant())
+                .Select(group => group.First()).Take(4).ToArray();
+            foreach (var index in samples) {
+                Mo2RowMenu.SelectRow(dataTable, index);
+                var file = (Mo2DataEntry)dataTable.RowSelection!.SelectedItem!;
+                dataTable.ContextMenu!.Open(dataTable);
+                var native = await live.Profile.ReadListMenu("readFileMenu", [file.RelativePath], target, "data");
+                await Settle();
+                foreach (var item in dataTable.ContextMenu.Items.OfType<MenuItem>()) {
+                    var expected = native.Single(x => x.Text == item.Header as string);
+                    if (item.IsEnabled != expected.Enabled)
+                        faults.Add($"Data {Path.GetExtension(file.Name)} action {item.Header} enabled={item.IsEnabled}, MO2={expected.Enabled}");
+                }
+                dataTable.ContextMenu.Close();
+                await Settle();
+            }
+            checked_.Add($"Data action availability compared for {samples.Length} native file types");
+            var directoryIndex = Enumerable.Range(0, dataTable.Rows!.Count)
+                .FirstOrDefault(i => dataTable.Rows[i].Model is Mo2DataEntry { Directory: true }, -1);
+            if (directoryIndex >= 0) {
+                Mo2RowMenu.SelectRow(dataTable, directoryIndex);
+                var directory = (Mo2DataEntry)dataTable.RowSelection!.SelectedItem!;
+                dataTable.ContextMenu!.Open(dataTable);
+                await Settle();
+                var ours = Captions(dataTable.ContextMenu.Items.OfType<object>().ToArray());
+                dataTable.ContextMenu.Close();
+                await Settle();
+                CompareTree("Data directory", ours,
+                    await live.Profile.ReadListMenu("readFileMenu", [directory.RelativePath], target, "data"));
+            } else faults.Add("Data has no directory to compare its folder menu");
+            dataTable.RowSelection!.Clear();
+            dataTable.ContextMenu!.Open(dataTable);
+            await Settle();
+            var empty = Captions(dataTable.ContextMenu.Items.OfType<object>().ToArray());
+            dataTable.ContextMenu.Close();
+            CompareTree("Data empty selection", empty,
+                await live.Profile.ReadListMenu("readFileMenu", [], target, "data"));
+        } else faults.Add("Data did not draw for folder/empty menu checks");
+
         // Archives and Saves are compared against MO2's own menu too, now that the
         // bridge names their rows the way these pages do. Neither list names them the
         // way its first column reads: MO2's bsaList is a tree of mods with their
@@ -109,6 +155,7 @@ internal static class Mo2RowMenuCheck
         await Navigate(restore);
         await Task.Delay(600);
 
+        if (faults.Count > 0 && checked_.Count > 0) Console.WriteLine("CHECK matched MO2 menus: " + string.Join(", ", checked_));
         if (faults.Count > 0) Console.WriteLine("FAIL MO2 row menus: " + string.Join("; ", faults));
         else Console.WriteLine("PASS MO2 row menus: every list is compared against the menu MO2 itself built for the same row, " +
             "entry for entry and both ways round — " + string.Join(", ", checked_));
@@ -175,21 +222,6 @@ internal static class Mo2RowMenuCheck
         {
             var theirs = entries.Where(entry => entry.Text is not ("Change Categories" or "Primary Category"))
                 .SelectMany(entry => entry.Captions())
-                // MO2's Data tree expands in place, with every folder openable where it
-                // sits. This page walks into a folder instead and shows one at a time,
-                // so there is nothing for either of these to act on: they are not
-                // entries this frontend is missing, they are entries its Data page has
-                // no meaning for. Left out of the comparison rather than written into
-                // the page as actions that would do nothing.
-                .Where(caption => !(page.StartsWith("Data") && caption is "Expand All" or "Collapse All"))
-                // Two more the Data page does not carry, by decision rather than by
-                // oversight. Open with VFS runs a Windows program inside MO2's prefix
-                // from a file list, and Save Tree to Text File writes MO2's own tree
-                // rather than the folder this page is showing — its output would not
-                // describe what the user is looking at. Named here so the comparison
-                // stays two-way for everything else: an entry that stopped being
-                // offered, or one MO2 gained, is still a difference.
-                .Where(caption => !(page.StartsWith("Data") && caption is "Open with VFS" or "Save Tree to Text File..."))
                 .ToArray();
             Compare(page, ours, theirs);
         }

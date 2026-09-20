@@ -48,6 +48,20 @@ internal static class Mo2TableRow
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     }
 
+    internal static Grid NameCell(Control grip, Control status, Control title)
+    {
+        var cell = new Grid { ColumnDefinitions = new ColumnDefinitions($"{GripWidth},{StatusColumn},*") };
+        Add(cell, grip, 0); Add(cell, status, 1); Add(cell, title, 2);
+        return cell;
+    }
+
+    internal static TextBlock NameHeading(string text)
+    {
+        var heading = Heading(text);
+        heading.Margin = new Thickness(CellMargin.Left + GripWidth + StatusColumn, CellMargin.Top, CellMargin.Right, CellMargin.Bottom);
+        return heading;
+    }
+
     // The heading above a cell, with the same inset so a column and its label share
     // an edge.
     internal static TextBlock Heading(string text)

@@ -14,8 +14,15 @@ namespace Mo2.Frontend;
 // than appearing and vanishing.
 internal static class Mo2PhysicalityCheck
 {
-    internal static async Task Run()
+    internal static async Task Run(Window liveWindow)
     {
+        await Reaches(liveWindow, () => liveWindow.GetVisualDescendants().OfType<PanelResizerView>().Any(),
+            "The paired workspace did not create a divider", seconds: 15);
+        var expectedDividers = liveWindow.GetVisualDescendants().OfType<PanelResizerView>().ToHashSet();
+        var discoveredDividers = Mo2PanelPhysics.FindResizers(liveWindow).ToHashSet();
+        if (expectedDividers.Count == 0 || !expectedDividers.SetEquals(discoveredDividers))
+            throw new Exception($"Workspace canvas discovery found {discoveredDividers.Count} of {expectedDividers.Count} live panel dividers");
+        Console.WriteLine($"PASS divider discovery: all {expectedDividers.Count} live dividers found without traversing page contents");
         var rows = new StackPanel();
         for (var index = 0; index < 60; index++) rows.Children.Add(new TextBlock { Text = "Row " + index, Height = 24 });
         var scroll = new ScrollViewer { Content = rows };
@@ -51,6 +58,46 @@ internal static class Mo2PhysicalityCheck
             if (Math.Abs(Offset()) > .5) throw new Exception("A list that can still scroll gave instead of scrolling");
             Console.WriteLine($"PASS overscroll: wheeling past the top pulls up to {Mo2Physicality.MaxPull}px with diminishing " +
                 "notches, springs back to rest, leaves the scroll offset untouched, and does nothing mid-list");
+
+            var originalTransform = presenter.RenderTransform;
+            for (var reopen = 0; reopen < 2; reopen++) {
+                window.Content = null;
+                await Settle(window);
+                window.Content = scroll;
+                Mo2Physicality.AttachOverscroll(scroll);
+                Mo2Physicality.AttachOverscroll(scroll);
+                scroll.Offset = default;
+                await Settle(window);
+                Wheel(scroll, up: true);
+                if (!ReferenceEquals(originalTransform, ((Control)scroll.Presenter!).RenderTransform))
+                    throw new Exception("Reattaching overscroll installed a second animation state");
+                // Check the routed request synchronously. Polling a 90ms pull
+                // during startup can miss the entire animation; its rendered
+                // movement is covered above, separately from reattachment.
+                var reopened = (TranslateTransform)((Control)scroll.Presenter!).RenderTransform!;
+                if (Math.Abs(reopened.GetBaseValue(TranslateTransform.YProperty).Value - 11) > .01)
+                    throw new Exception("Reopened list did not request one pull on its first wheel event");
+                await Reaches(window, () => reopened.GetBaseValue(TranslateTransform.YProperty).Value == 0 && Math.Abs(reopened.Y) < .5,
+                    "Reopened list did not reset and spring back", seconds: 3);
+            }
+            var page = new Grid();
+            window.Content = page;
+            Mo2Physicality.AttachOverscrollToPage(page);
+            await Settle(window);
+            var lazy = new ScrollViewer { Content = new Border { Height = 1000 } };
+            page.Children.Add(lazy);
+            await Settle(window);
+            Wheel(lazy, up: true);
+            if ((lazy.Presenter as Control)?.RenderTransform is not TranslateTransform lazyPull ||
+                Math.Abs(lazyPull.GetBaseValue(TranslateTransform.YProperty).Value - 11) > .01)
+                throw new Exception("A lazily added viewer missed its first wheel event");
+            var unrelated = new ScrollViewer { Content = new Border { Height = 1000 } };
+            window.Content = unrelated;
+            await Settle(window);
+            Wheel(unrelated, up: true);
+            if ((unrelated.Presenter as Control)?.RenderTransform is TranslateTransform)
+                throw new Exception("Page-scoped overscroll affected an unrelated viewer");
+            Console.WriteLine("PASS overscroll lifecycle: repeated attachment retains one animation state; lazy viewers handle the first wheel event; unrelated viewers remain untouched");
 
             // A divider being pushed past the workspace's clamp gives and returns.
             var divider = new Border { Width = 8, Height = 200 };

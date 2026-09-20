@@ -16,6 +16,28 @@ def conflict_neighbors(name, origins):
     return ({origins[0]} | set(origins[position + 1:])) - {name}, set(origins[1:position]) - {name}
 
 
+def filter_tree(tree, user_role):
+    """Serialize FilterList::CriteriaItem IDs/types without changing its state."""
+    def read(item):
+        return {'id': int(item.data(0, user_role)),
+                'type': int(item.data(0, user_role + 1)),
+                'name': item.text(1),
+                'children': [read(item.child(i)) for i in range(item.childCount())]}
+    return [read(tree.topLevelItem(i)) for i in range(tree.topLevelItemCount())]
+
+
+def category_names(model, row, column, grouping_role):
+    """Read the native category list without splitting its primary display text."""
+    if column is None:
+        return []
+    value = model.index(row, column).data(grouping_role)
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)) or any(not isinstance(name, str) for name in value):
+        raise ValueError('MO2 returned an invalid category membership list')
+    return list(value)
+
+
 def plain_text(value):
     """Strip the markup MO2 puts in its tooltips, on a document of its own.
 
@@ -198,6 +220,19 @@ class ModActions:
         'saves': ('savegameList', 'QTreeModel', 'Save'),
     }
 
+    def activate_data_file(self, name):
+        """Use FileTree::activate, including MO2's preview preference/fallback."""
+        if not isinstance(name, str) or not name:
+            raise ValueError('Choose a Data file to activate')
+        self._restore_to = None
+        try:
+            view, index = self._select_listed('data', [name])
+            view.activated.emit(index)
+            return {'activated': name}
+        finally:
+            ModActions._restore_tab(self.window, self._restore_to)
+            self._restore_to = None
+
     def file_menu(self, view, names, path=None):
         """Read, or trigger one entry of, the menu MO2 puts on one of its file lists.
 
@@ -307,14 +342,52 @@ class ModActions:
             raise
         return found, model, chain, previous
 
+    @staticmethod
+    def _data_rows(model, names):
+        """Resolve Data-relative paths without traversing unrelated game folders.
+
+        FileTreeModel populates children lazily. A basename lookup at the root
+        can select a different file when the frontend is inside a subfolder.
+        Keep the complete path as the key expected by _select_indexes.
+        """
+        from PyQt6.QtCore import QModelIndex, Qt
+        rows = {}
+        for name in names:
+            parts = name.replace('\\', '/').split('/')
+            if any(part in ('', '.', '..') or ':' in part for part in parts):
+                raise ValueError('Invalid Data-relative path')
+            parent = QModelIndex()
+            for part in parts:
+                if model.canFetchMore(parent):
+                    model.fetchMore(parent)
+                matches = []
+                for row in range(model.rowCount(parent)):
+                    index = model.index(row, 0, parent)
+                    if str(index.data(Qt.ItemDataRole.DisplayRole)).casefold() == part.casefold():
+                        matches.append(index)
+                if len(matches) != 1:
+                    raise ValueError('Data file no longer exists or is ambiguous; refresh the list')
+                parent = matches[0]
+            rows[name] = parent
+        return rows
+
     def _select_listed(self, view, names):
         """Select by the name the frontend's own page gives that row."""
         subject = ModActions.FILE_LISTS[view][2]
         found, model, chain, previous = self._list_model(view, subject)
         self._restore_to = previous
+        if view == 'data' and names == []:
+            # Qt's Data menu exposes whole-tree actions even without a selection.
+            from PyQt6.QtCore import QModelIndex, QItemSelectionModel
+            selection = found.selectionModel()
+            selection.clear()
+            empty = QModelIndex()
+            selection.setCurrentIndex(empty, QItemSelectionModel.SelectionFlag.NoUpdate)
+            return found, empty
         if not isinstance(names, list) or not names or any(not isinstance(n, str) for n in names):
             raise ValueError(subject + ' no longer exists; refresh the list')
-        return ModActions._select_indexes(found, chain, ModActions._listed_rows(model, view), names, subject)
+        rows = ModActions._data_rows(model, names) if view == 'data' else ModActions._listed_rows(model, view)
+        return ModActions._select_indexes(found, chain, rows, names, subject)
 
     def file_list_rows(self, view):
         """What MO2 is showing in one of those lists, so a row can be asked for by name."""
@@ -704,6 +777,9 @@ class ModActions:
                 # list model. Older builds may not expose it, so failure is not fatal.
                 'newestVersion': newest_version(mods.getMod(name)),
                 'category': cell(row, 'Category'),
+                # GroupingRole is Qt::UserRole and carries every category name,
+                # unlike DisplayRole, which contains only the primary category.
+                'categories': category_names(model, row, columns.get('Category'), Qt.ItemDataRole.UserRole),
                 'separator': mods.getMod(name).isSeparator(),
                 'conflicts': plain(cell(row, 'Conflicts', Qt.ItemDataRole.ToolTipRole)),
                 'flags': plain(cell(row, 'Flags', Qt.ItemDataRole.ToolTipRole)),
@@ -1083,6 +1159,14 @@ class ModActions:
         if not shown:
             raise ValueError('MO2 did not open a mod detail dialog; wait and try again')
         return {'opened': True, 'modName': name}
+
+    def filter_snapshot(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QTreeWidget
+        tree = self.window.findChild(QTreeWidget, 'filters')
+        if tree is None:
+            raise ValueError('MO2 category filter tree is unavailable')
+        return filter_tree(tree, int(Qt.ItemDataRole.UserRole))
 
     def edit_categories(self):
         """Press MO2's own Edit... beside its filter list.

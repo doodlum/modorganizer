@@ -1,3 +1,3 @@
 [submodule "frontend/upstream"]
 	path = frontend/upstream
-	url = https://github.com/Nexus-Mods/NexusMods.App.git
+	url = https://github.com/doodlum/NexusMods.App.git

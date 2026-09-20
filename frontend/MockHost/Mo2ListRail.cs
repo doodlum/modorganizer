@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Media;
 using Avalonia.Layout;
 using NexusMods.UI.Sdk.Icons;
 
@@ -17,21 +19,35 @@ internal static class Mo2ListRail
     // their rows.
     internal const int Width = Mo2TableRow.RailWidth;
 
-    internal static Grid Create(string scrollName, out Mo2ListScrollBar scroll)
+    internal static Grid Create(string scrollName, out Mo2ListScrollBar scroll, bool plugins = false)
     {
         scroll = new Mo2ListScrollBar {
             Name = scrollName, Width = 16, Orientation = Orientation.Vertical, SmallChange = 40,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        var rail = new Grid { Name = "ListRail", RowDefinitions = new RowDefinitions("*,24,28"), Margin = new Thickness(0, 16, 0, 8) };
-        rail.Children.Add(scroll);
+        var rail = new Grid { Name = "ListRail", RowDefinitions = new RowDefinitions("24,*,24,28"), Margin = new Thickness(0, 16, 0, 8) };
+        var title = plugins ? "Plugin load order" : "Mod priority";
+        var explanation = plugins
+            ? "Plugins load from top to bottom. Later plugins can override records from earlier plugins. Masters must load before plugins that depend on them. Drag a movable plugin by its grip to change its position."
+            : "Mods lower in the list win conflicts when enabled mods provide the same loose file. Select a mod to highlight conflicts and its plugins. Drag a mod by its grip to change priority; separators keep related mods together.";
+        var help = Mo2QtWidgets.Icon(scrollName + "Help", title, "mdi-help-circle-outline", () => { });
+        help.HorizontalAlignment = HorizontalAlignment.Center;
+        help.Flyout = new Flyout {
+            Placement = PlacementMode.Left,
+            Content = new StackPanel { Spacing = 8, MaxWidth = 280, Children = {
+                new TextBlock { Text = title, FontWeight = FontWeight.SemiBold },
+                new TextBlock { Text = explanation, TextWrapping = TextWrapping.Wrap },
+            } },
+        };
+        rail.Children.Add(help);
+        Grid.SetRow(scroll, 1); rail.Children.Add(scroll);
         var down = new UnifiedIcon { Value = IconValues.ArrowDownThick, Size = 20, Opacity = .3,
             HorizontalAlignment = HorizontalAlignment.Center };
-        Grid.SetRow(down, 1); rail.Children.Add(down);
+        Grid.SetRow(down, 2); rail.Children.Add(down);
         var winner = new UnifiedIcon { Value = IconValues.TrophyOutline, Size = 20, Opacity = .5,
             HorizontalAlignment = HorizontalAlignment.Center };
-        ToolTip.SetTip(winner, "Entries lower in the list win file conflicts.");
-        Grid.SetRow(winner, 2); rail.Children.Add(winner);
+        ToolTip.SetTip(winner, plugins ? "Later plugins can override records from earlier plugins." : "Lower enabled mods win conflicts for the same loose file.");
+        Grid.SetRow(winner, 3); rail.Children.Add(winner);
         return rail;
     }
 

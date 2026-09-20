@@ -46,10 +46,19 @@ internal sealed class Mo2Spine : AViewModel<ISpineViewModel>, ISpineViewModel
                     Click = ReactiveCommand.CreateFromTask(async () => {
                         var available = shell.CatalogEntries.Where(x => x.Instance?.Game == game && x.Instance.Profiles.Length > 0).ToArray();
                         if (available.Length == 0) { shell.OpenLoadouts(game); return; }
-                        var entry = available.OrderByDescending(x => x.Registration.Launcher is not null).First();
-                        var profile = entry.Instance!.Profiles.FirstOrDefault(x => x.Name == entry.Instance.SelectedProfile) ?? entry.Instance.Profiles.First();
-                        var target = remembered.TryGetValue(game, out var previous) && available.Any(x => x.Registration == previous.Registration && x.Instance!.Profiles.Any(p => p.Directory == previous.Profile.Directory))
-                            ? previous : (entry.Registration, profile);
+                        (Mo2Registration, Mo2ProfileSnapshot) target;
+                        if (remembered.TryGetValue(game, out var previous) && available.Any(x => x.Registration == previous.Registration && x.Instance!.Profiles.Any(p => p.Directory == previous.Profile.Directory)))
+                            target = previous;
+                        else {
+                            // Multiple installations may manage the same game.
+                            // Prefer its running host over launching an older one
+                            // merely because it was registered first. Remembered
+                            // choices above need no process scan and remain primary.
+                            var entry = available.OrderByDescending(x => Mo2HostStartup.IsRunning(x.Registration))
+                                .ThenByDescending(x => x.Registration.Launcher is not null).First();
+                            var profile = entry.Instance!.Profiles.FirstOrDefault(x => x.Name == entry.Instance.SelectedProfile) ?? entry.Instance.Profiles.First();
+                            target = (entry.Registration, profile);
+                        }
                         if (shell.Profile.IsConnected && shell.Profile.CurrentTarget.Endpoint == target.Item1.Endpoint && Mo2InstanceCatalog.LocalPath(shell.Profile.ProfilePath) == Path.GetFullPath(target.Item2.Directory)) shell.ShowProfile();
                         else if (await shell.Profile.SelectProfile(target.Item1, target.Item2)) shell.ShowProfile();
                     })

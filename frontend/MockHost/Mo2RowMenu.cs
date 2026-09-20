@@ -26,10 +26,20 @@ internal static class Mo2RowMenu
     // conditional in MO2 too — and Tidy takes them out on the way into the menu.
     // `allowEmpty` is for a table whose menu has entries even with no row under the
     // pointer: MO2's download menu keeps its whole-folder actions in that case.
-    internal static void Attach<T>(TreeDataGrid table, Func<T?, IEnumerable<object?>> build, bool allowEmpty = false) where T : class
+    internal static void Attach<T>(TreeDataGrid table, Func<T?, IEnumerable<object?>> build, bool allowEmpty = false,
+        Func<T?, Task<Mo2MenuEntry[]?>>? availability = null) where T : class
     {
         var menu = new ContextMenu();
         table.ContextMenu = menu;
+        // Select the pointed-at row only for an actual right-button press.
+        // Keyboard/programmatic opening must keep the current selection even
+        // when the stationary pointer happens to be over another row.
+        table.AddHandler(InputElement.PointerPressedEvent, (_, args) => {
+            if (!args.GetCurrentPoint(table).Properties.IsRightButtonPressed || args.Source is not Control source) return;
+            var row = source as TreeDataGridRow ?? source.GetVisualAncestors().OfType<TreeDataGridRow>().FirstOrDefault();
+            if (row is { IsSelected: false } && row.RowIndex >= 0 && row.RowIndex < (table.Rows?.Count ?? 0))
+                SelectRow(table, row.RowIndex);
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         bool Fill()
         {
             menu.Items.Clear();
@@ -42,21 +52,41 @@ internal static class Mo2RowMenu
         // Filled again once it is up, so a menu opened by anything other than the
         // pointer — the keyboard's menu key, or a check driving the page — holds the
         // same entries a right-click would put there.
-        menu.Opened += (_, _) => { if (menu.Items.Count == 0) Fill(); };
+        long version = 0;
+        menu.Closed += (_, _) => ++version;
+        menu.Opened += async (_, _) => {
+            Fill();
+            var request = ++version;
+            if (availability is null) return;
+            var row = Target<T>(table);
+            var items = menu.Items.OfType<MenuItem>().Select(item => (Item: item, Enabled: item.IsEnabled)).ToArray();
+            try {
+                var pending = availability(row);
+                if (!pending.IsCompleted) foreach (var (item, _) in items) item.IsEnabled = false;
+                var native = await pending;
+                if (!menu.IsOpen || request != version || !ReferenceEquals(row, Target<T>(table))) return;
+                foreach (var (item, enabled) in items) {
+                    var matching = native?.FirstOrDefault(x => x.Text == item.Header as string);
+                    item.IsEnabled = enabled && (native is null || matching?.Enabled == true);
+                }
+            } catch (Exception error) {
+                if (!menu.IsOpen || request != version) return;
+                foreach (var (item, _) in items) {
+                    item.IsEnabled = false;
+                    ToolTip.SetTip(item, "Could not read MO2 action availability: " + error.Message);
+                }
+            }
+        };
     }
 
-    // Which row the menu belongs to: the one under the pointer, selected first so the
-    // menu and the list agree about what is being acted on, falling back to whatever
-    // is already selected when the press landed below the last row.
-    private static T? Target<T>(TreeDataGrid table) where T : class
+    private static T? Target<T>(TreeDataGrid table) where T : class =>
+        table.RowSelection?.SelectedItem as T;
+
+    // Visual row offsets are not model paths once a Data folder is expanded.
+    internal static void SelectRow(TreeDataGrid table, int rowIndex)
     {
-        var pointer = table.GetVisualDescendants().OfType<TreeDataGridRow>()
-            .FirstOrDefault(row => row.IsPointerOver && row.RowIndex >= 0 && row.RowIndex < (table.Rows?.Count ?? 0));
-        if (pointer is not null && table.Rows![pointer.RowIndex].Model is T model) {
-            if (!pointer.IsSelected) table.RowSelection?.Select(new IndexPath(pointer.RowIndex));
-            return model;
-        }
-        return table.RowSelection?.SelectedItem as T;
+        table.RowSelection?.Clear();
+        table.RowSelection?.Select(table.Rows!.RowIndexToModelIndex(rowIndex));
     }
 
     // MO2 separates its download menu's row actions from its whole-list ones, and its

@@ -10,33 +10,35 @@ namespace Mo2.Frontend;
 
 internal static class Mo2EntryMenu
 {
-    public static Border Create(string kind, string name, Func<object[]> createItems)
+    public static Border Create(string kind, string name, Func<object[]> createItems, bool ownContextMenu = true)
     {
-        var menu = new ContextMenu();
-        menu.Opening += (_, _) => {
+        var menu = ownContextMenu ? new ContextMenu() : null;
+        if (menu is not null) menu.Opening += (_, _) => {
             if (menu.Items.Count != 0) return;
             foreach (var item in createItems()) menu.Items.Add(item);
         };
         var icon = new UnifiedIcon { Value = IconValues.DragVerticalDots, Size = 10,
             Foreground = Brush.Parse("#99999F"), Opacity = 0, IsHitTestVisible = false };
-        var grip = new Border { Name = kind + "DragHandle", Tag = name, Width = 28, Height = 28,
+        var grip = new Border { Name = kind + "DragHandle", Tag = name, Width = Mo2TableRow.GripWidth, Height = Mo2Density.Row,
             Background = Brushes.Transparent,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             Child = icon };
         TreeDataGridRow? row = null;
         void Refresh() => icon.Opacity = row is { } r && (r.IsPointerOver || r.IsSelected) ? 1 : 0;
-        void Changed(object? sender, AvaloniaPropertyChangedEventArgs e) => Refresh();
+        void Changed(object? sender, AvaloniaPropertyChangedEventArgs e) {
+            if (e.Property == TreeDataGridRow.IsSelectedProperty || e.Property == Avalonia.Input.InputElement.IsPointerOverProperty) Refresh();
+        }
         grip.AttachedToVisualTree += (_, _) => {
             row = grip.GetVisualAncestors().OfType<TreeDataGridRow>().FirstOrDefault();
             if (row is null) return;
-            row.ContextMenu = menu;
+            if (menu is not null) row.ContextMenu = menu;
             row.PropertyChanged += Changed;
             Refresh();
         };
         grip.DetachedFromVisualTree += (_, _) => {
             if (row is not null) {
                 row.PropertyChanged -= Changed;
-                if (ReferenceEquals(row.ContextMenu, menu)) row.ContextMenu = null;
+                if (menu is not null && ReferenceEquals(row.ContextMenu, menu)) row.ContextMenu = null;
             }
             row = null;
         };

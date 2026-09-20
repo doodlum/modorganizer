@@ -5,6 +5,20 @@ directory and restart MO2. This is a normal `mobase.IPluginTool` extension; MO2
 continues hosting its existing game, installer and other extensions. It has been
 loaded by the installed Windows MO2 2.5.2 under GE-Proton10-4 on Linux.
 
+Update the whole bridge directory while that instance's MO2 host is stopped;
+individual-module updates can leave core dispatch incompatible with other modules.
+Keep a backup of the previous directory. Verify every registered instance after an
+update, from the repository root:
+
+```sh
+python3 frontend/tools/check_bridge_install.py /path/to/mo2 /path/to/another/mo2
+```
+
+This read-only check compares every Python module with the current checkout,
+reports missing, unexpected or changed modules, and exits nonzero on drift. It
+does not read credentials, profiles or mailbox data. A matching result proves
+code deployment, not runtime compatibility; restart and verify the host too.
+
 The Tools menu entry displays the endpoint directory, normally
 `plugins/data/frontend-bridge`. The native frontend can read it through the
 corresponding Linux path:
@@ -273,3 +287,27 @@ in the isolated FNV instance.
 It returns only whether that tab opened, after the user closes the dialog.
 No account fields or credentials are included in its response. It uses the
 same profile/session guard as other host actions.
+
+
+## Category membership contract
+
+Mod snapshots now include `categories`, the string list returned by the Category
+column's `ModList::GroupingRole` (`Qt::UserRole`). The existing `category` display
+field remains the primary category. Names must not be split on commas. An empty
+native list means no assignments, even if a display label is present. This source
+change requires bridge installation and an MO2 restart. The isolated FNV host
+has passed native secondary-category readback and rendered And/Or filtering with
+two disposable mods, followed by state restoration. The populated Skyrim host now
+also runs the current package; the two-game check validates native filters and
+preserved state on both installations. See ../NATIVE_FILTER_QUERY_VALIDATION.md.
+
+
+## Native filter matching
+
+`readModFilterMatches` accepts positive native criteria as `{type, id}` objects
+and returns each criterion's matching internal mod names. It uses MO2's filter
+engine and restores native filter/view state, including after an evaluation
+failure. The request is guarded by profile ownership and serialized by the
+frontend's typed reader. It is not part of automatic snapshot polling.
+See [native filter query validation](../NATIVE_FILTER_QUERY_VALIDATION.md) for
+native failure/restoration evidence and visible frontend filter/cache validation.

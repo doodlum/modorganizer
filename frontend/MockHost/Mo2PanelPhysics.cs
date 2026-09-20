@@ -21,22 +21,40 @@ internal static class Mo2PanelPhysics
     // animation would otherwise lag behind the drag.
     internal static bool Resizing { get; private set; }
 
-    private static readonly HashSet<PanelResizerView> Watched = [];
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PanelResizerView, object> Watched = new();
 
     // Resizers are created and replaced as panels come and go, so this runs from the
     // canvas's layout rather than once at construction.
     internal static void Watch(Control workspace)
     {
-        foreach (var resizer in workspace.GetVisualDescendants().OfType<PanelResizerView>()) {
-            if (!Watched.Add(resizer)) continue;
+        foreach (var resizer in FindResizers(workspace)) {
+            if (Watched.TryGetValue(resizer, out _)) continue;
+            Watched.Add(resizer, new object());
             Attach(resizer);
         }
+    }
+
+    internal static IEnumerable<PanelResizerView> FindResizers(Visual root)
+    {
+        // WorkspaceView creates resizers alongside panels in this canvas. Do not
+        // walk through panel contents (including every realized table cell) on
+        // each layout merely to find those sibling controls.
+        if (root is WorkspaceView workspace) {
+            if (workspace.FindControl<Canvas>("WorkspaceCanvas") is { } canvas)
+                foreach (var resizer in canvas.Children.OfType<PanelResizerView>())
+                    yield return resizer;
+            yield break;
+        }
+        foreach (var child in root.GetVisualChildren())
+            foreach (var resizer in FindResizers(child)) yield return resizer;
     }
 
     private static void Attach(PanelResizerView resizer)
     {
         var pressed = false;
-        resizer.DetachedFromVisualTree += (_, _) => { Watched.Remove(resizer); if (pressed) { pressed = false; Resizing = false; } };
+        // Handlers remain attached to the control across reattachment. Weak
+        // membership avoids retaining it and prevents installing them twice.
+        resizer.DetachedFromVisualTree += (_, _) => { if (pressed) { pressed = false; Resizing = false; } };
         resizer.AddHandler(InputElement.PointerPressedEvent, (_, _) => { pressed = true; Resizing = true; },
             RoutingStrategies.Tunnel);
         void Release()

@@ -29,7 +29,7 @@ internal static class Mo2ModRow
     // 14px text and 24px of padding took a third more room than the text in it
     // needs, and the panel ran out of room three columns earlier than MO2 does.
     internal static Grid Columns() => new() { MinWidth = 0, ColumnDefinitions = new ColumnDefinitions(
-        "*,24,24,72,92,92,64,92") };
+        "*,24,36,72,92,92,64,92") };
 
     internal static readonly (int Column, string Name)[] Headers = [
         (Name, "Mod Name"), (Conflicts, "Conflicts"), (Flags, "Flags"), (Content, "Content"),
@@ -49,7 +49,7 @@ internal static class Mo2ModRow
     // the room. Lowered with them: at MO2's density the same panel holds three more
     // of MO2's columns than these thresholds used to let through.
     private static readonly (int Column, double Width, double Threshold)[] Optional = [
-        (Conflicts, 24, 250), (Flags, 24, 280), (Content, 72, 470), (Category, 92, 390),
+        (Conflicts, 24, 250), (Flags, 36, 280), (Content, 72, 470), (Category, 92, 390),
         (Uploader, 92, 1070), (Version, 64, 330), (Notes, 92, 610)];
 
     // Room the category filter takes out of the pane when it is showing. The column
@@ -60,7 +60,7 @@ internal static class Mo2ModRow
 
     internal static void Fit(Grid grid, double width) =>
         Mo2TableRow.Fit(grid, Math.Max(0, width - SideWidth), Optional, HiddenColumns.Contains,
-            chrome: Mo2TableRow.RailWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
+            chrome: Mo2TableRow.RailWidth + Mo2TableRow.GripWidth + Mo2TableRow.StatusColumn + 2 * Mo2PanelChrome.Padding);
 
     // One of MO2's glyph columns. MO2 draws a small icon per condition and spells the
     // conditions out in the tooltip; the icon is shown only when there is something to
@@ -128,7 +128,7 @@ internal static class Mo2ModRow
                 foreach (var item in items.OfType<MenuItem>()) item.IsEnabled = ready && item.Tag is not false;
             return ready;
         }
-        var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions);
+        var grip = Mo2EntryMenu.Create("Mod", mod.Name, Actions, ownContextMenu: mod.IsSeparator);
         grip.Width = Mo2TableRow.GripWidth;
         if (mod.IsSeparator) {
             var group = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.GripWidth},{Mo2TableRow.ActionSize},18,Auto,*"),
@@ -222,8 +222,7 @@ internal static class Mo2ModRow
             () => target == profile.CurrentTarget && profile.CanChangeOriginalUi && profile.FindMod(mod.Id)?.CanManage == true);
         var title = Mo2TableRow.Cell(mod.DisplayName, (mod.State & 6) != 0 ? .85 : .5);
         ToolTip.SetTip(title, string.Join("\n", new[] { mod.DisplayName, mod.Version, mod.Category, mod.Conflicts, mod.Flags }.Where(s => s.Length > 0)));
-        var nameCell = new Grid { ColumnDefinitions = new ColumnDefinitions($"{Mo2TableRow.StatusColumn},*") };
-        Mo2TableRow.Add(nameCell, toggle, 0); Mo2TableRow.Add(nameCell, title, 1);
+        var nameCell = Mo2TableRow.NameCell(grip, toggle, title);
         Add(row, nameCell, Name);
         row.ContextFlyout = Mo2EntryMenu.Flyout(Actions);
 
@@ -232,7 +231,7 @@ internal static class Mo2ModRow
         var conflicts = Glyph("ModConflictIcon", mod.Conflicts, "mdi-swap-vertical-bold");
         var flags = Glyph("ModFlagIcon", mod.Flags, "mdi-flag");
         var content = Glyph("ModContentIcon", mod.Content, "mdi-package-variant-closed");
-        Add(row, conflicts, Conflicts); Add(row, flags, Flags); Add(row, content, Content);
+        Add(row, conflicts, Conflicts); Add(row, content, Content);
 
         var category = Mo2TableRow.Cell(mod.Category, .6);
         var uploader = Mo2TableRow.Cell(mod.Uploader, .6);
@@ -281,7 +280,11 @@ internal static class Mo2ModRow
         var endorsed = new UnifiedIcon { Name = "ModEndorsementIcon", Value = new ProjektankerIcon(isEndorsed ? "mdi-thumb-up" : "mdi-thumb-up-outline"), Size = 14,
             Opacity = mod.NexusId <= 0 ? 0 : isEndorsed ? 1 : .45, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(endorsed, isEndorsed ? "Endorsed on Nexus Mods" : "MO2 does not report this mod as endorsed");
-        Add(row, endorsed, Flags);
+        // Distinct conditions share the Flags column, not the same pixels.
+        var flagCell = new StackPanel { Name = "ModFlagCell", Orientation = Orientation.Horizontal,
+            Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center,
+            Children = { flags, endorsed } };
+        Add(row, flagCell, Flags);
         void Refresh() {
             var ready = RefreshActions();
             toggle.IsChecked = (mod.State & 6) != 0;

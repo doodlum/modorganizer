@@ -46,6 +46,13 @@ internal static class Mo2PageAuditCheck
             ("instances", x => x is Mo2ProfilesPage, () => { live.OpenConnections(); return Task.CompletedTask; }),
         };
 
+        if (Environment.GetEnvironmentVariable("MO2_PAGE_AUDIT_PAGES") is { } requested) {
+            var names = requested.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+            if (names.Count == 0 || names.Any(name => !pages.Any(page => page.Name == name)))
+                throw new ArgumentException("Page audit selection contains no pages or an unknown page name");
+            pages = pages.Where(page => names.Contains(page.Name)).ToArray();
+        }
+
         // Navigation replaces the selected panel's tab, so the audit has to put back
         // whatever was there before it ran: the layout is saved when the window closes.
         var restored = Selected(live)?.SelectedTab.Contents.ViewModel is ScenarioLoadOrderPage
@@ -92,14 +99,15 @@ internal static class Mo2PageAuditCheck
                     if (now == settled && now.Height > 0) break;
                     settled = now;
                 }
-                Capture(window, Path.Combine(directory, "audit-" + name + ".png"));
+                await Capture(window, Path.Combine(directory, "audit-" + name + ".png"));
             }
             if (header is null) { faults.Add($"{name}: no page header"); continue; }
 
             var stack = body.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(x => x.Name == "PanelHeaderStack");
-            var row = body.GetVisualDescendants().OfType<Panel>().FirstOrDefault(x => x.Name == "PanelHeaderRow");
-            var buttons = row?.GetVisualDescendants().OfType<Button>()
-                .Where(x => x.IsVisible && x.Bounds.Height > 0).ToArray() ?? [];
+            var buttons = body.GetVisualDescendants().OfType<Button>()
+                .Where(x => x is not CheckBox and not RadioButton && x.IsEffectivelyVisible && x.Bounds.Height > 0 &&
+                    x.GetVisualAncestors().OfType<Control>().Any(parent => parent is Toolbar ||
+                        parent.Name == "PanelActionRow" || parent.Name?.EndsWith("QtBar") == true)).ToArray();
             var plate = header.GetVisualDescendants().OfType<Border>()
                 .FirstOrDefault(x => Math.Abs(x.Width - Mo2PanelChrome.IconSize) < .5 || Math.Abs(x.Width - Mo2PanelChrome.CompactIconSize) < .5);
             var root = stack?.Parent as Control;
@@ -140,13 +148,16 @@ internal static class Mo2PageAuditCheck
             // A header down to its pictogram, or stood down entirely, has no words on
             // screen to measure. Both are the header line giving room to the actions.
             var stage = (body.GetVisualDescendants().OfType<Mo2HeaderLine>().FirstOrDefault())?.Shows;
-            if (stage != Mo2HeaderLine.Showing.Words) continue;
+            if (name is "my-mods" or "plugins" or "archives" or "data" or "overwrite" or "external-files" or "downloads" or "tools" && buttons.Length == 0)
+                faults.Add($"{name}: no visible toolbar buttons were measured");
             if (Math.Abs(metrics.Padding - Mo2PanelChrome.Padding) > .5 &&
                 Math.Abs(metrics.Padding - Mo2PanelChrome.CompactPadding) > .5)
                 faults.Add($"{name}: padding is {metrics.Padding}, not the shared {Mo2PanelChrome.Padding}");
-            if (metrics.Actions > 0 && Math.Abs(metrics.ActionSize - Mo2TableRow.ActionSize) > .5)
-                faults.Add($"{name}: header actions are {metrics.ActionSize:F0}px, not the shared {Mo2TableRow.ActionSize}");
-            if (metrics.Pictogram < 0)
+            if (buttons.Any(button => Math.Abs(button.Bounds.Height - Mo2TableRow.ActionSize) > .5))
+                faults.Add($"{name}: toolbar actions differ from {Mo2TableRow.ActionSize}px: " +
+                    string.Join(", ", buttons.Where(button => Math.Abs(button.Bounds.Height - Mo2TableRow.ActionSize) > .5)
+                        .Select(button => $"{button.Name ?? button.GetType().Name}={button.Bounds.Height:F1}px")));
+            if (stage == Mo2HeaderLine.Showing.Words && metrics.Pictogram < 0)
                 faults.Add($"{name}: header has no pictogram at either the full or compact size");
         }
 
@@ -207,15 +218,22 @@ internal static class Mo2PageAuditCheck
         return root.GetVisualDescendants().OfType<Control>()
             .FirstOrDefault(x => x.IsEffectivelyVisible && ReferenceEquals(x.DataContext, page) &&
                 x.GetVisualDescendants().OfType<PageHeader>()
-                    .Any(h => !h.IsVisible || title is null || h.Title == title));
+                    .Any(h => ReferenceEquals(h.GetVisualAncestors().OfType<ReactiveUI.IViewFor>().FirstOrDefault()?.ViewModel, page) &&
+                        (!h.IsVisible || title is null || h.Title == title)));
     }
 
     private static Task Navigate(NexusMods.App.UI.LeftMenu.Items.ILeftMenuItemViewModel item) =>
         System.Reactive.Threading.Tasks.TaskObservableExtensions.ToTask(
             item.NavigateCommand.Execute(NavigationInformation.From(NavigationInput.Default)));
 
-    private static void Capture(Window window, string path)
+    private static async Task Capture(Window window, string path)
     {
+        window.UpdateLayout();
+        var frame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        window.RequestAnimationFrame(_ => frame.TrySetResult());
+        await frame.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        if (Avalonia.Rendering.Composition.ElementComposition.GetElementVisual(window) is { } visual)
+            await visual.Compositor.RequestCommitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var bitmap = new RenderTargetBitmap(new PixelSize(
             Math.Max(1, (int)window.ClientSize.Width), Math.Max(1, (int)window.ClientSize.Height)));
